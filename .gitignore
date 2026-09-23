@@ -1,0 +1,26 @@
+# Dépendances
+node_modules/
+
+# Build Next.js
+.next/
+out/
+build/
+
+# Variables d'environnement — jamais committées
+.env
+.env.local
+.env.*.local
+
+# Artefacts du worker
+worker/tmp/
+worker/out/
+*.mp4
+*.wav
+*.srt
+
+# Divers
+.DS_Store
+*.log
+scripts/smoke-worker.out.txt
+next-env.d.ts
+tsconfig.tsbuildinfo

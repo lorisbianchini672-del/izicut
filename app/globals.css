@@ -1,0 +1,433 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   Jetons de thème (convention shadcn/ui pour Tailwind v4).
+   Valeurs en oklch. Dark mode par défaut (identité IziCut).
+   Primaire = violet électrique, accent = rose/fuchsia.
+   ============================================================ */
+:root {
+  --radius: 0.75rem;
+
+  /* ---- Mode clair (fallback) ---- */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.129 0.042 264.695);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.129 0.042 264.695);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.129 0.042 264.695);
+  --primary: oklch(0.541 0.281 293.009);
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+  --accent: oklch(0.65 0.28 330);
+  --accent-foreground: oklch(0.984 0.003 247.858);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.984 0.003 247.858);
+  --border: oklch(0.929 0.013 255.508);
+  --input: oklch(0.929 0.013 255.508);
+  --ring: oklch(0.541 0.281 293.009);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ---- Mode sombre IziCut (actif par défaut via classe .dark sur <html>) ---- */
+.dark {
+  --background: oklch(0.08 0.02 264);
+  --foreground: oklch(0.96 0.005 248);
+  --card: oklch(0.13 0.025 265);
+  --card-foreground: oklch(0.96 0.005 248);
+  --popover: oklch(0.13 0.025 265);
+  --popover-foreground: oklch(0.96 0.005 248);
+  --primary: oklch(0.65 0.28 293);
+  --primary-foreground: oklch(0.98 0.003 248);
+  --secondary: oklch(0.18 0.03 260);
+  --secondary-foreground: oklch(0.96 0.005 248);
+  --muted: oklch(0.18 0.03 260);
+  --muted-foreground: oklch(0.6 0.04 257);
+  --accent: oklch(0.65 0.26 330);
+  --accent-foreground: oklch(0.98 0.003 248);
+  --destructive: oklch(0.65 0.22 22);
+  --destructive-foreground: oklch(0.98 0.003 248);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.65 0.28 293);
+}
+
+/* Expose les jetons comme utilitaires Tailwind */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+  ::selection {
+    background: oklch(0.65 0.28 293 / 40%);
+    color: white;
+  }
+}
+
+/* ============================================================
+   UTILITAIRES GLOBAUX — Identité visuelle IziCut
+   ============================================================ */
+
+/* Gradient de texte violet → rose/fuchsia */
+.text-gradient {
+  background: linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Fond glassmorphism (cartes, modales) */
+.glass {
+  background: oklch(1 0 0 / 4%);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid oklch(1 0 0 / 10%);
+}
+
+/* Orbes de fond lumineux */
+.bg-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+}
+.bg-orb-purple {
+  background: radial-gradient(circle, oklch(0.65 0.28 293 / 25%) 0%, transparent 70%);
+}
+.bg-orb-pink {
+  background: radial-gradient(circle, oklch(0.65 0.26 330 / 20%) 0%, transparent 70%);
+}
+.bg-orb-blue {
+  background: radial-gradient(circle, oklch(0.55 0.22 260 / 20%) 0%, transparent 70%);
+}
+
+/* Glow sur les boutons CTA */
+.glow-primary {
+  box-shadow: 0 0 30px oklch(0.65 0.28 293 / 40%);
+}
+.glow-primary:hover {
+  box-shadow: 0 0 50px oklch(0.65 0.28 293 / 60%);
+}
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-12px); }
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-float { animation: float 4s ease-in-out infinite; }
+.animate-float-delay { animation: float 4s ease-in-out 0.5s infinite; }
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, oklch(1 0 0 / 10%), transparent);
+  background-size: 200% auto;
+  animation: shimmer 2s linear infinite;
+}
+.animate-spin-slow { animation: spin-slow 8s linear infinite; }
+
+/* ============================================================
+   SCROLLBAR sombre
+   ============================================================ */
+.dark ::-webkit-scrollbar { width: 6px; height: 6px; }
+.dark ::-webkit-scrollbar-track { background: var(--color-background); }
+.dark ::-webkit-scrollbar-thumb { background: oklch(0.35 0.04 265); border-radius: 4px; }
+.dark ::-webkit-scrollbar-thumb:hover { background: oklch(0.55 0.1 293); }
+
+/* ============================================================
+   AMÉLIORATIONS ESTHÉTIQUES & INTERACTIVITÉ
+   ============================================================ */
+
+/* Texte en dégradé ANIMÉ (défilement fluide des couleurs) */
+@keyframes gradient-x {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-gradient-x {
+  background: linear-gradient(120deg, #a855f7, #ec4899, #7c3aed, #22d3ee, #a855f7);
+  background-size: 300% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradient-x 6s ease infinite;
+}
+
+/* Bordure en dégradé animée (carte Premium / hover) */
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes border-spin {
+  to { --angle: 360deg; }
+}
+.animated-border {
+  position: relative;
+}
+.animated-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--angle),
+    transparent 0%,
+    oklch(0.65 0.28 293 / 80%) 12%,
+    oklch(0.65 0.26 330 / 80%) 24%,
+    transparent 40%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: border-spin 4s linear infinite;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.animated-border:hover::before,
+.animated-border.always::before {
+  opacity: 1;
+}
+
+/* Spotlight qui suit la souris (variables --x / --y posées en JS) */
+.card-spotlight {
+  position: relative;
+}
+.card-spotlight::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    320px circle at var(--x, 50%) var(--y, 50%),
+    oklch(0.65 0.28 293 / 12%),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.card-spotlight:hover::after {
+  opacity: 1;
+}
+
+/* Balayage lumineux au survol des boutons CTA */
+.shine-hover {
+  position: relative;
+  overflow: hidden;
+}
+.shine-hover::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -80%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    oklch(1 0 0 / 28%),
+    transparent
+  );
+  transform: skewX(-20deg);
+  transition: left 0.6s ease;
+  pointer-events: none;
+}
+.shine-hover:hover::before {
+  left: 130%;
+}
+
+/* Aurora : nappe lumineuse lente en fond de Hero */
+@keyframes aurora-drift {
+  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  33%      { transform: translate(40px, -30px) rotate(8deg) scale(1.08); }
+  66%      { transform: translate(-30px, 25px) rotate(-6deg) scale(0.96); }
+}
+.animate-aurora {
+  animation: aurora-drift 18s ease-in-out infinite;
+}
+
+/* Indicateur de scroll rebondissant */
+@keyframes scroll-hint {
+  0%, 100% { transform: translateY(0); opacity: 1; }
+  50%      { transform: translateY(8px); opacity: 0.4; }
+}
+.animate-scroll-hint { animation: scroll-hint 1.8s ease-in-out infinite; }
+
+/* Révélation au scroll (fallback CSS pur si JS désactivé) */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.scroll-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ============================================================
+   Pages éditoriales (documentation, guide, blog)
+   ------------------------------------------------------------
+   .bg-grid    : trame technique discrète en arrière-plan
+   .info-prose : typographie homogène du contenu long
+   ============================================================ */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+
+.info-prose {
+  color: var(--muted-foreground);
+  font-size: 0.9375rem;
+  line-height: 1.75;
+}
+.info-prose > * + * { margin-top: 1.5rem; }
+.info-prose h2 {
+  color: var(--foreground);
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.25rem;
+}
+.info-prose h3 {
+  color: var(--foreground);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+}
+.info-prose strong { color: var(--foreground); font-weight: 600; }
+.info-prose a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.info-prose a:hover { color: var(--accent); }
+.info-prose ul { list-style: none; padding-left: 0; display: grid; gap: 0.5rem; }
+.info-prose ul > li { position: relative; padding-left: 1.25rem; }
+.info-prose ul > li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.65em;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, oklch(0.65 0.28 293), oklch(0.65 0.26 330));
+}
+.info-prose ol { list-style: decimal; padding-left: 1.35rem; display: grid; gap: 0.5rem; }
+.info-prose ol::marker,
+.info-prose ol > li::marker { color: var(--primary); font-weight: 700; }
+.info-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--foreground);
+  background: oklch(1 0 0 / 6%);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.375rem;
+}
+.info-prose pre {
+  background: oklch(0.1 0.02 264);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  overflow-x: auto;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: oklch(0.88 0.03 250);
+}
+.info-prose pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+.info-prose .table-wrap { overflow-x: auto; border-radius: 1rem; border: 1px solid var(--border); }
+.info-prose table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.info-prose th,
+.info-prose td { padding: 0.625rem 0.875rem; text-align: left; border-top: 1px solid var(--border); }
+.info-prose thead th {
+  border-top: 0;
+  background: oklch(1 0 0 / 4%);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.info-prose blockquote {
+  border-left: 3px solid var(--primary);
+  background: oklch(0.65 0.28 293 / 8%);
+  border-radius: 0 0.75rem 0.75rem 0;
+  padding: 1rem 1.25rem;
+  color: var(--foreground);
+}
+.info-prose blockquote p + p { margin-top: 0.5rem; }
+
+/* Accessibilité : couper les animations décoratives si demandé */
+@media (prefers-reduced-motion: reduce) {
+  .animate-float, .animate-float-delay, .animate-pulse-glow,
+  .animate-shimmer, .animate-spin-slow, .animate-gradient-x,
+  .animate-aurora, .animate-scroll-hint,
+  .animated-border::before {
+    animation: none !important;
+  }
+  .scroll-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
