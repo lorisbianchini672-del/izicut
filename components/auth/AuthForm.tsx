@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, Lock, Mail } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Logo } from '@/components/landing/Logo';
+import { GoogleButton } from '@/components/auth/GoogleButton';
 import { useKaraoke } from '@/components/home/caption-preview';
 import { EASE, Magnetic, SplitWords } from '@/components/home/motion';
 import { PhoneFrame } from '@/components/home/phone-frame';
@@ -277,15 +278,25 @@ export function AuthForm({ nextPath = '/dashboard', initialError = null, initial
 
           {mode !== 'magic' && (
             <>
-              <button
-                type="button"
-                onClick={handleGoogle}
+              <GoogleButton
                 disabled={pending || !supabaseConfigured}
-                className="izi-focus mt-6 inline-flex w-full cursor-pointer items-center justify-center gap-3 rounded-xl border border-line-strong bg-white/[0.03] px-4 py-3 text-sm font-medium text-fg transition-colors hover:bg-white/[0.07] disabled:cursor-wait disabled:opacity-60"
-              >
-                <GoogleIcon />
-                Continuer avec Google
-              </button>
+                onSuccess={() => {
+                  router.push(nextPath);
+                  router.refresh();
+                }}
+                onError={(message) => setError(translateError(message))}
+                fallback={
+                <button
+                  type="button"
+                  onClick={handleGoogle}
+                  disabled={pending || !supabaseConfigured}
+                  className="izi-focus mt-6 inline-flex w-full cursor-pointer items-center justify-center gap-3 rounded-xl border border-line-strong bg-white/[0.03] px-4 py-3 text-sm font-medium text-fg transition-colors hover:bg-white/[0.07] disabled:cursor-wait disabled:opacity-60"
+                >
+                  <GoogleIcon />
+                  Continuer avec Google
+                </button>
+                }
+              />
               <div className="mt-6 flex items-center gap-3 text-[11px] uppercase tracking-[0.18em] text-fg-subtle" aria-hidden>
                 <span className="h-px flex-1 bg-line" /> ou par email <span className="h-px flex-1 bg-line" />
               </div>
