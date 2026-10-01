@@ -5,6 +5,7 @@ import { AudioWaveform, Crop, Gauge, MousePointerClick, Type, ZoomIn } from 'luc
 import { CaptionLine, useKaraoke } from './caption-preview';
 import { SectionHeading } from './section-heading';
 import { useSpotlight } from './use-spotlight';
+import { Stagger, StaggerItem, Tilt } from './motion';
 
 export function FeatureBento() {
   return (
@@ -16,7 +17,7 @@ export function FeatureBento() {
           description="Tout ce qui fait qu'un short retient le spectateur, appliqué automatiquement à chaque clip — et modifiable à la main quand vous le voulez."
         />
 
-        <div className="mt-16 grid auto-rows-[minmax(220px,auto)] gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <Stagger className="mt-16 grid auto-rows-[minmax(220px,auto)] gap-4 md:grid-cols-2 lg:grid-cols-3">
           <Card className="md:col-span-2 lg:row-span-2" icon={Gauge} title="Les moments forts, notés sur 100"
             text="L'IA lit la transcription horodatée et retient les extraits autonomes : accroche dès la première phrase, une idée complète, une chute nette. Les bornes sont recalées sur de vraies phrases.">
             <MomentsVisual />
@@ -36,7 +37,7 @@ export function FeatureBento() {
           <Card icon={MousePointerClick} title="Studio d'édition" text="Ajustez l'entrée, la sortie et le texte ; zones de sécurité TikTok visibles.">
             <EditorVisual />
           </Card>
-        </div>
+        </Stagger>
       </div>
     </section>
   );
@@ -53,7 +54,9 @@ type CardProps = {
 function Card({ icon: Icon, title, text, className = '', children }: CardProps) {
   const onMove = useSpotlight<HTMLElement>();
   return (
-    <article onPointerMove={onMove} className={`izi-card group flex flex-col overflow-hidden rounded-3xl p-6 ${className}`}>
+    <StaggerItem className={className}>
+    <Tilt className="h-full rounded-3xl" max={4}>
+    <article onPointerMove={onMove} className="izi-card group flex h-full flex-col overflow-hidden rounded-3xl p-6">
       <div className="relative flex min-h-[120px] flex-1 items-center justify-center">{children}</div>
       <div className="mt-6">
         <h3 className="flex items-center gap-2 text-base font-semibold text-fg">
@@ -63,6 +66,8 @@ function Card({ icon: Icon, title, text, className = '', children }: CardProps) 
         <p className="mt-1.5 max-w-md text-sm leading-relaxed text-fg-muted">{text}</p>
       </div>
     </article>
+    </Tilt>
+    </StaggerItem>
   );
 }
 

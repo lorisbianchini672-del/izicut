@@ -1,3 +1,5 @@
+import { Reveal } from './motion';
+
 type SectionHeadingProps = {
   eyebrow: string;
   title: React.ReactNode;
@@ -9,7 +11,7 @@ type SectionHeadingProps = {
 export function SectionHeading({ eyebrow, title, description, align = 'center' }: SectionHeadingProps) {
   const centered = align === 'center';
   return (
-    <div className={centered ? 'mx-auto max-w-2xl text-center' : 'max-w-2xl'}>
+    <Reveal className={centered ? 'mx-auto max-w-2xl text-center' : 'max-w-2xl'}>
       <p className="font-code text-xs uppercase tracking-[0.2em] text-neon">
         <span aria-hidden className="mr-2 text-fg-subtle">▍</span>
         {eyebrow}
@@ -20,6 +22,6 @@ export function SectionHeading({ eyebrow, title, description, align = 'center' }
       {description ? (
         <p className="mt-4 text-pretty text-base leading-relaxed text-fg-muted sm:text-lg">{description}</p>
       ) : null}
-    </div>
+    </Reveal>
   );
 }

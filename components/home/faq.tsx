@@ -1,6 +1,7 @@
 import { Plus } from 'lucide-react';
 
 import { SectionHeading } from './section-heading';
+import { Stagger, StaggerItem } from './motion';
 
 const QUESTIONS = [
   {
@@ -34,17 +35,19 @@ export function Faq() {
     <section id="faq" className="border-t border-line py-24 sm:py-32">
       <div className="mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[1fr_1.4fr] lg:px-8">
         <SectionHeading align="left" eyebrow="Questions" title="Les réponses, sans détour." />
-        <div className="divide-y divide-line border-y border-line">
+        <Stagger className="divide-y divide-line border-y border-line">
           {QUESTIONS.map(({ q, a }) => (
-            <details key={q} className="group">
+            <StaggerItem key={q}>
+            <details className="group">
               <summary className="izi-focus flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-left text-base font-medium text-fg transition-colors hover:text-neon [&::-webkit-details-marker]:hidden">
                 {q}
                 <Plus className="h-5 w-5 shrink-0 text-fg-subtle transition-transform duration-300 group-open:rotate-45 group-open:text-neon" aria-hidden />
               </summary>
               <p className="pb-6 pr-10 text-sm leading-relaxed text-fg-muted">{a}</p>
             </details>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </div>
     </section>
   );

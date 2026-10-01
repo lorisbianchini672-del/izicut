@@ -3,6 +3,7 @@
 import { ArrowRight, Link2, Paperclip, X } from 'lucide-react';
 
 import { useHeroForm } from '@/components/upload/use-hero-form';
+import { Magnetic } from './motion';
 
 const ACCEPT = '.mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska';
 
@@ -60,6 +61,7 @@ export function LinkForm() {
         >
           <Paperclip className="h-5 w-5" />
         </button>
+        <Magnetic strength={0.25}>
         <button
           type="submit"
           className="izi-focus group/btn inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-xl bg-neon px-4 py-2.5 text-sm font-semibold text-ink-950 shadow-[0_0_32px_-6px_rgb(200_255_61/0.7)] transition-all hover:shadow-[0_0_44px_-4px_rgb(200_255_61/0.9)] active:scale-[0.98]"
@@ -68,6 +70,7 @@ export function LinkForm() {
           <span className="sm:hidden">Générer</span>
           <ArrowRight className="h-4 w-4 transition-transform group-hover/btn:translate-x-0.5" aria-hidden />
         </button>
+        </Magnetic>
         <input
           ref={f.inputRef}
           type="file"

@@ -7,6 +7,7 @@ import { CAPTION_TEMPLATES, type CaptionTemplate, type FrameLayout } from '@/lib
 import { useKaraoke } from './caption-preview';
 import { PhoneFrame } from './phone-frame';
 import { SectionHeading } from './section-heading';
+import { Reveal, Tilt } from './motion';
 
 const FREE_TEMPLATES: CaptionTemplate[] = ['hormozi', 'clean'];
 const COLORS = [
@@ -43,7 +44,7 @@ export function CaptionStudio() {
             description="Ce sont les réglages réels du moteur de rendu. Changez-les : l'aperçu suit."
           />
 
-          <div className="mt-10 space-y-8">
+          <Reveal delay={0.1} className="mt-10 space-y-8">
             <fieldset>
               <legend className="text-sm font-medium text-fg">Style de sous-titres</legend>
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -140,10 +141,11 @@ export function CaptionStudio() {
                 Titre d'accroche
               </label>
             </div>
-          </div>
+          </Reveal>
         </div>
 
-        <div className="mx-auto w-full max-w-[340px]">
+        <Reveal delay={0.15} y={48} className="mx-auto w-full max-w-[340px]">
+          <Tilt className="rounded-[2rem]" max={8}>
           <PhoneFrame
             template={template}
             words={words}
@@ -152,10 +154,11 @@ export function CaptionStudio() {
             layout={layout}
             hook={hook ? 'Le secret des 3 premières secondes' : null}
           />
+          </Tilt>
           <p className="mt-4 text-center font-code text-xs text-fg-subtle" aria-live="polite">
             {CAPTION_TEMPLATES.find((t) => t.key === template)?.label} · {layout === 'crop' ? 'Plein cadre' : 'Fond flou'} · 1080×1920
           </p>
-        </div>
+        </Reveal>
       </div>
     </section>
   );

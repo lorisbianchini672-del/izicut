@@ -7,6 +7,7 @@ import { ArrowRight, Check, Loader2 } from 'lucide-react';
 import { DISPLAY_PLAN_KEYS, PLANS, formatPrice } from '@/lib/plans';
 import { SectionHeading } from './section-heading';
 import { useSpotlight } from './use-spotlight';
+import { Stagger, StaggerItem } from './motion';
 
 export function Pricing() {
   return (
@@ -17,11 +18,13 @@ export function Pricing() {
           title="Payez au temps de vidéo, pas au clip."
           description="Sans engagement. Les minutes non utilisées d'une vidéo échouée vous sont rendues automatiquement."
         />
-        <div className="mt-16 grid gap-4 lg:grid-cols-3">
+        <Stagger className="mt-16 grid gap-4 lg:grid-cols-3">
           {DISPLAY_PLAN_KEYS.map((key) => (
-            <PlanCard key={key} planKey={key} featured={key === 'pro'} />
+            <StaggerItem key={key} className="flex">
+              <PlanCard planKey={key} featured={key === 'pro'} />
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </div>
     </section>
   );
@@ -33,7 +36,7 @@ function PlanCard({ planKey, featured }: { planKey: 'free' | 'pro' | 'agency'; f
   return (
     <article
       onPointerMove={onMove}
-      className={`izi-card flex flex-col rounded-3xl p-7 ${featured ? 'border-neon/40 bg-[linear-gradient(180deg,rgb(200_255_61/0.06),rgb(255_255_255/0.01))] lg:-my-3 lg:py-10' : ''}`}
+      className={`izi-card flex w-full flex-col rounded-3xl p-7 ${featured ? 'border-neon/40 bg-[linear-gradient(180deg,rgb(200_255_61/0.06),rgb(255_255_255/0.01))] lg:-my-3 lg:py-10' : ''}`}
     >
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-fg">{plan.name}</h3>
