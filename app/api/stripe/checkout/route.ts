@@ -62,6 +62,13 @@ export async function POST(request: Request) {
     const stripe = getStripe();
     let customerId = profile?.stripe_customer_id ?? undefined;
 
+    // Un customer créé en mode Test n'existe pas en mode réel (et
+    // inversement) : s'il est introuvable ou supprimé, on en recrée un.
+    if (customerId) {
+      const existing = await stripe.customers.retrieve(customerId).catch(() => null);
+      if (!existing || ('deleted' in existing && existing.deleted)) customerId = undefined;
+    }
+
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: profile?.email ?? user.email,
