@@ -48,8 +48,10 @@ export const config = {
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
   serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
   openaiKey: process.env.OPENAI_API_KEY ?? '',
-  transcribeModel: process.env.OPENAI_TRANSCRIBE_MODEL ?? 'whisper-1',
-  analyzeModel: process.env.OPENAI_ANALYZE_MODEL ?? 'gpt-4o-mini',
+  // Groq : API compatible OpenAI, offre gratuite (Whisper + modèles texte).
+  groqKey: process.env.GROQ_API_KEY ?? '',
+  transcribeModel: process.env.OPENAI_TRANSCRIBE_MODEL ?? '',
+  analyzeModel: process.env.OPENAI_ANALYZE_MODEL ?? '',
   ffmpeg: process.env.FFMPEG_PATH ?? '/usr/bin/ffmpeg',
   ffprobe: process.env.FFPROBE_PATH ?? '',
   ytdlp: process.env.YTDLP_PATH ?? '/usr/local/bin/yt-dlp',
@@ -60,6 +62,40 @@ export const config = {
   ytdlpCookiesFile: process.env.YTDLP_COOKIES_FILE ?? '',
   ytdlpProxy: process.env.YTDLP_PROXY ?? '',
 };
+
+/**
+ * Fournisseur d'IA distant : OpenAI (payant) ou Groq (gratuit, limites
+ * par minute). AI_PROVIDER=groq force Groq ; en « auto », Groq est pris
+ * quand seule GROQ_API_KEY est renseignée.
+ */
+export function remoteAi() {
+  const provider = (process.env.AI_PROVIDER ?? 'auto').toLowerCase();
+  const groq = provider === 'groq' || (provider !== 'openai' && !config.openaiKey && !!config.groqKey);
+  if (groq) {
+    return {
+      name: 'groq',
+      base: 'https://api.groq.com/openai/v1',
+      key: config.groqKey,
+      transcribeModel: config.transcribeModel || 'whisper-large-v3-turbo',
+      analyzeModel: config.analyzeModel || 'openai/gpt-oss-120b',
+      // Offre gratuite : ~8 000 jetons/minute → fenêtres de transcription courtes.
+      windowChars: 14000,
+    };
+  }
+  return {
+    name: 'openai',
+    base: 'https://api.openai.com/v1',
+    key: config.openaiKey,
+    transcribeModel: config.transcribeModel || 'whisper-1',
+    analyzeModel: config.analyzeModel || 'gpt-4o-mini',
+    windowChars: 60000,
+  };
+}
+
+/** Clé de l'IA distante configurée (vide = IA locale). */
+function remoteKey() {
+  return config.openaiKey || config.groqKey;
+}
 
 let cookiesPathPromise = null;
 /** Arguments yt-dlp supplémentaires (cookies / proxy), calculés une fois. */
@@ -252,13 +288,13 @@ export async function runIngest(supabase, job, project, options = {}) {
 // temps RELATIFS à son début ; mergeChunkWords les recolle en une
 // timeline absolue cohérente (sinon sous-titres décalés de 600 s).
 
-const OPENAI_TRANSCRIBE_URL = 'https://api.openai.com/v1/audio/transcriptions';
 
 async function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 /** Appel Whisper avec reprise sur 429/5xx (backoff exponentiel). */
 async function transcribeChunk(audioBuffer, filename) {
-  if (!config.openaiKey) throw new Error('OPENAI_API_KEY manquante');
+  const ai = remoteAi();
+  if (!ai.key) throw new Error(`Clé ${ai.name === 'groq' ? 'GROQ_API_KEY' : 'OPENAI_API_KEY'} manquante`);
 
   let lastError = null;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -266,13 +302,13 @@ async function transcribeChunk(audioBuffer, filename) {
 
     const form = new FormData();
     form.append('file', new Blob([audioBuffer]), filename);
-    form.append('model', config.transcribeModel);
+    form.append('model', ai.transcribeModel);
     form.append('response_format', 'verbose_json');
     form.append('timestamp_granularities[]', 'word');
 
-    const res = await fetch(OPENAI_TRANSCRIBE_URL, {
+    const res = await fetch(`${ai.base}/audio/transcriptions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${config.openaiKey}` },
+      headers: { Authorization: `Bearer ${ai.key}` },
       body: form,
     });
 
@@ -302,7 +338,7 @@ export async function runTranscribe(supabase, job, project, ctx) {
   const audioFile = path.join(workdir, 'audio.wav');
 
   let allWords = [];
-  if (useLocalAi(config.openaiKey)) {
+  if (useLocalAi(remoteKey())) {
     // whisper.cpp gère les fichiers longs : pas de découpage nécessaire,
     // les horodatages sont donc déjà absolus.
     console.log(`[worker] transcription locale (whisper.cpp, ${path.basename(localConfig.whisperModel)})`);
@@ -364,7 +400,67 @@ export async function runTranscribe(supabase, job, project, ctx) {
 // ============================================================
 // ÉTAPE 3 — ANALYZE : sélection virale par GPT-4o-mini
 // ============================================================
-const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
+/** Appel chat JSON distant, avec reprise sur limite de débit (429). */
+async function chatJsonRemote(system, user) {
+  const ai = remoteAi();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const res = await fetch(`${ai.base}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ai.key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: ai.analyzeModel,
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      }),
+    });
+    if (res.ok) {
+      const payload = await res.json();
+      return payload.choices?.[0]?.message?.content ?? '{}';
+    }
+    if (res.status === 429 || res.status >= 500) {
+      const retryAfter = Number(res.headers.get('retry-after'));
+      await sleep((Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 20 * (attempt + 1)) * 1000);
+      continue;
+    }
+    throw new Error(`IA HTTP ${res.status} : ${(await res.text()).slice(0, 200)}`);
+  }
+  throw new Error('IA indisponible (limite de débit atteinte), réessayez plus tard');
+}
+
+/** Découpe les mots en fenêtres dont la transcription tient dans maxChars. */
+function splitWordsByChars(words, maxChars) {
+  const windows = [];
+  let current = [];
+  let size = 0;
+  for (const w of words) {
+    const add = String(w.word ?? '').length + 1;
+    if (size + add > maxChars * 0.8 && current.length > 0) {
+      windows.push(current);
+      current = [];
+      size = 0;
+    }
+    current.push(w);
+    size += add;
+  }
+  if (current.length) windows.push(current);
+  return windows;
+}
+
+function parseClipsJson(rawContent) {
+  let parsed;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch {
+    throw new Error(`Réponse du modèle non JSON : ${String(rawContent).slice(0, 120)}`);
+  }
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed?.clips)) return parsed.clips;
+  return Object.values(parsed ?? {}).find(Array.isArray) ?? [];
+}
 
 /**
  * Consigne de sélection. Le LLM reçoit une transcription HORODATÉE
@@ -388,7 +484,7 @@ export async function runAnalyze(supabase, job, project, ctx) {
   const { words, durationSeconds } = ctx;
   const updateProgress = makeProgressUpdater(supabase, job.id);
 
-  const local = useLocalAi(config.openaiKey);
+  const local = useLocalAi(remoteKey());
 
   const tier = await fetchUserTier(supabase, project.user_id);
   const maxClips = ENTITLEMENTS[tier].maxClipsPerVideo;
@@ -396,50 +492,32 @@ export async function runAnalyze(supabase, job, project, ctx) {
   // Une ligne horodatée par phrase ; échantillonnée si la vidéo est très
   // longue (la fin reste visible, au lieu d'être tronquée).
   // Modèle local : contexte plus court (16k jetons) → transcription plus compacte.
-  const transcriptText = buildTimedTranscript(words, { maxChars: local ? 24000 : 60000 });
-  const userPrompt = `Durée totale : ${durationSeconds} s.\nTranscription :\n${transcriptText}`;
-
-  let rawContent;
+  let candidatesRaw = [];
   if (local) {
+    // Modèle local : contexte plus court (16k jetons) → transcription compacte.
+    const transcriptText = buildTimedTranscript(words, { maxChars: 24000 });
+    const userPrompt = `Durée totale : ${durationSeconds} s.\nTranscription :\n${transcriptText}`;
     console.log(`[worker] analyse locale (Ollama, ${localConfig.ollamaModel})`);
     await updateProgress(90);
-    rawContent = await chatJsonLocal(analyzeSystemPrompt(maxClips), userPrompt);
+    candidatesRaw = parseClipsJson(await chatJsonLocal(analyzeSystemPrompt(maxClips), userPrompt));
   } else {
-    const res = await fetch(OPENAI_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.openaiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config.analyzeModel,
-        temperature: 0.3,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: analyzeSystemPrompt(maxClips) },
-          { role: 'user', content: userPrompt },
-        ],
-      }),
-    });
-
-    if (!res.ok) throw new Error(`GPT HTTP ${res.status} : ${(await res.text()).slice(0, 200)}`);
-
-    const payload = await res.json();
-    rawContent = payload.choices?.[0]?.message?.content ?? '{}';
+    const ai = remoteAi();
+    // Vidéo longue + limite par minute (Groq gratuit) : analyse par fenêtres,
+    // puis on garde les meilleurs extraits toutes fenêtres confondues.
+    const fullText = buildTimedTranscript(words, { maxChars: Number.MAX_SAFE_INTEGER });
+    const windows = fullText.length <= ai.windowChars ? [words] : splitWordsByChars(words, ai.windowChars);
+    console.log(`[worker] analyse ${ai.name} (${ai.analyzeModel}) — ${windows.length} fenêtre(s)`);
+    for (let i = 0; i < windows.length; i++) {
+      if (i > 0 && ai.name === 'groq') await sleep(61_000); // respecte ~8k jetons/min
+      const text = buildTimedTranscript(windows[i], { maxChars: ai.windowChars });
+      const userPrompt = `Durée totale de la vidéo : ${durationSeconds} s. Extrait ${i + 1}/${windows.length}.\nTranscription :\n${text}`;
+      const raw = await chatJsonRemote(analyzeSystemPrompt(maxClips), userPrompt);
+      candidatesRaw.push(...parseClipsJson(raw));
+      await updateProgress(Math.min(95, 85 + Math.round(((i + 1) / windows.length) * 10)));
+    }
+    candidatesRaw.sort((a, b) => Number(b?.virality_score ?? 0) - Number(a?.virality_score ?? 0));
   }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(rawContent);
-  } catch {
-    throw new Error(`Réponse du modèle non JSON : ${String(rawContent).slice(0, 120)}`);
-  }
-  // Certains modèles locaux renvoient directement le tableau, ou une autre clé.
-  if (Array.isArray(parsed)) parsed = { clips: parsed };
-  else if (!Array.isArray(parsed?.clips)) {
-    const firstArray = Object.values(parsed ?? {}).find(Array.isArray);
-    if (firstArray) parsed = { clips: firstArray };
-  }
+  const parsed = { clips: candidatesRaw };
 
   // Reprise (retry) : on repart d'une base propre. Les clips DÉJÀ rendus
   // sont conservés — ils ont consommé du temps de rendu.

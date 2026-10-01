@@ -19,14 +19,17 @@ for (const bin of [process.env.FFMPEG_PATH || 'ffmpeg', process.env.YTDLP_PATH |
   out(r.status === 0, `${bin} ${r.status === 0 ? r.stdout.split('\n')[0].slice(0, 60) : 'introuvable'}`);
 }
 
-const key = process.env.OPENAI_API_KEY || '';
 const provider = (process.env.AI_PROVIDER || 'auto').toLowerCase();
+const groq = provider === 'groq' || (provider !== 'openai' && !process.env.OPENAI_API_KEY && !!process.env.GROQ_API_KEY);
+const key = groq ? process.env.GROQ_API_KEY || '' : process.env.OPENAI_API_KEY || '';
 const local = provider === 'local' || (provider === 'auto' && !key);
 if (!local) {
+  const name = groq ? 'Groq' : 'OpenAI';
+  const url = groq ? 'https://api.groq.com/openai/v1/models' : 'https://api.openai.com/v1/models';
   try {
-    const r = await fetch('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${key}` } });
-    out(r.ok, `IA : OpenAI — clé ${r.ok ? 'valide' : `refusée (HTTP ${r.status})`}`);
-  } catch (e) { out(false, `OpenAI injoignable : ${e.message}`); }
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+    out(r.ok, `IA : ${name} — clé ${r.ok ? 'valide' : `refusée (HTTP ${r.status})`}`);
+  } catch (e) { out(false, `${name} injoignable : ${e.message}`); }
 } else {
   console.log('ℹ️  IA : mode LOCAL (whisper.cpp + Ollama), aucune clé nécessaire');
   const w = spawnSync(process.env.WHISPER_CPP_PATH || 'whisper-cli', ['--help'], { encoding: 'utf8' });

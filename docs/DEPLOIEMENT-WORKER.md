@@ -15,8 +15,9 @@ tourne sur le Mac, les clients attendent quand le Mac est éteint.
 | --- | --- |
 | `SUPABASE_URL` | URL du projet Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | clé *service_role* (Supabase → Settings → API) |
-| `AI_PROVIDER` | `openai` |
-| `OPENAI_API_KEY` | clé OpenAI (platform.openai.com) |
+| `AI_PROVIDER` | `groq` (gratuit) ou `openai` (payant) |
+| `GROQ_API_KEY` | clé Groq (console.groq.com → API Keys), si `groq` |
+| `OPENAI_API_KEY` | clé OpenAI (platform.openai.com), si `openai` |
 | `FFMPEG_PATH` | `/usr/bin/ffmpeg` |
 | `FFPROBE_PATH` | `/usr/bin/ffprobe` |
 | `WORKER_CONCURRENCY` | `1` (monter à 2 si la machine a ≥ 4 Go de RAM) |
@@ -27,7 +28,10 @@ tourne sur le Mac, les clients attendent quand le Mac est éteint.
 5. Arrêter le worker du Mac (fermer « Lancer IziCut ») pour éviter deux
    moteurs sur la même file — ce n'est pas dangereux, mais inutile.
 
-> Pourquoi OpenAI sur le serveur ? L'IA locale (Whisper + Ollama) demande
+> Groq (gratuit) : ~8 h d'audio transcrit par jour et ~8 000 jetons/min pour
+> l'analyse — une vidéo d'1 h est analysée en ~6 fenêtres (≈ 6 min).
+>
+> Pourquoi une IA distante sur le serveur ? L'IA locale (Whisper + Ollama) demande
 > ~8–16 Go de RAM : un serveur capable coûte 30–60 €/mois. Avec OpenAI,
 > une vidéo d'1 h coûte environ 0,40 € de transcription + quelques centimes
 > d'analyse — à intégrer dans le prix des offres.
