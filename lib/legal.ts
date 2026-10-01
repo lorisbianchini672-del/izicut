@@ -15,7 +15,7 @@ export const LEGAL = {
   /** Adresse postale (ou de domiciliation). */
   address: process.env.NEXT_PUBLIC_LEGAL_ADDRESS || 'Villeurbanne (69100), France',
   /** Adresse de contact affichée partout sur le site. */
-  contactEmail: process.env.NEXT_PUBLIC_CONTACT_EMAIL || 'support@izicut.app',
+  contactEmail: process.env.NEXT_PUBLIC_CONTACT_EMAIL || 'izicutcontact@gmail.com',
   /** TVA : franchise en base tant que le seuil n'est pas dépassé. */
   vatNote: 'TVA non applicable, art. 293 B du CGI'
 } as const;
