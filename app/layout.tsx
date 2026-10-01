@@ -2,11 +2,12 @@ import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { SiteNav } from '@/components/home/site-nav';
+import { getSiteUrl } from '@/lib/site-url';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist', display: 'swap' });
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono', display: 'swap' });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+const siteUrl = getSiteUrl();
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

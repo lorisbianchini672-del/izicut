@@ -1,3 +1,4 @@
+import { getSiteUrl } from './site-url';
 /**
  * ============================================================
  * lib/stripe.ts — Client Stripe + résolution des plans
@@ -47,5 +48,5 @@ export function planCreditsSeconds(planKey: PlanKey): number {
 
 /** URL de base de l'application (callbacks Stripe). */
 export function appBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  return getSiteUrl();
 }
