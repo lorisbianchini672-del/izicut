@@ -31,7 +31,7 @@ const POSTS: Post[] = [
     category: 'Sous-titres',
     readTime: '8 min',
     date: '12 sept. 2026',
-    accent: 'from-fuchsia-400 to-purple-500'
+    accent: 'from-neon to-cyan'
   },
   {
     title: 'YouTube → Shorts sans perdre la qualité',
@@ -40,7 +40,7 @@ const POSTS: Post[] = [
     category: 'Workflow',
     readTime: '5 min',
     date: '5 sept. 2026',
-    accent: 'from-rose-400 to-pink-500'
+    accent: 'from-rose-400 to-neon'
   },
   {
     title: 'Safe Zones : l’erreur qui tue la rétention',
@@ -67,7 +67,7 @@ const POSTS: Post[] = [
     category: 'Business',
     readTime: '9 min',
     date: '14 août 2026',
-    accent: 'from-violet-400 to-indigo-500'
+    accent: 'from-cyan to-cyan'
   }
 ];
 

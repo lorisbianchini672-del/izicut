@@ -23,7 +23,7 @@ const TEMPLATES: Array<{ key: StyleConfig['template']; label: string; preview: s
   { key: 'ios_notes', label: 'iOS Notes', preview: 'bg-yellow-50 text-gray-900' },
   { key: 'tweet', label: 'Tweet', preview: 'bg-sky-50 text-gray-900' },
   { key: 'minimal', label: 'Minimal', preview: 'bg-white text-gray-800' },
-  { key: 'colorful', label: 'Colorful', preview: 'bg-gradient-to-br from-purple-600 to-pink-600 text-white' },
+  { key: 'colorful', label: 'Colorful', preview: 'bg-gradient-to-br from-cyan to-neon text-white' },
 ];
 
 const SAFE_ZONE_LABELS = [

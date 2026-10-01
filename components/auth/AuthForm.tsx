@@ -172,7 +172,7 @@ export function AuthForm({ nextPath = '/dashboard', initialError = null, initial
         <div className="card-spotlight rounded-3xl border border-border/60 bg-card/50 p-8 backdrop-blur-2xl">
           <h1 className="text-2xl font-black tracking-tight">
             <span className="text-foreground">Accédez au </span>
-            <span className="animate-gradient-x bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-rose-400 bg-[length:200%_auto] bg-clip-text text-transparent">
+            <span className="animate-gradient-x bg-gradient-to-r from-cyan-400 via-neon to-rose-400 bg-[length:200%_auto] bg-clip-text text-transparent">
               studio
             </span>
           </h1>

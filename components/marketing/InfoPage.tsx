@@ -106,7 +106,7 @@ export function InfoPage({
             className="mt-5 text-4xl font-black tracking-tight sm:text-5xl"
           >
             {head && <span className="text-foreground">{head} </span>}
-            <span className="animate-gradient-x bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-rose-400 bg-[length:200%_auto] bg-clip-text text-transparent">
+            <span className="animate-gradient-x bg-gradient-to-r from-cyan-400 via-neon to-rose-400 bg-[length:200%_auto] bg-clip-text text-transparent">
               {tail}
             </span>
           </motion.h1>

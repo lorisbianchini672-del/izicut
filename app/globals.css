@@ -36,25 +36,28 @@
 
 /* ---- Mode sombre IziCut (actif par défaut via classe .dark sur <html>) ---- */
 .dark {
-  --background: oklch(0.08 0.02 264);
-  --foreground: oklch(0.96 0.005 248);
-  --card: oklch(0.13 0.025 265);
-  --card-foreground: oklch(0.96 0.005 248);
-  --popover: oklch(0.13 0.025 265);
-  --popover-foreground: oklch(0.96 0.005 248);
-  --primary: oklch(0.65 0.28 293);
-  --primary-foreground: oklch(0.98 0.003 248);
-  --secondary: oklch(0.18 0.03 260);
-  --secondary-foreground: oklch(0.96 0.005 248);
-  --muted: oklch(0.18 0.03 260);
-  --muted-foreground: oklch(0.6 0.04 257);
-  --accent: oklch(0.65 0.26 330);
-  --accent-foreground: oklch(0.98 0.003 248);
-  --destructive: oklch(0.65 0.22 22);
-  --destructive-foreground: oklch(0.98 0.003 248);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.65 0.28 293);
+  /* Charte « studio de nuit » : noir profond, néon citron (primaire), cyan (accent) */
+  --background: #05060a;
+  --foreground: #eef0f5;
+  --card: #0a0c12;
+  --card-foreground: #eef0f5;
+  --popover: #0e1118;
+  --popover-foreground: #eef0f5;
+  --primary: #c8ff3d;
+  --primary-foreground: #05060a;
+  --secondary: #131722;
+  --secondary-foreground: #eef0f5;
+  --muted: #131722;
+  --muted-foreground: #9aa1b2;
+  --accent: #3de0ff;
+  --accent-foreground: #05060a;
+  --destructive: #ff3d7f;
+  --destructive-foreground: #05060a;
+  --border: rgb(255 255 255 / 8%);
+  --input: rgb(255 255 255 / 12%);
+  --ring: #c8ff3d;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
 /* Expose les jetons comme utilitaires Tailwind */
@@ -97,8 +100,8 @@
     font-family: var(--font-sans);
   }
   ::selection {
-    background: oklch(0.65 0.28 293 / 40%);
-    color: white;
+    background: oklch(0.94 0.21 125 / 40%);
+    color: #05060a;
   }
 }
 
@@ -106,9 +109,9 @@
    UTILITAIRES GLOBAUX — Identité visuelle IziCut
    ============================================================ */
 
-/* Gradient de texte violet → rose/fuchsia */
+/* Gradient de texte néon citron → cyan */
 .text-gradient {
-  background: linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #7c3aed 100%);
+  background: linear-gradient(135deg, #c8ff3d 0%, #3de0ff 50%, #9fcc2e 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -130,21 +133,21 @@
   pointer-events: none;
 }
 .bg-orb-purple {
-  background: radial-gradient(circle, oklch(0.65 0.28 293 / 25%) 0%, transparent 70%);
+  background: radial-gradient(circle, oklch(0.94 0.21 125 / 25%) 0%, transparent 70%);
 }
 .bg-orb-pink {
-  background: radial-gradient(circle, oklch(0.65 0.26 330 / 20%) 0%, transparent 70%);
+  background: radial-gradient(circle, oklch(0.84 0.14 210 / 20%) 0%, transparent 70%);
 }
 .bg-orb-blue {
-  background: radial-gradient(circle, oklch(0.55 0.22 260 / 20%) 0%, transparent 70%);
+  background: radial-gradient(circle, oklch(0.84 0.14 210 / 20%) 0%, transparent 70%);
 }
 
 /* Glow sur les boutons CTA */
 .glow-primary {
-  box-shadow: 0 0 30px oklch(0.65 0.28 293 / 40%);
+  box-shadow: 0 0 30px oklch(0.94 0.21 125 / 40%);
 }
 .glow-primary:hover {
-  box-shadow: 0 0 50px oklch(0.65 0.28 293 / 60%);
+  box-shadow: 0 0 50px oklch(0.94 0.21 125 / 60%);
 }
 
 /* ============================================================
@@ -187,7 +190,7 @@
 .dark ::-webkit-scrollbar { width: 6px; height: 6px; }
 .dark ::-webkit-scrollbar-track { background: var(--color-background); }
 .dark ::-webkit-scrollbar-thumb { background: oklch(0.35 0.04 265); border-radius: 4px; }
-.dark ::-webkit-scrollbar-thumb:hover { background: oklch(0.55 0.1 293); }
+.dark ::-webkit-scrollbar-thumb:hover { background: oklch(0.94 0.21 125); }
 
 /* ============================================================
    AMÉLIORATIONS ESTHÉTIQUES & INTERACTIVITÉ
@@ -200,7 +203,7 @@
   100% { background-position: 0% 50%; }
 }
 .animate-gradient-x {
-  background: linear-gradient(120deg, #a855f7, #ec4899, #7c3aed, #22d3ee, #a855f7);
+  background: linear-gradient(120deg, #c8ff3d, #3de0ff, #9fcc2e, #3de0ff, #c8ff3d);
   background-size: 300% auto;
   -webkit-background-clip: text;
   background-clip: text;
@@ -229,8 +232,8 @@
   background: conic-gradient(
     from var(--angle),
     transparent 0%,
-    oklch(0.65 0.28 293 / 80%) 12%,
-    oklch(0.65 0.26 330 / 80%) 24%,
+    oklch(0.94 0.21 125 / 80%) 12%,
+    oklch(0.84 0.14 210 / 80%) 24%,
     transparent 40%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -258,7 +261,7 @@
   border-radius: inherit;
   background: radial-gradient(
     320px circle at var(--x, 50%) var(--y, 50%),
-    oklch(0.65 0.28 293 / 12%),
+    oklch(0.94 0.21 125 / 12%),
     transparent 65%
   );
   opacity: 0;
@@ -373,7 +376,7 @@
   width: 6px;
   height: 6px;
   border-radius: 9999px;
-  background: linear-gradient(135deg, oklch(0.65 0.28 293), oklch(0.65 0.26 330));
+  background: linear-gradient(135deg, oklch(0.94 0.21 125), oklch(0.84 0.14 210));
 }
 .info-prose ol { list-style: decimal; padding-left: 1.35rem; display: grid; gap: 0.5rem; }
 .info-prose ol::marker,
@@ -410,7 +413,7 @@
 }
 .info-prose blockquote {
   border-left: 3px solid var(--primary);
-  background: oklch(0.65 0.28 293 / 8%);
+  background: oklch(0.94 0.21 125 / 8%);
   border-radius: 0 0.75rem 0.75rem 0;
   padding: 1rem 1.25rem;
   color: var(--foreground);
