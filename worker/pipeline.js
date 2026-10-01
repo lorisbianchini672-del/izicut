@@ -53,7 +53,31 @@ export const config = {
   ffmpeg: process.env.FFMPEG_PATH ?? '/usr/bin/ffmpeg',
   ffprobe: process.env.FFPROBE_PATH ?? '',
   ytdlp: process.env.YTDLP_PATH ?? '/usr/local/bin/yt-dlp',
+  // Serveur 24h/24 : YouTube bloque souvent les IP de datacenter.
+  // YTDLP_COOKIES_B64 = fichier cookies.txt (format Netscape) encodé base64,
+  // YTDLP_COOKIES_FILE = chemin d'un cookies.txt, YTDLP_PROXY = proxy http(s).
+  ytdlpCookiesB64: process.env.YTDLP_COOKIES_B64 ?? '',
+  ytdlpCookiesFile: process.env.YTDLP_COOKIES_FILE ?? '',
+  ytdlpProxy: process.env.YTDLP_PROXY ?? '',
 };
+
+let cookiesPathPromise = null;
+/** Arguments yt-dlp supplémentaires (cookies / proxy), calculés une fois. */
+async function ytdlpAuthArgs() {
+  const args = [];
+  if (config.ytdlpProxy) args.push('--proxy', config.ytdlpProxy);
+  if (config.ytdlpCookiesFile) {
+    args.push('--cookies', config.ytdlpCookiesFile);
+  } else if (config.ytdlpCookiesB64) {
+    cookiesPathPromise ??= (async () => {
+      const file = path.join(tmpdir(), 'izicut-yt-cookies.txt');
+      await writeFile(file, Buffer.from(config.ytdlpCookiesB64, 'base64'), { mode: 0o600 });
+      return file;
+    })();
+    args.push('--cookies', await cookiesPathPromise);
+  }
+  return args;
+}
 
 export function createSupabase() {
   if (!config.supabaseUrl || !config.serviceKey) {
@@ -164,7 +188,9 @@ export async function runIngest(supabase, job, project, options = {}) {
       // les droits (condition des CGU YouTube — risque juridique réel).
       await run(config.ytdlp, [
         '--no-playlist', '--no-warnings',
-        '-f', 'bv*+ba/b', '--merge-output-format', 'mp4',
+        ...(await ytdlpAuthArgs()),
+        // 1080p suffit pour un rendu 1080×1920 : téléchargement plus rapide.
+        '-f', 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b', '--merge-output-format', 'mp4',
         '-o', sourcePath,
         project.source_url,
       ], { timeoutMs: 30 * 60 * 1000 });

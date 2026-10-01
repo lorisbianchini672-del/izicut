@@ -134,8 +134,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background text-foreground pt-20 pb-16 px-4 relative overflow-hidden">
       {/* Orbes lumineux d'ambiance */}
-      <div className="bg-orb bg-orb-purple w-[600px] h-[600px] -top-32 -right-32 opacity-30 pointer-events-none" />
-      <div className="bg-orb bg-orb-pink w-[500px] h-[500px] bottom-10 -left-20 opacity-20 pointer-events-none" />
+      <div aria-hidden className="izi-grid pointer-events-none absolute inset-0 opacity-40 [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
 
       <div className="container mx-auto max-w-7xl relative z-10 space-y-8">
         
@@ -143,13 +142,13 @@ export default function DashboardPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-border/40">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-3xl font-black text-foreground">Tableau de bord SaaS</h1>
+              <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">Mes projets</h1>
               <span className="px-3 py-0.5 rounded-full text-xs font-bold bg-primary/20 text-primary border border-primary/30">
                 {isSubscribed ? 'Abonnement actif' : 'Offre Free'}
               </span>
             </div>
             <p className="text-sm text-muted-foreground">
-              Gérez vos projets vidéo, suivez vos crédits et exportez vos clips 9:16 prêts pour les réseaux.
+              Collez un lien ou importez une vidéo : vos clips 9:16 sous-titrés arrivent ici.
             </p>
           </div>
 
@@ -180,13 +179,12 @@ export default function DashboardPage() {
                 {loading ? '—' : remainingCredits}{' '}
                 <span className="text-xl font-normal text-muted-foreground">
                   min restantes
-                  {totalCredits > 0 ? ` / ${totalCredits} min utilisées ou disponibles` : ''}
+                  
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {usedCredits} minute{usedCredits > 1 ? 's' : ''} consommée
-                {usedCredits > 1 ? 's' : ''} sur les 30 derniers jours · débit unique au lancement
-                du traitement
+                {usedCredits} min utilisée{usedCredits > 1 ? 's' : ''} ces 30 derniers jours · une vidéo
+                échouée est recréditée automatiquement
               </p>
             </div>
 
@@ -197,7 +195,7 @@ export default function DashboardPage() {
               <Button variant="gradient" size="sm" className="rounded-xl glow-primary font-bold" asChild>
                 <Link href="/#pricing">
                   <Zap className="w-4 h-4 mr-1.5" />
-                  Recharger des crédits
+                  Plus de minutes
                 </Link>
               </Button>
             </div>
@@ -207,7 +205,7 @@ export default function DashboardPage() {
           <div className="space-y-2">
             <div className="h-4 bg-muted/60 rounded-full overflow-hidden p-0.5 border border-border/40">
               <motion.div
-                className="h-full bg-gradient-to-r from-primary via-accent to-emerald-400 rounded-full shadow-lg shadow-primary/30"
+                className="h-full rounded-full bg-neon shadow-[0_0_16px_-2px_rgb(200_255_61/0.6)]"
                 initial={{ width: 0 }}
                 animate={{ width: `${percentageRemaining}%` }}
                 transition={{ duration: 1.2, ease: 'easeOut' }}
@@ -227,14 +225,14 @@ export default function DashboardPage() {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-xl font-black text-foreground">Vos Projets Vidéo</h2>
+              <h2 className="font-display text-xl font-semibold tracking-tight text-foreground">Vidéos</h2>
               <p className="text-xs text-muted-foreground">
-                Statuts synchronisés en temps réel · Cliquez sur un projet pour ouvrir le Studio de découpage
+                Cliquez sur une vidéo pour voir ses clips et les exporter
               </p>
             </div>
 
             {/* Filtres & Recherche */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <div className="relative">
                 <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -242,17 +240,17 @@ export default function DashboardPage() {
                   placeholder="Rechercher un projet..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 pr-4 py-2 text-xs rounded-xl bg-muted/30 border border-border/60 focus:outline-none focus:border-primary w-52 sm:w-64 text-foreground"
+                  className="pl-9 pr-4 py-2 text-xs rounded-xl bg-muted/30 border border-border/60 focus:outline-none focus:border-primary w-full sm:w-64 text-foreground"
                 />
               </div>
 
-              <div className="flex gap-1 p-1 bg-muted/40 rounded-xl border border-border/40 text-xs">
+              <div className="grid grid-cols-4 gap-1 p-1 bg-muted/40 rounded-xl border border-border/40 text-xs sm:flex">
                 {STATUS_FILTERS.map((filter) => (
                   <button
                     key={filter.id}
                     onClick={() => setStatusFilter(filter.id)}
                     className={cn(
-                      'px-3 py-1.5 rounded-lg font-semibold transition-all',
+                      'px-3 py-1.5 rounded-lg font-semibold transition-all whitespace-nowrap',
                       statusFilter === filter.id
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
@@ -319,22 +317,22 @@ export default function DashboardPage() {
                 >
                   <Link href={`/project/${project.id}`}>
                     <Card className="rounded-2xl border border-border/60 bg-card/40 backdrop-blur-md hover:border-primary/60 hover:bg-card/70 transition-all duration-300 p-5 group cursor-pointer shadow-lg hover:shadow-primary/10">
-                      <div className="flex items-start justify-between gap-4 mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
+                      <div className="flex flex-col-reverse items-start justify-between gap-3 mb-3 sm:flex-row sm:gap-4">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="w-10 h-10 shrink-0 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
                             {project.sourceType === 'external_url' ? (
                               <Youtube className="w-5 h-5 text-red-400" />
                             ) : (
                               <FileVideo className="w-5 h-5 text-primary" />
                             )}
                           </div>
-                          <div>
+                          <div className="min-w-0">
                             <span className="text-[11px] text-muted-foreground font-mono">
                               {project.sourceType === 'external_url'
                                 ? 'Source : lien externe'
                                 : 'Source : fichier local'}
                             </span>
-                            <h3 className="font-bold text-base text-foreground group-hover:text-primary transition-colors line-clamp-1">
+                            <h3 className="font-bold text-base text-foreground group-hover:text-primary transition-colors line-clamp-2">
                               {project.title}
                             </h3>
                           </div>
@@ -355,6 +353,12 @@ export default function DashboardPage() {
                         </span>
                       </div>
 
+                      {tone === 'error' && project.errorMessage ? (
+                        <p className="mb-3 rounded-xl border border-red-500/25 bg-red-500/5 px-3 py-2 text-xs leading-relaxed text-red-300">
+                          {project.errorMessage}
+                        </p>
+                      ) : null}
+
                       {/* Métadonnées */}
                       <div className="grid grid-cols-3 gap-2 py-3 border-t border-b border-border/30 my-3 text-center">
                         <div className="bg-muted/20 rounded-xl p-2">
@@ -370,7 +374,7 @@ export default function DashboardPage() {
                         <div className="bg-muted/20 rounded-xl p-2">
                           <p className="text-[10px] text-muted-foreground uppercase font-semibold">Top Viralité</p>
                           <p className="text-xs font-bold text-amber-400 mt-0.5">
-                            {project.bestScore ? `⭐ ${project.bestScore}/100` : 'En analyse'}
+                            {project.bestScore ? `${project.bestScore}/100` : tone === 'error' ? '—' : 'En analyse'}
                           </p>
                         </div>
                       </div>
@@ -379,7 +383,7 @@ export default function DashboardPage() {
                       <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
                         <span>{formatRelativeDate(project.createdAt)}</span>
                         <span className="text-primary font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                          Ouvrir le studio 9:16
+                          {tone === 'error' ? 'Voir le détail' : 'Voir les clips'}
                           <ArrowRight className="w-3.5 h-3.5" />
                         </span>
                       </div>

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { InfoPage, InfoSection } from '@/components/marketing/InfoPage';
+import { LEGAL, contactHref } from '@/lib/legal';
 
 export const metadata: Metadata = {
   title: 'Mentions légales',
@@ -24,69 +25,68 @@ export default function MentionsLegalesPage() {
       description="Informations relatives à l’éditeur de la plateforme IziCut, à son hébergement et aux conditions d’utilisation des contenus mis en ligne."
       breadcrumbs={[{ label: 'Accueil', href: '/' }, { label: 'Mentions légales' }]}
       toc={TOC}
-      updatedAt="22 septembre 2026"
+      updatedAt="1er octobre 2026"
     >
       <InfoSection id="editeur" title="Éditeur du site">
         <p>
-          Le site <strong>izicut.app</strong> et la plateforme de clipping vidéo assistée par
-          intelligence artificielle sont édités par :
+          Le site IziCut et la plateforme de clipping vidéo assistée par intelligence artificielle
+          sont édités par :
         </p>
         <ul>
           <li>
-            <strong>Dénomination :</strong> IziCut Technologies SAS
+            <strong>Éditeur :</strong> {LEGAL.editorName}
           </li>
           <li>
-            <strong>Forme juridique :</strong> société par actions simplifiée
+            <strong>Statut :</strong> {LEGAL.legalForm}
           </li>
           <li>
-            <strong>Siège social :</strong> France
+            <strong>SIRET :</strong> {LEGAL.siret || 'immatriculation en cours'}
           </li>
           <li>
-            <strong>Contact :</strong>{' '}
-            <a href="mailto:support@izicut.app">support@izicut.app</a>
+            <strong>Adresse :</strong> {LEGAL.address}
+          </li>
+          <li>
+            <strong>TVA :</strong> {LEGAL.vatNote}
+          </li>
+          <li>
+            <strong>Contact :</strong> <a href={contactHref}>{LEGAL.contactEmail}</a>
           </li>
         </ul>
         <p>
-          Le directeur de la publication est le représentant légal de la société. Ces informations
-          sont susceptibles d’évoluer ; la version en vigueur est celle publiée sur cette page.
+          Directeur de la publication : {LEGAL.editorName}. La version en vigueur de ces
+          informations est celle publiée sur cette page.
         </p>
       </InfoSection>
 
       <InfoSection id="hebergeur" title="Hébergement">
         <p>
-          L’application web est hébergée sur une infrastructure cloud mutualisée située dans
-          l’Union européenne. Le traitement des vidéos (transcription, analyse et rendu) est
-          effectué par des services de calcul dédiés, avec chiffrement des transferts en TLS.
+          Le site et l’application sont hébergés par des prestataires techniques ; les transferts
+          sont chiffrés (TLS).
         </p>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Composant</th>
+                <th>Prestataire</th>
                 <th>Rôle</th>
-                <th>Localisation des données</th>
+                <th>Coordonnées</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Hébergement applicatif</td>
-                <td>Site, dashboard, API</td>
-                <td>Union européenne</td>
+                <td>Vercel Inc.</td>
+                <td>Hébergement du site, du tableau de bord et de l’API</td>
+                <td>440 N Barranca Ave #4133, Covina, CA 91723, États-Unis — vercel.com</td>
               </tr>
               <tr>
-                <td>Base de données</td>
-                <td>Comptes, projets, clips</td>
-                <td>Union européenne</td>
+                <td>Supabase Inc.</td>
+                <td>Base de données, comptes, stockage des vidéos et clips</td>
+                <td>970 Toa Payoh North #07-04, Singapour 318992 — supabase.com</td>
               </tr>
               <tr>
-                <td>Stockage vidéo</td>
-                <td>Sources et rendus (buckets privés)</td>
-                <td>Union européenne</td>
-              </tr>
-              <tr>
-                <td>Moteurs IA</td>
-                <td>Transcription et scoring</td>
-                <td>Selon le prestataire sous-traitant</td>
+                <td>Stripe Payments Europe Ltd.</td>
+                <td>Paiement sécurisé des abonnements</td>
+                <td>1 Grand Canal Street Lower, Dublin 2, Irlande — stripe.com</td>
               </tr>
             </tbody>
           </table>
@@ -136,7 +136,7 @@ export default function MentionsLegalesPage() {
       <InfoSection id="contact" title="Contact">
         <p>
           Pour toute question juridique, réclamation ou demande relative à vos données :{' '}
-          <a href="mailto:support@izicut.app">support@izicut.app</a>. Voir également nos{' '}
+          <a href={contactHref}>{LEGAL.contactEmail}</a>. Voir également nos{' '}
           <a href="/cgu">conditions générales d’utilisation</a> et notre{' '}
           <a href="/confidentialite">politique de confidentialité</a>.
         </p>

@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 const COLUMNS = [
   { title: 'Produit', links: [['Fonctionnalités', '/#features'], ['Studio', '/#studio'], ['Tarifs', '/#pricing'], ['Importer une vidéo', '/upload']] },
-  { title: 'Ressources', links: [['Documentation', '/docs'], ['Guide du format 9:16', '/guide-9-16'], ['Blog', '/blog'], ['FAQ', '/#faq']] },
+  { title: 'Ressources', links: [['Guide du format 9:16', '/guide-9-16'], ['Blog', '/blog'], ['FAQ', '/#faq']] },
   { title: 'Légal', links: [['Conditions d’utilisation', '/cgu'], ['Confidentialité', '/confidentialite'], ['Mentions légales', '/mentions-legales']] },
 ] as const;
 

@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { Twitter, Youtube, Github, Send, Globe, Moon, CheckCircle2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Logo } from '@/components/landing/Logo';
+import { contactHref } from '@/lib/legal';
 
 const FOOTER_COLUMNS = [
   {
@@ -49,7 +50,7 @@ const FOOTER_COLUMNS = [
       { label: "Centre d'aide & FAQ", href: '/#faq' },
       { label: "Statut de l'infrastructure (99.9%)", href: '/dashboard' },
       { label: 'Blog créateurs (astuces IA)', href: '/blog' },
-      { label: 'Support & assistance 7j/7', href: 'mailto:support@izicut.app' },
+      { label: 'Support & assistance 7j/7', href: contactHref },
     ],
   },
 ];
@@ -116,7 +117,7 @@ export function Footer() {
 
         <div className="pt-8 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
           <div className="flex flex-col items-center gap-2 text-center sm:flex-row sm:gap-4 sm:text-left">
-            <span>© {currentYear} <strong>IziCut Technologies SAS</strong>. Fait avec ❤️ pour les créateurs.</span>
+            <span>© {currentYear} <strong>IziCut</strong>. Fait avec ❤️ pour les créateurs.</span>
             <nav aria-label="Liens légaux" className="flex flex-wrap items-center justify-center gap-3">
               <Link href="/mentions-legales" className="transition-colors hover:text-foreground">Mentions légales</Link>
               <Link href="/cgu" className="transition-colors hover:text-foreground">CGU</Link>

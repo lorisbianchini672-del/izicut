@@ -515,7 +515,7 @@ export function VideoEditor({ clipId }: VideoEditorProps) {
           <Button variant="ghost" size="sm" className="h-9 rounded-xl" asChild>
             <Link href="/dashboard">
               <ArrowLeft className="mr-1.5 h-4 w-4" />
-              <span className="hidden sm:inline">Dashboard</span>
+              <span className="hidden sm:inline">Mes projets</span>
             </Link>
           </Button>
           <input

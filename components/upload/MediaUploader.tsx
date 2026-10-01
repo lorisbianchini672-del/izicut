@@ -277,7 +277,7 @@ export function MediaUploader(props: MediaUploaderProps) {
               onClick={startFileUpload}
               disabled={!file}
             >
-              Uploader et analyser
+              Lancer l’analyse IA
             </Button>
           ) : (
             <Button

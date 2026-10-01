@@ -18,6 +18,7 @@
  * ============================================================
  */
 import './load-env.js'; // doit rester le premier import (voir load-env.js)
+import { friendlyError } from './friendly-error.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { createSupabase, processJob } from './pipeline.js';
@@ -69,7 +70,7 @@ async function tryClaimAndRun(supabase) {
       console.error(`[worker] ✖ job ${id} : ${message}`);
       const { error: failError } = await supabase.rpc('fail_render_job', {
         p_job_id: id,
-        p_error: message,
+        p_error: friendlyError(message),
       });
       if (failError) {
         console.error(`[worker] fail_render_job : ${failError.message}`);

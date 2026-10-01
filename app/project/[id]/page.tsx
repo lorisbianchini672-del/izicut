@@ -78,6 +78,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   // URL signée (le compartiment `clips` est privé).
   const supabase = useMemo(() => createClient(), []);
 
+  const [reloadTick, setReloadTick] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -93,7 +95,11 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
 
       setProject(detail.project);
       setClips(detail.clips);
-      setSelectedClipId(detail.clips[0]?.id ?? null);
+      setSelectedClipId((current) =>
+        current && detail.clips.some((clip) => clip.id === current)
+          ? current
+          : detail.clips[0]?.id ?? null
+      );
       setWords(
         Object.fromEntries(detail.clips.map((clip) => [clip.id, clip.words]))
       );
@@ -111,7 +117,21 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     return () => {
       cancelled = true;
     };
-  }, [projectId, supabase]);
+  }, [projectId, supabase, reloadTick]);
+
+  // Tant que l'analyse tourne (ou qu'un rendu est en cours), la page se
+  // rafraîchit toute seule : le client n'a pas besoin de recharger.
+  const stillWorking =
+    !!project &&
+    (projectStatusTone(project.status) === 'working' ||
+      projectStatusTone(project.status) === 'queued' ||
+      clips.some((clip) => clip.status === 'queued' || clip.status === 'rendering'));
+
+  useEffect(() => {
+    if (!stillWorking) return;
+    const timer = window.setInterval(() => setReloadTick((tick) => tick + 1), 5000);
+    return () => window.clearInterval(timer);
+  }, [stillWorking]);
 
   const selectedClip =
     clips.find((clip) => clip.id === selectedClipId) ?? clips[0] ?? null;
@@ -174,7 +194,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           <Button variant="ghost" size="sm" className="rounded-xl" asChild>
             <Link href="/dashboard">
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Tableau de bord
+              Mes projets
             </Link>
           </Button>
 
@@ -190,14 +210,58 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
             </Card>
           ) : null}
 
-          {!loading && !loadError && !selectedClip ? (
-            <Card className="rounded-2xl border border-border/60 bg-card/40 p-10 text-center">
-              <Scissors className="mx-auto mb-3 h-8 w-8 text-primary" />
-              <p className="mb-2 font-semibold">Aucun clip pour ce projet</p>
-              <p className="text-sm text-muted-foreground">
-                Le traitement est peut-être encore en cours : l’analyse des moments forts précède
-                le découpage.
+          {!loading && !loadError && !selectedClip && project?.status === 'error' ? (
+            <Card className="rounded-2xl border border-red-500/30 bg-red-500/5 p-10 text-center">
+              <p className="mb-2 font-display text-lg font-semibold text-fg">Cette vidéo n’a pas pu être traitée</p>
+              <p className="mx-auto mb-2 max-w-md text-sm text-red-300">
+                {project.errorMessage ?? 'Une erreur est survenue pendant le traitement.'}
               </p>
+              <p className="mb-6 text-xs text-muted-foreground">
+                Vos minutes ont été recréditées automatiquement.
+              </p>
+              <div>
+                <Button variant="gradient" className="font-bold" asChild>
+                  <Link href="/upload">Essayer une autre vidéo</Link>
+                </Button>
+              </div>
+            </Card>
+          ) : null}
+
+          {!loading && !loadError && !selectedClip && project && project.status !== 'error' ? (
+            <Card className="rounded-2xl border border-border/60 bg-card/40 p-10 text-center">
+              {project.status === 'completed' ? (
+                <>
+                  <Scissors className="mx-auto mb-3 h-8 w-8 text-primary" />
+                  <p className="mb-2 font-semibold">Aucun moment fort détecté</p>
+                  <p className="text-sm text-muted-foreground">
+                    L’IA n’a pas trouvé de passage assez percutant dans cette vidéo. Essayez une vidéo
+                    où l’on parle davantage face caméra.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-neon/20 border-t-neon" />
+                  <p className="mb-1 font-display text-lg font-semibold text-fg">
+                    {PROJECT_STATUS_LABELS[project.status]}…
+                  </p>
+                  <p className="mx-auto max-w-md text-sm text-muted-foreground">
+                    L’IA regarde votre vidéo et choisit les meilleurs moments. Comptez quelques
+                    minutes ; cette page se met à jour toute seule.
+                  </p>
+                  <ol className="mx-auto mt-6 flex w-full max-w-sm justify-between text-[11px] text-fg-subtle">
+                    {(['processing_audio', 'transcribing', 'analyzing', 'completed'] as const).map((step) => {
+                      const order = ['draft', 'uploading', 'processing_audio', 'transcribing', 'analyzing', 'completed'];
+                      const done = order.indexOf(project.status) >= order.indexOf(step);
+                      return (
+                        <li key={step} className={cn('flex flex-col items-center gap-1.5', done && 'text-neon')}>
+                          <span className={cn('h-2 w-2 rounded-full', done ? 'bg-neon shadow-[0_0_10px_rgb(200_255_61/0.8)]' : 'bg-white/15')} />
+                          {step === 'processing_audio' ? 'Vidéo' : step === 'transcribing' ? 'Texte' : step === 'analyzing' ? 'Moments' : 'Clips'}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </>
+              )}
             </Card>
           ) : null}
         </div>
@@ -208,24 +272,23 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   return (
     <div className="min-h-screen bg-background text-foreground pt-20 pb-16 px-4 relative overflow-hidden">
       {/* Orbes d'ambiance */}
-      <div className="bg-orb bg-orb-purple w-[600px] h-[600px] -top-32 -left-32 opacity-25 pointer-events-none" />
-      <div className="bg-orb bg-orb-pink w-[500px] h-[500px] top-1/2 -right-32 opacity-20 pointer-events-none" />
+      <div aria-hidden className="izi-grid pointer-events-none absolute inset-0 opacity-40 [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
 
       <div className="container mx-auto max-w-7xl relative z-10 space-y-6">
 
         {/* Barre supérieure / Navigation projet */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/40">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" className="rounded-xl" asChild>
+          <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <Button variant="ghost" size="sm" className="rounded-xl -ml-2 sm:ml-0" asChild>
               <Link href="/dashboard">
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Tableau de bord
+                Mes projets
               </Link>
             </Button>
-            <span className="text-border">|</span>
-            <div>
-              <h1 className="text-xl font-bold flex items-center gap-2">
-                <span className="line-clamp-1">{project?.title ?? 'Projet'}</span>
+            <span className="hidden text-border sm:inline">|</span>
+            <div className="min-w-0">
+              <h1 className="font-display text-xl font-semibold tracking-tight flex flex-wrap items-center gap-2">
+                <span className="line-clamp-2">{project?.title ?? 'Projet'}</span>
                 <span
                   className={cn(
                     'px-2.5 py-0.5 rounded-full text-xs font-bold shrink-0',

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { InfoPage, InfoSection } from '@/components/marketing/InfoPage';
+import { LEGAL, contactHref } from '@/lib/legal';
 
 export const metadata: Metadata = {
   title: 'Conditions générales d’utilisation',
@@ -189,7 +190,7 @@ export default function CguPage() {
         <p>
           Les présentes conditions sont soumises au <strong>droit français</strong>. En cas de
           litige, une solution amiable sera recherchée en priorité via{' '}
-          <a href="mailto:support@izicut.app">support@izicut.app</a> avant toute action
+          <a href={contactHref}>{LEGAL.contactEmail}</a> avant toute action
           contentieuse.
         </p>
       </InfoSection>

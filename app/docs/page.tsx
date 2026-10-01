@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import { InfoPage, InfoSection } from '@/components/marketing/InfoPage';
+import { LEGAL, contactHref } from '@/lib/legal';
 
 export const metadata: Metadata = {
-  title: 'Documentation API & Webhooks',
+  title: 'API IziCut (bientôt disponible)',
+  robots: { index: false, follow: true },
   description:
     "API REST IziCut : créez des projets, suivez le pipeline IA (Whisper, GPT-4o-mini, Remotion), récupérez vos clips 9:16 et écoutez les webhooks de rendu.",
   openGraph: {
@@ -30,9 +32,15 @@ export default function DocsPage() {
       breadcrumbs={[{ label: 'Accueil', href: '/' }, { label: 'Documentation' }]}
       toc={TOC}
       updatedAt="22 septembre 2026"
-      ctaLabel="Créer une clé API"
-      ctaHref="/dashboard"
+      ctaLabel="Demander un accès anticipé"
+      ctaHref={contactHref}
     >
+      <div className="mb-8 rounded-xl border border-neon/30 bg-neon/10 p-4 text-sm text-fg">
+        <strong>Bientôt disponible.</strong> L’API publique est en préparation : la page ci-dessous
+        présente l’aperçu prévu. Pour un accès anticipé, écrivez-nous à{' '}
+        <a href={contactHref}>{LEGAL.contactEmail}</a>.
+      </div>
+
       <InfoSection id="demarrage" title="Démarrage rapide">
         <p>
           L&apos;API IziCut est une <strong>API REST</strong> en JSON sur{' '}
@@ -391,7 +399,7 @@ curl -X POST https://izicut.app/api/v1/clips/CLIP_ID/render \\
         </div>
         <p>
           Une question d&apos;intégration ? Écrivez à{' '}
-          <a href="mailto:support@izicut.app">support@izicut.app</a> — réponse sous 24 h ouvrées.
+          <a href={contactHref}>{LEGAL.contactEmail}</a> — réponse sous 24 h ouvrées.
         </p>
       </InfoSection>
 

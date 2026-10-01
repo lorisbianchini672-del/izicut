@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ArrowRight, Flame } from 'lucide-react';
 import { InfoPage, InfoSection } from '@/components/marketing/InfoPage';
 import { BlogGrid } from '@/components/marketing/BlogGrid';
+import { LEGAL, contactHref } from '@/lib/legal';
 
 export const metadata: Metadata = {
   title: 'Blog créateurs',
@@ -75,7 +76,7 @@ export default function BlogPage() {
         </ul>
         <p>
           Une idée de sujet ou une méthode qui marche pour vous ? Écrivez-nous à{' '}
-          <a href="mailto:support@izicut.app">support@izicut.app</a> : les meilleures contributions
+          <a href={contactHref}>{LEGAL.contactEmail}</a> : les meilleures contributions
           sont publiées ici.
         </p>
       </InfoSection>

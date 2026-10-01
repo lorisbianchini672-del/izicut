@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { InfoPage, InfoSection } from '@/components/marketing/InfoPage';
+import { LEGAL, contactHref } from '@/lib/legal';
 
 export const metadata: Metadata = {
   title: 'Politique de confidentialité',
@@ -162,7 +163,7 @@ export default function ConfidentialitePage() {
         </p>
         <ol>
           <li>
-            Écrivez à <a href="mailto:support@izicut.app">support@izicut.app</a> depuis l’adresse
+            Écrivez à <a href={contactHref}>{LEGAL.contactEmail}</a> depuis l’adresse
             liée à votre compte.
           </li>
           <li>

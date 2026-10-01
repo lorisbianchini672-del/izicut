@@ -86,10 +86,10 @@ export default function UploadPage() {
         >
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-sm font-medium text-primary mb-6">
             <Zap className="w-4 h-4" />
-            Rendu par un worker dédié, jamais sur Vercel
+            Vos clips prêts en quelques minutes
           </div>
-          <h1 className="text-4xl font-black mb-3">
-            <span className="text-gradient">Importez votre vidéo</span>
+          <h1 className="font-display mb-3 text-4xl font-semibold tracking-tight text-fg sm:text-5xl">
+            Importez votre <span className="izi-neon-text">vidéo</span>
           </h1>
           <p className="text-muted-foreground">
             Fichier local jusqu’à 10 Go · YouTube · Twitch VOD
