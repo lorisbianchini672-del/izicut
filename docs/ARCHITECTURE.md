@@ -51,10 +51,13 @@ Next.js que le schéma Supabase et les RPC de crédits.
 
 ### 3.1 `ingest`
 
-- **Upload** : le navigateur demande une URL d'upload signée à
-  `/api/projects`, puis dépose le fichier directement dans
-  `sources/<user_id>/<project_id>/source.mp4`. Le fichier ne traverse
-  jamais Vercel (limite de taille de corps de requête).
+- **Upload** : le navigateur dépose le fichier directement dans le bucket
+  privé `raw-videos`, sous la clé `<user_id>/<fichier>` — le premier
+  segment **doit** être `auth.uid()`, c'est la politique RLS du bucket.
+  Le fichier ne traverse jamais Vercel (limite de taille de corps de
+  requête). La clé est ensuite transmise telle quelle à
+  `POST /api/pipeline/process` : **sans** préfixe de bucket (`raw-videos/`),
+  sinon l'URL signée de lecture pointerait un objet inexistant.
 - **YouTube** : le worker exécute
   `yt-dlp -f "bv*+ba/b" --merge-output-format mp4`.
   À faire uniquement sur des contenus dont l'utilisateur détient les
@@ -102,20 +105,37 @@ des temps strictement croissants ; `wordsInRange` recale le clip sur zéro.
   recadrés sur `start`), `layout`, `aspectRatio`.
 - Composition 9:16 : la source est recadrée en `object-cover` sur un
   canevas 1080x1920, les mots sont surlignés en cadence mot-à-mot. Un
-  `onProgress` met à jour `render_jobs.progress` et `clips.render_progress`,
-  ce qui alimente la barre de progression côté navigateur via Realtime.
-- Sortie : `clips/<user_id>/<clip_id>/clip.mp4`, plus une vignette JPEG.
+  `onProgress` met à jour `render_jobs.progress` (au plus une écriture
+  toutes les 4 s), ce qui alimentera la barre de progression côté
+  navigateur via Realtime.
+- Sortie : objet `<user_id>/<clip_id>.mp4` dans le bucket privé `clips` —
+  même convention que le SRT (premier segment = identifiant de
+  l'utilisateur, exigence de la politique RLS de lecture).
+- **Pas encore fait** : la vignette JPEG du clip, et
+  `clips.render_progress` cité plus haut n'existe pas en base — la
+  progression se lit sur `render_jobs.progress`.
 
 ### 3.5 Coûts et crédits
 
-- Réservation **avant** de lancer le rendu :
-  `reserve_credits(user_id, cost_minutes, job_id, clip_id)`.
-  Si le solde est insuffisant, la RPC lève `INSUFFICIENT_CREDITS` et
-  l'API répond 402 : aucun job n'est créé.
+- Réservation **au dépôt**, avant même l'ingestion :
+  `create_project_with_job(user_id, …, cost_seconds, kind)` débite le
+  solde, crée le projet **et** met le job `ingest` en file dans une seule
+  transaction. Le coût réservé est écrit sur le job
+  (`render_jobs.cost_seconds`), donc remboursable.
+  Si le solde est insuffisant, la RPC renvoie `insufficient_credits` et
+  l'API répond 402 : aucun projet, aucun job, aucun débit.
+- Coût réservé = durée annoncée + 20 % (`lib/pipeline-cost.ts`, module
+  pur et testé), plafonné à 4 h : la durée vient du client, elle n'est
+  qu'une estimation — le worker mesure la vraie durée avec `ffprobe`.
 - Job définitivement en échec (`attempts >= max_attempts`) :
-  `release_credits(...)` rembourse. Un succès ne rembourse jamais.
-- Le débit est **atomique** (voir section 4) : deux rendus simultanés ne
+  `release_credits(...)` rembourse en se basant sur le coût porté par le
+  job. Un succès ne rembourse jamais.
+- Le débit est **atomique** (voir section 4) : deux dépôts simultanés ne
   peuvent pas faire passer le solde en négatif.
+- **Jamais deux transactions séparées** pour « débiter puis insérer » :
+  si la seconde échoue, le solde reste amputé sans job — donc sans
+  remboursement possible. C'est précisément ce que corrige
+  `create_project_with_job`.
 
 ## 4. Pourquoi les crédits vivent en Postgres et pas dans l'application
 

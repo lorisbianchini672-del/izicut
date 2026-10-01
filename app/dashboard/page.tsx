@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Upload,
@@ -24,78 +24,110 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
+import {
+  fetchDashboardProjects,
+  fetchMonthlyUsage,
+  fetchProfileCredits,
+  type DashboardProject,
+  type ProfileCredits
+} from '@/lib/data/projects';
+import {
+  creditUsagePercent,
+  formatDuration,
+  formatRelativeDate,
+  projectStatusTone,
+  secondsToMinutes,
+  type StatusTone
+} from '@/lib/format';
+import { PROJECT_STATUS_LABELS } from '@/types';
 
-export type ProjectItem = {
-  id: string;
-  title: string;
-  source_type: 'upload' | 'url';
-  source_url?: string;
-  status: 'Upload' | 'Transcription' | 'Prêt';
-  duration_seconds: number;
-  clips_count: number;
-  best_score: number;
-  created_at: string;
+/** Filtres rapides, alignés sur les tonalités de statut (pas sur les libellés). */
+const STATUS_FILTERS = [
+  { id: 'all', label: 'Tous' },
+  { id: 'ready', label: 'Prêts' },
+  { id: 'working', label: 'En cours' },
+  { id: 'error', label: 'Échecs' }
+] as const;
+
+type StatusFilterId = (typeof STATUS_FILTERS)[number]['id'];
+
+/** Couleurs de badge par tonalité : le statut brut ne pilote pas le style. */
+const TONE_CLASSES: Record<StatusTone, string> = {
+  ready: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30',
+  working: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+  queued: 'bg-blue-500/10 text-blue-400 border border-blue-500/30',
+  error: 'bg-red-500/10 text-red-400 border border-red-500/30'
 };
-
-const INITIAL_PROJECTS: ProjectItem[] = [
-  {
-    id: 'proj-1',
-    title: 'Podcast Tech & IA — Épisode 42 (DeepSeek vs GPT)',
-    source_type: 'url',
-    source_url: 'https://youtube.com/watch?v=ScAJMChP4qs',
-    status: 'Prêt',
-    duration_seconds: 2450, // 40m50s
-    clips_count: 5,
-    best_score: 94,
-    created_at: 'Il y a 2 heures',
-  },
-  {
-    id: 'proj-2',
-    title: 'Masterclass E-commerce & Scalabilité 2026',
-    source_type: 'upload',
-    status: 'Transcription',
-    duration_seconds: 1820,
-    clips_count: 3,
-    best_score: 87,
-    created_at: 'Il y a 5 heures',
-  },
-  {
-    id: 'proj-3',
-    title: 'Interview Live Twitch — Décryptage Monétisation',
-    source_type: 'url',
-    source_url: 'https://twitch.tv/videos/123456',
-    status: 'Upload',
-    duration_seconds: 3600,
-    clips_count: 0,
-    best_score: 0,
-    created_at: 'Hier',
-  },
-  {
-    id: 'proj-4',
-    title: 'Formation Productivité & Deep Work',
-    source_type: 'upload',
-    status: 'Prêt',
-    duration_seconds: 940,
-    clips_count: 4,
-    best_score: 91,
-    created_at: 'Il y a 2 jours',
-  },
-];
 
 export default function DashboardPage() {
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [projects] = useState<ProjectItem[]>(INITIAL_PROJECTS);
+  const [statusFilter, setStatusFilter] = useState<StatusFilterId>('all');
+  const [projects, setProjects] = useState<DashboardProject[]>([]);
+  const [credits, setCredits] = useState<ProfileCredits | null>(null);
+  const [usedSeconds, setUsedSeconds] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Crédits de minutes (150 min quota, 75 min utilisées)
-  const totalCredits = 150;
-  const usedCredits = 55;
-  const remainingCredits = totalCredits - usedCredits;
-  const percentageRemaining = Math.round((remainingCredits / totalCredits) * 100);
+  // Client navigateur : la RLS limite chaque lecture aux lignes de
+  // l'utilisateur connecté. Aucune clé de service n'entre dans l'interface.
+  const supabase = useMemo(() => createClient(), []);
 
-  const filteredProjects = projects.filter((p) => {
-    const matchesSearch = p.title.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        if (!cancelled) {
+          setLoadError('Session expirée : reconnectez-vous pour voir vos projets.');
+          setLoading(false);
+        }
+        return;
+      }
+
+      const [projectRows, profileCredits, monthlyUsage] = await Promise.all([
+        fetchDashboardProjects(supabase),
+        fetchProfileCredits(supabase, user.id),
+        fetchMonthlyUsage(supabase, user.id)
+      ]);
+
+      if (cancelled) return;
+      setProjects(projectRows);
+      setCredits(profileCredits);
+      setUsedSeconds(monthlyUsage);
+      setLoading(false);
+    };
+
+    load().catch((error: unknown) => {
+      if (cancelled) return;
+      setLoadError(
+        error instanceof Error ? error.message : 'Impossible de charger vos projets.'
+      );
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  // Solde réel : les secondes viennent de `profiles.video_credits_seconds`.
+  // Le total « ce mois-ci » = ce qu'il reste + ce qui a été consommé.
+  const balanceSeconds = credits?.balanceSeconds ?? 0;
+  const remainingCredits = secondsToMinutes(balanceSeconds);
+  const usedCredits = secondsToMinutes(usedSeconds);
+  const totalCredits = remainingCredits + usedCredits;
+  const percentageRemaining = creditUsagePercent(balanceSeconds, totalCredits * 60);
+  const isSubscribed = credits?.subscriptionStatus === 'active';
+
+  const filteredProjects = projects.filter((project) => {
+    const matchesSearch = project.title.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus =
+      statusFilter === 'all' || projectStatusTone(project.status) === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
@@ -113,7 +145,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-3xl font-black text-foreground">Tableau de bord SaaS</h1>
               <span className="px-3 py-0.5 rounded-full text-xs font-bold bg-primary/20 text-primary border border-primary/30">
-                Plan Pro
+                {isSubscribed ? 'Abonnement actif' : 'Offre Free'}
               </span>
             </div>
             <p className="text-sm text-muted-foreground">
@@ -142,13 +174,19 @@ export default function DashboardPage() {
             <div>
               <div className="flex items-center gap-2 text-xs font-bold text-primary uppercase tracking-wider mb-1">
                 <Clock className="w-4 h-4" />
-                Solde de crédits vidéo mensuels
+                Solde de crédits vidéo
               </div>
               <div className="text-3xl sm:text-4xl font-black text-foreground">
-                {remainingCredits} <span className="text-xl font-normal text-muted-foreground">min restantes / {totalCredits} min</span>
+                {loading ? '—' : remainingCredits}{' '}
+                <span className="text-xl font-normal text-muted-foreground">
+                  min restantes
+                  {totalCredits > 0 ? ` / ${totalCredits} min utilisées ou disponibles` : ''}
+                </span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Renouvellement automatique le 1er du mois prochain · {usedCredits} minutes traitées ce mois-ci
+                {usedCredits} minute{usedCredits > 1 ? 's' : ''} consommée
+                {usedCredits > 1 ? 's' : ''} sur les 30 derniers jours · débit unique au lancement
+                du traitement
               </p>
             </div>
 
@@ -178,7 +216,7 @@ export default function DashboardPage() {
             <div className="flex justify-between text-xs text-muted-foreground font-medium">
               <span>0 min</span>
               <span className="text-primary font-bold">{percentageRemaining}% disponible</span>
-              <span>{totalCredits} min (Plan Pro)</span>
+              <span>{totalCredits > 0 ? `${totalCredits} min sur la période` : 'Aucun crédit'}</span>
             </div>
           </div>
         </motion.div>
@@ -209,18 +247,18 @@ export default function DashboardPage() {
               </div>
 
               <div className="flex gap-1 p-1 bg-muted/40 rounded-xl border border-border/40 text-xs">
-                {['all', 'Prêt', 'Transcription', 'Upload'].map((st) => (
+                {STATUS_FILTERS.map((filter) => (
                   <button
-                    key={st}
-                    onClick={() => setStatusFilter(st)}
+                    key={filter.id}
+                    onClick={() => setStatusFilter(filter.id)}
                     className={cn(
                       'px-3 py-1.5 rounded-lg font-semibold transition-all',
-                      statusFilter === st
+                      statusFilter === filter.id
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
                     )}
                   >
-                    {st === 'all' ? 'Tous' : st}
+                    {filter.label}
                   </button>
                 ))}
               </div>
@@ -229,10 +267,48 @@ export default function DashboardPage() {
 
           {/* Grille des projets */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-5">
+            {loading &&
+              [0, 1, 2, 3].map((skeleton) => (
+                <div
+                  key={skeleton}
+                  className="h-48 animate-pulse rounded-2xl border border-border/60 bg-card/30"
+                />
+              ))}
+
+            {!loading && loadError ? (
+              <Card className="col-span-full rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-sm text-destructive">
+                <p className="mb-3 font-semibold">{loadError}</p>
+                <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
+                  Recharger
+                </Button>
+              </Card>
+            ) : null}
+
+            {!loading && !loadError && projects.length === 0 ? (
+              <Card className="col-span-full flex flex-col items-center gap-3 rounded-2xl border border-border/60 bg-card/40 p-10 text-center">
+                <Sparkles className="h-8 w-8 text-primary" />
+                <h3 className="text-lg font-bold">Votre premier projet vous attend</h3>
+                <p className="max-w-md text-sm text-muted-foreground">
+                  Importez une vidéo longue : IziCut en extrait les meilleurs moments, les recadre
+                  en 9:16 et les sous-titre mot à mot.
+                </p>
+                <Button variant="gradient" className="glow-primary font-bold" asChild>
+                  <Link href="/upload">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Importer une vidéo
+                  </Link>
+                </Button>
+              </Card>
+            ) : null}
+
+            {!loading && !loadError && projects.length > 0 && filteredProjects.length === 0 ? (
+              <p className="col-span-full text-center text-sm text-muted-foreground">
+                Aucun projet ne correspond à cette recherche ou à ce filtre.
+              </p>
+            ) : null}
+
             {filteredProjects.map((project, idx) => {
-              const minutes = Math.floor(project.duration_seconds / 60);
-              const seconds = project.duration_seconds % 60;
-              const formattedDuration = `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+              const tone = projectStatusTone(project.status);
 
               return (
                 <motion.div
@@ -246,7 +322,7 @@ export default function DashboardPage() {
                       <div className="flex items-start justify-between gap-4 mb-3">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
-                            {project.source_type === 'url' ? (
+                            {project.sourceType === 'external_url' ? (
                               <Youtube className="w-5 h-5 text-red-400" />
                             ) : (
                               <FileVideo className="w-5 h-5 text-primary" />
@@ -254,7 +330,9 @@ export default function DashboardPage() {
                           </div>
                           <div>
                             <span className="text-[11px] text-muted-foreground font-mono">
-                              {project.source_type === 'url' ? 'Source : Lien externe' : 'Source : Fichier local'}
+                              {project.sourceType === 'external_url'
+                                ? 'Source : lien externe'
+                                : 'Source : fichier local'}
                             </span>
                             <h3 className="font-bold text-base text-foreground group-hover:text-primary transition-colors line-clamp-1">
                               {project.title}
@@ -262,19 +340,18 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        {/* Badge de statut temps réel */}
+                        {/* Badge de statut : la couleur suit la tonalité, pas le libellé */}
                         <span
                           className={cn(
                             'px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 shrink-0',
-                            project.status === 'Prêt' && 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30',
-                            project.status === 'Transcription' && 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
-                            project.status === 'Upload' && 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                            TONE_CLASSES[tone]
                           )}
                         >
-                          {project.status === 'Prêt' && <CheckCircle2 className="w-3.5 h-3.5" />}
-                          {project.status === 'Transcription' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                          {project.status === 'Upload' && <Upload className="w-3.5 h-3.5 animate-pulse" />}
-                          {project.status}
+                          {tone === 'ready' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                          {tone === 'working' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                          {tone === 'queued' && <Upload className="w-3.5 h-3.5 animate-pulse" />}
+                          {tone === 'error' && <AlertCircle className="w-3.5 h-3.5" />}
+                          {PROJECT_STATUS_LABELS[project.status]}
                         </span>
                       </div>
 
@@ -282,25 +359,27 @@ export default function DashboardPage() {
                       <div className="grid grid-cols-3 gap-2 py-3 border-t border-b border-border/30 my-3 text-center">
                         <div className="bg-muted/20 rounded-xl p-2">
                           <p className="text-[10px] text-muted-foreground uppercase font-semibold">Durée source</p>
-                          <p className="text-xs font-bold text-foreground mt-0.5">{formattedDuration}</p>
+                          <p className="text-xs font-bold text-foreground mt-0.5">{formatDuration(project.durationSeconds)}</p>
                         </div>
                         <div className="bg-muted/20 rounded-xl p-2">
                           <p className="text-[10px] text-muted-foreground uppercase font-semibold">Clips IA générés</p>
-                          <p className="text-xs font-bold text-primary mt-0.5">{project.clips_count} clips</p>
+                          <p className="text-xs font-bold text-primary mt-0.5">
+                            {project.clipsCount} clip{project.clipsCount > 1 ? 's' : ''}
+                          </p>
                         </div>
                         <div className="bg-muted/20 rounded-xl p-2">
                           <p className="text-[10px] text-muted-foreground uppercase font-semibold">Top Viralité</p>
                           <p className="text-xs font-bold text-amber-400 mt-0.5">
-                            {project.best_score > 0 ? `⭐ ${project.best_score}/100` : 'En analyse'}
+                            {project.bestScore ? `⭐ ${project.bestScore}/100` : 'En analyse'}
                           </p>
                         </div>
                       </div>
 
                       {/* Pied de carte */}
                       <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
-                        <span>{project.created_at}</span>
+                        <span>{formatRelativeDate(project.createdAt)}</span>
                         <span className="text-primary font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                          Ouvrir l'éditeur 9:16
+                          Ouvrir le studio 9:16
                           <ArrowRight className="w-3.5 h-3.5" />
                         </span>
                       </div>

@@ -285,9 +285,13 @@ create policy "seul_own_rows" on public.clips
     auth.uid() = (select user_id from public.projects where id = project_id)
   );
 
+-- Jobs en LECTURE SEULE pour le client : s'il pouvait en insérer, il
+-- ferait traiter une vidéo sans aucun débit (cost_seconds = 0). Les jobs
+-- sont créés par le serveur (service_role) et le worker uniquement.
 drop policy if exists "seul_own_rows" on public.render_jobs;
-create policy "seul_own_rows" on public.render_jobs
-  for all using (auth.uid() = user_id);
+drop policy if exists "render_jobs_read_own" on public.render_jobs;
+create policy "render_jobs_read_own" on public.render_jobs
+  for select using (auth.uid() = user_id);
 
 -- Les crédits ne sont PAS modifiables par le client : lecture seule.
 -- Toutes les écritures passent par les RPC SECURITY DEFINER ci-dessous.
@@ -544,8 +548,18 @@ begin
 
   perform public.release_credits(p_job_id, 'job_failed');
 
-  -- Le projet porteur passe en erreur pour que le front l'affiche.
-  if v_job.project_id is not null then
+  -- Un clip en échec définitif est marqué comme tel, avec l'erreur.
+  if v_job.clip_id is not null then
+    update public.clips
+       set status = 'failed'
+     where id = v_job.clip_id;
+  end if;
+
+  -- Le PROJET ne passe en erreur que si l'échec vient d'une étape
+  -- d'ingestion : un rendu qui échoue ne doit pas effacer le fait que la
+  -- transcription et les clips existent (le front afficherait un projet en
+  -- erreur alors que les autres clips sont prêts).
+  if v_job.project_id is not null and v_job.kind <> 'render' then
     update public.projects
        set status = 'error',
            error_message = left(p_error, 500)
@@ -556,29 +570,134 @@ begin
 end;
 $$;
 
--- ---- Variant simple utilisé par l'API de création de projet ----
-create or replace function public.check_and_deduct_credits(
+-- ---- Dépôt d'une vidéo : débit des crédits + mise en file, ATOMIQUES ----
+-- Remplace check_and_deduct_credits, dont la faute était structurelle :
+-- le débit et l'insertion du projet vivaient dans DEUX transactions
+-- distinctes. Si l'insertion échouait, le solde restait débité sans job —
+-- donc sans remboursement possible, puisque release_credits rembourse à
+-- partir de render_jobs.cost_seconds (un job inexistant ne rembourse rien).
+--
+-- Ici : UNE seule transaction, et la réservation est portée par le job.
+-- Soit le projet ET son job existent et le solde est débité du coût, soit
+-- rien n'est écrit du tout.
+--
+-- Réservée au serveur (service_role) : le REVOKE plus bas empêche un
+-- client authentifié de débiter le compte d'un autre utilisateur.
+create or replace function public.create_project_with_job(
   p_user_id uuid,
-  p_seconds int
+  p_title text,
+  p_source_type text,
+  p_source_url text,
+  p_storage_path text,
+  p_duration_seconds int,
+  p_cost_seconds int,
+  p_kind text default 'ingest',
+  p_max_attempts int default 3
 )
-returns boolean
+returns jsonb
 language plpgsql security definer
 set search_path = public
 as $$
+declare
+  v_balance int;
+  v_project_id uuid;
+  v_job_id uuid;
 begin
-  return public.reserve_credits(p_user_id, p_seconds, null, 'pipeline_process');
+  if p_source_type not in ('upload_gallery', 'external_url') then
+    raise exception 'source_type invalide : %', p_source_type;
+  end if;
+
+  if p_kind not in ('ingest', 'transcribe', 'analyze', 'render') then
+    raise exception 'kind invalide : %', p_kind;
+  end if;
+
+  if p_cost_seconds < 0 then
+    raise exception 'p_cost_seconds ne peut pas être négatif';
+  end if;
+
+  if not exists (select 1 from public.credit_accounts where user_id = p_user_id) then
+    raise exception 'credit_account introuvable pour %', p_user_id;
+  end if;
+
+  -- 1. Débit. UPDATE ... WHERE sérialise les appels concurrents : le
+  --    verrou de ligne, puis la réévaluation de la condition après le
+  --    commit de la transaction concurrente, rendent impossible un solde
+  --    négatif (deux clics simultanés ne peuvent pas payer une fois).
+  update public.credit_accounts
+     set balance_seconds = balance_seconds - p_cost_seconds,
+         updated_at = now()
+   where user_id = p_user_id
+     and balance_seconds >= p_cost_seconds
+  returning balance_seconds into v_balance;
+
+  if v_balance is null then
+    -- Solde insuffisant : on renvoie un résultat exploitable plutôt
+    -- qu'une exception (l'API répond 402 sans bruit dans les logs).
+    return jsonb_build_object(
+      'ok', false,
+      'reason', 'insufficient_credits',
+      'balance_seconds',
+        (select balance_seconds from public.credit_accounts where user_id = p_user_id)
+    );
+  end if;
+
+  -- 2. Projet : le worker enchaîne ingest > transcribe > analyze.
+  insert into public.projects (
+    user_id, title, source_type, source_url, storage_path, duration_seconds, status
+  ) values (
+    p_user_id,
+    coalesce(nullif(left(coalesce(p_title, ''), 200), ''), 'Vidéo sans titre'),
+    p_source_type, p_source_url, p_storage_path, p_duration_seconds, 'processing_audio'
+  )
+  returning id into v_project_id;
+
+  -- 3. Job 'queued' : le worker le revendique via claim_render_job.
+  insert into public.render_jobs (
+    user_id, project_id, kind, status, attempts, max_attempts, progress, cost_seconds
+  ) values (
+    p_user_id, v_project_id, p_kind, 'queued', 0, greatest(1, p_max_attempts), 0, p_cost_seconds
+  )
+  returning id into v_job_id;
+
+  -- 4. Journal d'audit + miroir du solde sur le profil.
+  insert into public.credit_ledger (user_id, delta_seconds, reason, job_id, balance_after)
+  values (p_user_id, -p_cost_seconds, 'project_dispatch', v_job_id, v_balance);
+
+  update public.profiles
+     set video_credits_seconds = v_balance
+   where id = p_user_id;
+
+  return jsonb_build_object(
+    'ok', true,
+    'project_id', v_project_id,
+    'job_id', v_job_id,
+    'balance_seconds', v_balance
+  );
 end;
 $$;
 
+-- L'ancien helper « débit seul » disparaît : sur une base déjà installée
+-- il resterait appelable et permettrait de débiter sans créer de job.
+drop function if exists public.check_and_deduct_credits(uuid, int);
+
 revoke execute on function public.grant_credits(uuid, int, text, text) from public, anon, authenticated;
+revoke execute on function public.reserve_credits(uuid, int, uuid, text) from public, anon, authenticated;
 revoke execute on function public.release_credits(uuid, text) from public, anon, authenticated;
 revoke execute on function public.claim_render_job(text) from public, anon, authenticated;
 revoke execute on function public.complete_render_job(uuid, text) from public, anon, authenticated;
 revoke execute on function public.fail_render_job(uuid, text) from public, anon, authenticated;
-revoke execute on function public.check_and_deduct_credits(uuid, int) from public, anon;
+revoke execute on function public.create_project_with_job(uuid, text, text, text, text, int, int, text, int) from public, anon, authenticated;
 
-grant execute on function public.reserve_credits(uuid, int, uuid, text) to authenticated;
-grant execute on function public.check_and_deduct_credits(uuid, int) to authenticated;
+-- Seuls le serveur Next.js et le worker (service_role) exécutent ces
+-- fonctions. Les GRANT sont explicites : le droit ne doit pas dépendre des
+-- privilèges par défaut de l'instance.
+grant execute on function public.grant_credits(uuid, int, text, text) to service_role;
+grant execute on function public.reserve_credits(uuid, int, uuid, text) to service_role;
+grant execute on function public.release_credits(uuid, text) to service_role;
+grant execute on function public.claim_render_job(text) to service_role;
+grant execute on function public.complete_render_job(uuid, text) to service_role;
+grant execute on function public.fail_render_job(uuid, text) to service_role;
+grant execute on function public.create_project_with_job(uuid, text, text, text, text, int, int, text, int) to service_role;
 
 -- ============================================================
 -- 9. BUCKETS STORAGE (privés) + POLITIQUES
@@ -614,6 +733,52 @@ create policy "own_folder_read" on storage.objects
   );
 
 -- Le worker utilise service_role : il contourne ces politiques.
+
+-- ============================================================
+-- 10. OFFRE DE L'UTILISATEUR (plan) — écrite par le webhook Stripe
+-- ============================================================
+-- Le worker lit profiles.plan + subscription_status AU MOMENT DU RENDU
+-- pour décider des fonctions accessibles (lib/entitlements.ts).
+
+alter table public.profiles
+  add column if not exists plan text not null default 'free';
+
+alter table public.profiles
+  drop constraint if exists profiles_plan_check;
+alter table public.profiles
+  add constraint profiles_plan_check check (plan in ('free', 'pro', 'agency'));
+
+-- La politique RLS des profils laisse l'utilisateur modifier SA ligne
+-- (nom affiché…). Sans ce garde-fou, il pourrait s'attribuer lui-même
+-- l'offre Agency, un statut « active » ou le customer Stripe d'un autre.
+create or replace function public.protect_billing_columns()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_role text := coalesce(
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role',
+    ''
+  );
+begin
+  if v_role in ('anon', 'authenticated') and (
+       new.plan is distinct from old.plan
+    or new.subscription_status is distinct from old.subscription_status
+    or new.stripe_customer_id is distinct from old.stripe_customer_id
+    or new.stripe_subscription_id is distinct from old.stripe_subscription_id
+    or new.video_credits_seconds is distinct from old.video_credits_seconds
+  ) then
+    raise exception 'Colonnes de facturation en lecture seule'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_protect_billing on public.profiles;
+create trigger profiles_protect_billing
+  before update on public.profiles
+  for each row execute function public.protect_billing_columns();
 `;
 
 const outPath = path.join(process.cwd(), 'supabase', 'schema.sql');

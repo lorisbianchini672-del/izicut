@@ -39,12 +39,13 @@ izicut/
 │   ├── project/[id]/          Clips, score de viralité, téléchargements
 │   ├── editor/                Studio d'édition (In/Out, sous-titres, safe zones)
 │   └── api/
-│       └── pipeline/process/  Création projet + débit atomique des crédits
+│       └── pipeline/process/  Débit + projet + job `ingest` : UNE transaction
 ├── components/                Landing, upload, dashboard, editor, ui
 ├── lib/
 │   ├── supabase/              client.ts (navigateur), server.ts (SSR), admin.ts (service_role)
 │   ├── credits.ts             RPC grant/reserve/release (débit atomique)
-│   ├── jobs.ts                Mise en file d'un job (render_jobs)
+│   ├── jobs.ts                Mise en file d'un job (create_project_with_job)
+│   ├── pipeline-cost.ts       Coût réservé — module pur, testé
 │   ├── ai/prompts.ts          Prompts LLM + validation Zod
 │   ├── remotion/              Composition de référence (éditeur)
 │   └── plans.ts               Offres Free / Pro / Agency
@@ -77,15 +78,66 @@ Tout le socle est écrit et validé : configuration, schéma SQL complet
 `lib/jobs.ts`) et **le worker complet** (`worker/index.js`, `worker/pipeline.js`,
 `worker/remotion/`) — soit la chaîne `ingest → transcribe → analyze → render`.
 
-Vérifications : `npm run typecheck` (0 erreur), `npm test` (29/29),
+Vérifications : `npm run typecheck` (0 erreur), `npm test` (36/36),
 `npm run build` (succès), `npm run check:worker` (chargement du pipeline).
 
+Le **dépôt d'une vidéo est branché de bout en bout** : le navigateur dépose
+le fichier dans le bucket privé, puis `POST /api/pipeline/process` débite
+les crédits, crée le projet et met le job `ingest` en file dans **une seule
+transaction SQL** (`create_project_with_job`). Le coût réservé est porté par
+le job, donc remboursé par `release_credits` si le job échoue définitivement.
+Le worker n'a plus qu'à revendiquer le job via `claim_render_job`.
+
 Reste à faire avant la mise en production :
+- **rejouer `supabase/schema.sql`** — il ajoute aussi `profiles.plan`,
+  le trigger `profiles_protect_billing`, et passe `render_jobs` en
+  lecture seule pour le client (avant, un utilisateur pouvait insérer
+  lui-même un job et faire traiter une vidéo sans crédits) ;
+- ancien point, toujours valable — rejouer le schéma (ou `node scripts/apply-schema.cjs`) :
+  la RPC `create_project_with_job` est nouvelle, `check_and_deduct_credits`
+  est supprimée, et `reserve_credits` n'est plus exécutable par un client
+  `authenticated` (sinon n'importe quel utilisateur connecté pouvait vider
+  le solde d'un autre compte) ;
 - créer les deux prix Stripe et renseigner `STRIPE_PRICE_PRO` /
   `STRIPE_PRICE_AGENCY` dans `.env.local` ;
 - déclarer le webhook `https://<domaine>/api/stripe/webhook` dans le
   dashboard Stripe (`invoice.paid`, `checkout.session.completed`,
-  `customer.subscription.updated`, `customer.subscription.deleted`).
+  `customer.subscription.updated`, `customer.subscription.deleted`) ;
+- brancher `MediaUploader` dans les pages (`/upload`, `/dashboard`) : le
+  composant d'upload réel existe mais l'interface affiche encore des
+  données d'exemple.
+
+## Offres Free / Pro / Agency — ce qui est réellement débloqué
+
+Source unique : `lib/entitlements.ts` (module pur, testé par
+`lib/entitlements.test.ts`, partagé par Next.js ET le worker).
+
+| Fonction | Free | Pro | Agency |
+| --- | --- | --- | --- |
+| Clips IA par vidéo | 3 | 6 | 10 |
+| Styles de sous-titres | 2 | 6 | 6 |
+| Couleurs libres | — | ✅ | ✅ |
+| Suppression des silences (+ recalage des sous-titres) | — | ✅ | ✅ |
+| Zooms dynamiques, titre d'accroche, barre de progression | — | ✅ | ✅ |
+| Fond flou / recadrage manuel | — | ✅ | ✅ |
+| Audio studio (débruitage, compression) | volume normalisé | ✅ | ✅ |
+| 60 fps, qualité maximale (CRF 17) | — | ✅ | ✅ |
+| Filigrane | oui | non | non |
+| Votre marque incrustée | — | — | ✅ |
+| Rendus par clip | 3 | illimités | illimités |
+
+**Où se joue la protection.** L'offre vient de `profiles.plan`, écrite
+uniquement par le webhook Stripe (trigger `profiles_protect_billing` :
+le client ne peut pas se l'attribuer). Les réglages sont rabotés par
+`sanitizeRenderSettings` deux fois : dans `POST /api/clips/[id]/render`
+et au moment du rendu dans le worker. Un abonnement résilié ou impayé
+retombe en Free.
+
+**Chaîne de rendu d'un clip** (`worker/pipeline.js` → `runRender`) :
+pré-découpe ffmpeg de l'extrait (cadence fixe, silences retirés, audio
+traité) → `worker/remotion/ClipVertical.tsx` (vidéo réelle, sous-titres
+paginés, zooms, titre, signature) → upload dans le bucket `clips`.
+La logique de montage est pure et testée : `worker/edit-plan.ts`.
 
 ## Prérequis de la machine
 
@@ -129,7 +181,7 @@ Le développement de l'interface peut se faire sans eux ; seul l'onglet
 | --- | --- | --- |
 | **0. Socle** | Projet Supabase, exécution du schéma, clés Stripe/OpenAI, `.env.local` | 0,5 j |
 | **1. Coquille Next** | `app/layout.tsx`, pages d'authentification, `middleware.ts` de session, dashboard vide | 1 j |
-| **2. Dépôt d'une vidéo** | `POST /api/projects` : insertion `projects` + job `ingest`, URL d'upload signée, envoi direct au Storage | 1 j |
+| **2. Dépôt d'une vidéo** ✅ | `POST /api/pipeline/process` : dépôt direct dans le bucket privé par le navigateur, puis débit + `projects` + job `ingest` **en une seule transaction** (`create_project_with_job`) | fait |
 | **3. Worker : ingestion** | Boucle `claim_render_job`, image Docker, `yt-dlp`/`ffprobe`, extraction audio, chronométrage | 1 j |
 | **4. Transcription** | Découpage, appels Whisper avec reprise, **recalage des offsets**, insertion `transcripts` | 1–2 j |
 | **5. Sélection LLM** | Prompt `json_schema`, validation Zod, rognage des bornes, insertion de 2–3 `clips` `suggested` | 1 j |
@@ -147,17 +199,21 @@ plus fragile et la plus coûteuse à corriger après coup : un décalage de
 clips suivants. Écrire ce test (offset de tranche + concaténation) **avant**
 de brancher Remotion.
 
-C'est fait, et c'est la seule partie du pipeline déjà couverte :
+C'est fait, et c'est la partie du pipeline la mieux couverte :
 
 - `worker/timestamps.ts` — module **PUR**, zéro dépendance : `planChunks`
   (découpage égal sous la limite des 25 Mo), `rebaseWords` (décalage de
   tranche), `mergeChunkWords` (recollage, doublons de frontière, monotonie),
   `wordsInRange` (recalage du clip sur zéro), `buildSrt`.
-- `worker/timestamps.test.ts` — 29 tests, dont un **test de non-régression**
+- `worker/timestamps.test.ts` — 24 tests, dont un **test de non-régression**
   qui échoue si le décalage de 600 s revient.
+- `lib/pipeline-cost.test.ts` — 7 tests du coût réservé : marge de 20 %,
+  plafond de 4 h, durées inexploitables, arrondi jamais en dessous.
+- `components/upload/validate-intake.test.ts` — 5 tests des règles de prise
+  en charge (extensions, plafond de 10 Go, liens YouTube / Twitch).
 
 ```bash
-cd izicut && npm test     # 29 tests, ~100 ms, aucune dépendance requise
+cd izicut && npm test     # 36 tests, ~100 ms, aucune dépendance requise
 ```
 
 ## Projet autonome

@@ -1,814 +1,1179 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+/**
+ * ============================================================
+ * components/editor/VideoEditor.tsx — Studio d'édition d'un clip
+ * ------------------------------------------------------------
+ * Données RÉELLES (clip, transcription, offre) lues avec le client
+ * navigateur : la RLS ne laisse voir que les clips de l'utilisateur.
+ *
+ * Aperçu en direct : la vidéo source (URL signée, bucket privé) avec
+ * les sous-titres superposés, calculés comme au rendu. Le bouton
+ * « Générer » envoie les réglages à POST /api/clips/[id]/render, qui
+ * les rabote selon l'offre puis met le rendu en file.
+ *
+ * Les fonctions payantes sont visibles mais verrouillées (cadenas +
+ * lien vers les offres) : l'utilisateur voit ce qu'il gagnerait.
+ * ============================================================
+ */
+
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  Play,
-  Pause,
-  RotateCcw,
-  Scissors,
-  Volume2,
-  VolumeX,
-  Type,
-  Crop,
-  Shield,
-  Download,
-  Sparkles,
-  Layers,
-  Film,
-  ZoomIn,
-  ZoomOut,
-  Save,
-  CheckCircle2,
-  Sliders,
-  Move,
-  Plus,
-  Smile,
-  Image as ImageIcon,
+  AlertTriangle,
   ArrowLeft,
-  ChevronRight,
-  SplitSquareVertical,
-  UserCheck,
-  Check
+  CheckCircle2,
+  Crop,
+  Crown,
+  Download,
+  Loader2,
+  Lock,
+  Pause,
+  Play,
+  Scissors,
+  Shield,
+  Sparkles,
+  Type,
+  Wand2
 } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  CAPTION_TEMPLATES,
+  ENTITLEMENTS,
+  FREE_ACTIVE_COLORS,
+  PLAN_TIER_LABELS,
+  hasFeature,
+  overlaySignature,
+  requiredTier,
+  resolvePlanTier,
+  sanitizeRenderSettings,
+  type CaptionTemplate,
+  type LockableFeature,
+  type PlanTier,
+  type RenderSettings
+} from '@/lib/entitlements';
+import { createClipSignedUrl } from '@/lib/data/projects';
+import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
+import { CLIP_STATUS_LABELS, type ClipStatus, type TranscriptWord } from '@/types';
 
 export type VideoEditorProps = {
   clipId: string;
-  initialTitle?: string;
-  initialDuration?: number;
 };
 
-type WordItem = {
+type LoadedClip = {
   id: string;
-  word: string;
-  start: number;
-  end: number;
-  emoji?: string;
+  title: string;
+  startTime: number;
+  endTime: number;
+  status: ClipStatus;
+  renderedStoragePath: string | null;
+  sourceDuration: number | null;
+  storagePath: string | null;
 };
 
-const INITIAL_TRANSCRIPT: WordItem[] = [
-  { id: '1', word: 'Si', start: 0.0, end: 0.3 },
-  { id: '2', word: 'vous', start: 0.3, end: 0.5 },
-  { id: '3', word: 'faites', start: 0.5, end: 0.8 },
-  { id: '4', word: 'encore', start: 0.8, end: 1.1 },
-  { id: '5', word: 'cette', start: 1.1, end: 1.4 },
-  { id: '6', word: 'erreur', start: 1.4, end: 1.9, emoji: '⚠️' },
-  { id: '7', word: 'en', start: 1.9, end: 2.1 },
-  { id: '8', word: '2026', start: 2.1, end: 2.6, emoji: '🚀' },
-  { id: '9', word: 'vous', start: 2.8, end: 3.1 },
-  { id: '10', word: 'perdez', start: 3.1, end: 3.6 },
-  { id: '11', word: 'votre', start: 3.6, end: 3.9 },
-  { id: '12', word: 'temps', start: 3.9, end: 4.5, emoji: '⏳' },
-  { id: '13', word: 'sur', start: 4.8, end: 5.1 },
-  { id: '14', word: 'TikTok', start: 5.1, end: 5.8, emoji: '📱' },
-  { id: '15', word: 'et', start: 5.8, end: 6.0 },
-  { id: '16', word: 'Reels', start: 6.0, end: 6.6, emoji: '🔥' },
-];
+type Tab = 'style' | 'montage' | 'cadrage' | 'texte' | 'export';
 
-export function VideoEditor({ clipId, initialTitle = "Clip IA #1 — Le piège mental qui détruit 90% des créateurs", initialDuration = 35.5 }: VideoEditorProps) {
-  // Lecture & Playhead
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(2.4);
-  const duration = initialDuration;
+const PRO_COLORS = ['#FFD400', '#FF3B6B', '#22D3EE', '#4ADE80', '#A855F7', '#FFFFFF', '#FF8A00'];
+const PREVIEW_WIDTH = 270;
+const PREVIEW_SCALE = PREVIEW_WIDTH / 1080;
 
-  // Montage In / Out
-  const [inPoint, setInPoint] = useState(0.0);
-  const [outPoint, setOutPoint] = useState(duration);
-  const [silenceRemoved, setSilenceRemoved] = useState(false);
+const PAGE_WORDS: Record<CaptionTemplate, number> = {
+  hormozi: 3,
+  clean: 6,
+  karaoke_box: 4,
+  neon: 3,
+  bold_pop: 1,
+  minimal: 7
+};
+const SIZE_FACTOR: Record<CaptionTemplate, number> = {
+  hormozi: 1,
+  clean: 0.8,
+  karaoke_box: 0.95,
+  neon: 1,
+  bold_pop: 1.55,
+  minimal: 0.6
+};
 
-  // Sous-titres
-  const [words, setWords] = useState<WordItem[]>(INITIAL_TRANSCRIPT);
-  const [activeTab, setActiveTab] = useState<'captions' | 'cadrage' | 'habillage' | 'audio'>('captions');
-  const [selectedFont, setSelectedFont] = useState('Montserrat');
-  const [fontSize, setFontSize] = useState(24);
-  const [activeColor, setActiveColor] = useState('#FACC15'); // Jaune Hormozi
-  const [captionYPosition, setCaptionYPosition] = useState(72); // % depuis le haut
-  const [captionAnimation, setCaptionAnimation] = useState<'karaoke' | 'pop' | 'glow'>('karaoke');
+type Row = Record<string, unknown>;
 
-  // Cadrage
-  const [framingMode, setFramingMode] = useState<'face_tracking' | 'split_screen' | 'manual'>('face_tracking');
-  const [showSafeZones, setShowSafeZones] = useState(true);
-  const [backgroundType, setBackgroundType] = useState<'blur' | 'color' | 'gradient'>('blur');
+function asNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
 
-  // Export
-  const [fps, setFps] = useState<'30' | '60'>('60');
-  const [bitrate, setBitrate] = useState<'8' | '16'>('16');
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportModal, setExportModal] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
+function readWords(value: unknown): TranscriptWord[] {
+  const list = Array.isArray((value as Row | null)?.words) ? ((value as Row).words as Row[]) : [];
+  return list
+    .map((w) => ({ word: String(w.word ?? ''), start: asNumber(w.start, -1), end: asNumber(w.end, -1) }))
+    .filter((w) => w.word.trim() && w.start >= 0 && w.end >= 0);
+}
 
-  // Simulation playhead
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isPlaying) {
-      interval = setInterval(() => {
-        setCurrentTime((prev) => {
-          if (prev >= outPoint) {
-            setIsPlaying(false);
-            return inPoint;
-          }
-          return prev + 0.1;
-        });
-      }, 100);
+type PageWord = TranscriptWord & { i: number };
+type CaptionPage = { words: PageWord[]; start: number; end: number };
+
+/** Page de sous-titres affichée à l'instant t (même logique que le rendu). */
+function pageAt(words: TranscriptWord[], t: number, maxWords: number): CaptionPage | null {
+  const pages: CaptionPage[] = [];
+  let current: PageWord[] = [];
+  words.forEach((w, i) => {
+    const prev = current[current.length - 1];
+    if (
+      prev &&
+      (current.length >= maxWords || w.start - prev.end > 0.6 || /[.!?…]$/.test(prev.word.trim()))
+    ) {
+      pages.push({ words: current, start: current[0].start, end: prev.end });
+      current = [];
     }
-    return () => clearInterval(interval);
-  }, [isPlaying, inPoint, outPoint]);
+    current.push({ ...w, i });
+  });
+  if (current.length) {
+    pages.push({ words: current, start: current[0].start, end: current[current.length - 1].end });
+  }
+  let page: CaptionPage | null = null;
+  for (let p = 0; p < pages.length; p++) {
+    if (pages[p].start > t) break;
+    const next = pages[p + 1];
+    page = t < Math.min(pages[p].end + 0.5, next ? next.start : Infinity) ? pages[p] : null;
+  }
+  return page;
+}
 
-  // Suppression des silences
-  const handleRemoveSilence = () => {
-    setSilenceRemoved(true);
-    // Ajuste le outPoint pour simuler le gain de 4.2 secondes
-    setOutPoint((prev) => Math.max(prev - 4.2, 5));
-  };
+// ---------- Petits composants ----------
 
-  // Édition de mot
-  const handleWordChange = (id: string, newText: string) => {
-    setWords((prev) => prev.map((w) => (w.id === id ? { ...w, word: newText } : w)));
-  };
-
-  // Déclencher export
-  const startExport = () => {
-    setExportModal(true);
-    setIsExporting(true);
-    setExportProgress(0);
-
-    const step = setInterval(() => {
-      setExportProgress((p) => {
-        if (p >= 100) {
-          clearInterval(step);
-          setIsExporting(false);
-          return 100;
-        }
-        return p + 10;
-      });
-    }, 200);
-  };
-
+function TierBadge({ tier }: { tier: PlanTier }) {
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col pt-16">
-      
-      {/* ============================================================
-          BARRE SUPÉRIEURE DU STUDIO (Command Bar)
-          ============================================================ */}
-      <header className="h-14 border-b border-border/50 bg-card/60 backdrop-blur-xl px-4 flex items-center justify-between shrink-0 z-30">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" className="rounded-xl h-9" asChild>
-            <Link href="/dashboard">
-              <ArrowLeft className="w-4 h-4 mr-1.5" />
-              <span className="hidden sm:inline">Dashboard</span>
-            </Link>
-          </Button>
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide',
+        tier === 'agency'
+          ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white'
+          : 'bg-gradient-to-r from-primary to-accent text-white'
+      )}
+    >
+      <Crown className="h-3 w-3" />
+      {PLAN_TIER_LABELS[tier]}
+    </span>
+  );
+}
 
-          <span className="text-border">|</span>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono px-2 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
-              {clipId}
-            </span>
-            <input
-              type="text"
-              defaultValue={initialTitle}
-              className="text-xs sm:text-sm font-bold bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-1 text-foreground max-w-[200px] sm:max-w-md truncate"
-            />
-          </div>
-        </div>
-
-        {/* Réglages d'encodage & Export */}
-        <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-2 bg-muted/40 px-2.5 py-1 rounded-xl border border-border/40 text-xs">
-            <span className="text-muted-foreground font-semibold">Rendu Remotion :</span>
-            <select
-              value={fps}
-              onChange={(e) => setFps(e.target.value as any)}
-              className="bg-transparent font-bold text-foreground focus:outline-none cursor-pointer"
-            >
-              <option value="30" className="bg-card">30 FPS</option>
-              <option value="60" className="bg-card">60 FPS (Ultra)</option>
-            </select>
-            <span className="text-border">·</span>
-            <select
-              value={bitrate}
-              onChange={(e) => setBitrate(e.target.value as any)}
-              className="bg-transparent font-bold text-foreground focus:outline-none cursor-pointer"
-            >
-              <option value="8" className="bg-card">8 Mbps</option>
-              <option value="16" className="bg-card">16 Mbps (Master)</option>
-            </select>
-          </div>
-
-          <Button
-            variant="gradient"
-            size="sm"
-            onClick={startExport}
-            className="glow-primary h-9 px-4 font-bold rounded-xl"
-          >
-            <Download className="w-4 h-4 mr-1.5" />
-            Exporter MP4 HD
-          </Button>
-        </div>
-      </header>
-
-      {/* ============================================================
-          ZONE CENTRALE : LECTEUR 9:16 + PANNEAU DE CONTRÔLES
-          ============================================================ */}
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-
-        {/* 1. LECTEUR SMARTPHONE VERTICAL 9:16 */}
-        <div className="flex-1 bg-black/40 p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden">
-          {/* Orbe ambiant */}
-          <div className="bg-orb bg-orb-purple w-[400px] h-[400px] opacity-20 pointer-events-none" />
-
-          {/* Smartphone 9:16 */}
-          <div className="relative w-[260px] sm:w-[300px] bg-slate-950 rounded-[2.8rem] border-4 border-slate-700/80 shadow-2xl overflow-hidden" style={{ aspectRatio: '9/16' }}>
-            
-            {/* Notch */}
-            <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-24 h-4 bg-slate-900 rounded-full z-30" />
-
-            {/* Fond vidéo simulé */}
-            <div
-              className="absolute inset-0 flex flex-col items-center justify-center transition-all duration-300"
-              style={{
-                background: backgroundType === 'blur'
-                  ? 'radial-gradient(circle, #3b0764 0%, #0f172a 100%)'
-                  : backgroundType === 'gradient'
-                  ? 'linear-gradient(135deg, #7c3aed 0%, #ec4899 100%)'
-                  : '#020617'
-              }}
-            >
-              {/* Effet cadrage */}
-              {framingMode === 'split_screen' && (
-                <div className="absolute inset-0 flex flex-col">
-                  <div className="flex-1 border-b-2 border-white/20 flex items-center justify-center bg-purple-950/40">
-                    <span className="text-xs font-bold text-white/60">Intervenant 1 (Hôte)</span>
-                  </div>
-                  <div className="flex-1 flex items-center justify-center bg-blue-950/40">
-                    <span className="text-xs font-bold text-white/60">Intervenant 2 (Invité)</span>
-                  </div>
-                </div>
-              )}
-
-              {framingMode === 'face_tracking' && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-32 h-44 rounded-2xl border-2 border-emerald-400/60 bg-emerald-400/5 flex flex-col items-center justify-between p-2">
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest bg-black/60 px-1 rounded">AI Face Track</span>
-                    <span className="text-[10px] text-white/60">Sujet centré</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Sous-titres dynamiques mot-à-mot (Draggable Y) */}
-              <div
-                className="absolute left-0 right-0 px-4 text-center z-20 transition-all cursor-move select-none"
-                style={{
-                  top: `${captionYPosition}%`,
-                  fontFamily: selectedFont
-                }}
-              >
-                <div className="inline-flex flex-wrap justify-center gap-1.5 p-2 rounded-xl bg-black/60 backdrop-blur-sm border border-white/10 shadow-xl">
-                  {words.slice(0, 8).map((w, idx) => (
-                    <span
-                      key={w.id}
-                      className={cn(
-                        'font-black tracking-tight text-sm uppercase transition-all duration-200',
-                        idx === 2 ? 'scale-115' : ''
-                      )}
-                      style={{
-                        fontSize: `${fontSize}px`,
-                        color: idx === 2 ? activeColor : '#FFFFFF',
-                        textShadow: idx === 2 ? `0 0 14px ${activeColor}90, 0 2px 4px #000` : '0 2px 4px #000'
-                      }}
-                    >
-                      {w.word} {w.emoji && <span>{w.emoji}</span>}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Masques Safe Zones TikTok / Reels */}
-              {showSafeZones && (
-                <div className="absolute inset-0 pointer-events-none z-30">
-                  <div className="absolute top-0 left-0 right-0 h-[14%] bg-red-500/20 border-b-2 border-red-500/40 flex items-center justify-center">
-                    <span className="text-[9px] font-bold text-red-300 uppercase tracking-widest">TikTok UI (Haut)</span>
-                  </div>
-                  <div className="absolute bottom-0 left-0 right-0 h-[22%] bg-red-500/20 border-t-2 border-red-500/40 flex items-end justify-center pb-2">
-                    <span className="text-[9px] font-bold text-red-300 uppercase tracking-widest">Description & Audio (Bas)</span>
-                  </div>
-                  <div className="absolute top-0 right-0 bottom-0 w-[18%] bg-red-500/10 border-l-2 border-red-500/30 flex items-center justify-center">
-                    <span className="text-[8px] font-bold text-red-300 rotate-90 uppercase tracking-widest">Boutons like/partage</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Bouton de lecture central */}
-            <button
-              type="button"
-              onClick={() => setIsPlaying(!isPlaying)}
-              className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-white transition-all transform hover:scale-110 z-20"
-            >
-              {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5 fill-white" />}
-            </button>
-          </div>
-
-          {/* Contrôles de lecture sous le smartphone */}
-          <div className="flex items-center gap-4 mt-4 bg-card/60 backdrop-blur-md px-4 py-2 rounded-2xl border border-border/50 text-xs">
-            <button
-              onClick={() => { setCurrentTime(inPoint); setIsPlaying(false); }}
-              className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
-              title="Retour au début In"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setIsPlaying(!isPlaying)}
-              className="p-1.5 rounded-lg bg-primary text-primary-foreground font-bold hover:bg-primary/90"
-            >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-white" />}
-            </button>
-            <span className="font-mono text-xs font-bold text-foreground">
-              {currentTime.toFixed(1)}s / {outPoint.toFixed(1)}s
-            </span>
-          </div>
-        </div>
-
-        {/* 2. PANNEAU LATÉRAL DROIT : ÉDITION POUSSÉE */}
-        <div className="w-full lg:w-[460px] border-l border-border/50 bg-card/40 backdrop-blur-xl flex flex-col shrink-0">
-          
-          {/* Onglets de personnalisation */}
-          <div className="flex border-b border-border/50 p-2 gap-1 bg-muted/20">
-            {[
-              { id: 'captions', label: 'Sous-titres', icon: <Type className="w-3.5 h-3.5" /> },
-              { id: 'cadrage', label: 'Cadrage 9:16', icon: <Crop className="w-3.5 h-3.5" /> },
-              { id: 'habillage', label: 'Habillage', icon: <Smile className="w-3.5 h-3.5" /> },
-              { id: 'audio', label: 'Audio & Silences', icon: <Volume2 className="w-3.5 h-3.5" /> },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-all',
-                  activeTab === tab.id
-                    ? 'bg-primary text-primary-foreground shadow-md'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
-                )}
-              >
-                {tab.icon}
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Corps de l'onglet actif */}
-          <div className="flex-1 p-5 overflow-y-auto space-y-6">
-
-            {/* TAB 1 : SOUS-TITRES POUSSÉS */}
-            {activeTab === 'captions' && (
-              <div className="space-y-5">
-                <div>
-                  <h3 className="text-sm font-black text-foreground mb-1">Typographie & Animation</h3>
-                  <p className="text-xs text-muted-foreground">Style karaoké mot-à-mot inspiré d'Alex Hormozi.</p>
-                </div>
-
-                {/* Couleur active */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                    Couleur du mot actif
-                  </label>
-                  <div className="flex items-center gap-2">
-                    {['#FACC15', '#EC4899', '#38BDF8', '#34D399', '#FFFFFF', '#A855F7'].map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => setActiveColor(c)}
-                        style={{ background: c }}
-                        className={cn(
-                          'w-8 h-8 rounded-xl border-2 transition-transform',
-                          activeColor === c ? 'scale-110 border-white shadow-lg' : 'border-transparent'
-                        )}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {/* Police & Taille */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">
-                      Police
-                    </label>
-                    <select
-                      value={selectedFont}
-                      onChange={(e) => setSelectedFont(e.target.value)}
-                      className="w-full p-2.5 rounded-xl bg-muted/40 border border-border/50 text-xs font-bold text-foreground focus:outline-none focus:border-primary"
-                    >
-                      <option value="Montserrat">Montserrat (Gras)</option>
-                      <option value="Inter">Inter (Épuré)</option>
-                      <option value="Space Grotesk">Space Grotesk (High-Tech)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Taille</label>
-                      <span className="text-xs font-mono font-bold">{fontSize}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={16}
-                      max={36}
-                      value={fontSize}
-                      onChange={(e) => setFontSize(Number(e.target.value))}
-                      className="w-full accent-primary mt-2"
-                    />
-                  </div>
-                </div>
-
-                {/* Position Y des sous-titres */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <Move className="w-3.5 h-3.5" /> Position verticale
-                    </label>
-                    <span className="text-xs font-mono font-bold">{captionYPosition}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={20}
-                    max={85}
-                    value={captionYPosition}
-                    onChange={(e) => setCaptionYPosition(Number(e.target.value))}
-                    className="w-full accent-primary"
-                  />
-                  <div className="flex justify-between text-[10px] text-muted-foreground">
-                    <span>Haut (20%)</span>
-                    <span>Centre (50%)</span>
-                    <span>Bas (75% - Idéal)</span>
-                  </div>
-                </div>
-
-                {/* Éditeur mot-à-mot */}
-                <div className="space-y-2 pt-2 border-t border-border/40">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                      Transcription mot-à-mot (Édition manuelle)
-                    </label>
-                    <span className="text-[10px] text-primary">Modifiable en direct</span>
-                  </div>
-
-                  <div className="p-3 rounded-2xl bg-muted/20 border border-border/40 max-h-56 overflow-y-auto space-y-2">
-                    {words.map((w, idx) => (
-                      <div key={w.id} className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono text-muted-foreground w-12 shrink-0">
-                          {w.start.toFixed(1)}s
-                        </span>
-                        <input
-                          type="text"
-                          value={w.word}
-                          onChange={(e) => handleWordChange(w.id, e.target.value)}
-                          className="flex-1 p-1.5 text-xs font-semibold rounded-lg bg-card/60 border border-border/40 focus:border-primary text-foreground"
-                        />
-                        {w.emoji && (
-                          <span className="text-sm px-1.5 py-0.5 rounded bg-muted">{w.emoji}</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2 : CADRAGE 9:16 & SAFE ZONES */}
-            {activeTab === 'cadrage' && (
-              <div className="space-y-5">
-                <div>
-                  <h3 className="text-sm font-black text-foreground mb-1">Cadrage Intelligent</h3>
-                  <p className="text-xs text-muted-foreground">Adaptez la vidéo horizontale au format vertical 9:16.</p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2.5">
-                  <button
-                    onClick={() => setFramingMode('face_tracking')}
-                    className={cn(
-                      'p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between',
-                      framingMode === 'face_tracking'
-                        ? 'border-primary bg-primary/10 text-primary shadow-sm'
-                        : 'border-border/60 bg-muted/20 text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <UserCheck className="w-5 h-5 text-primary" />
-                      <div>
-                        <div className="text-xs font-bold text-foreground">Suivi de Visage IA (Face Tracking)</div>
-                        <div className="text-[11px] text-muted-foreground">Centre automatiquement l'orateur principal.</div>
-                      </div>
-                    </div>
-                    {framingMode === 'face_tracking' && <Check className="w-4 h-4 text-primary" />}
-                  </button>
-
-                  <button
-                    onClick={() => setFramingMode('split_screen')}
-                    className={cn(
-                      'p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between',
-                      framingMode === 'split_screen'
-                        ? 'border-primary bg-primary/10 text-primary shadow-sm'
-                        : 'border-border/60 bg-muted/20 text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <SplitSquareVertical className="w-5 h-5 text-accent" />
-                      <div>
-                        <div className="text-xs font-bold text-foreground">Split-Screen Multi-intervenants</div>
-                        <div className="text-[11px] text-muted-foreground">Écran scindé pour interviews et podcasts.</div>
-                      </div>
-                    </div>
-                    {framingMode === 'split_screen' && <Check className="w-4 h-4 text-primary" />}
-                  </button>
-                </div>
-
-                {/* Safe Zones Mask Switch */}
-                <div className="p-3.5 rounded-2xl bg-muted/30 border border-border/40 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Shield className={cn('w-4 h-4', showSafeZones ? 'text-red-400' : 'text-muted-foreground')} />
-                    <div>
-                      <p className="text-xs font-bold text-foreground">Masque Safe Zones</p>
-                      <p className="text-[10px] text-muted-foreground">Afficher les zones TikTok / Instagram Reels</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowSafeZones(!showSafeZones)}
-                    className={cn(
-                      'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                      showSafeZones ? 'bg-primary' : 'bg-muted'
-                    )}
-                  >
-                    <span className={cn(
-                      'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                      showSafeZones ? 'translate-x-6' : 'translate-x-1'
-                    )} />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 3 : HABILLAGE & B-ROLLS */}
-            {activeTab === 'habillage' && (
-              <div className="space-y-5">
-                <div>
-                  <h3 className="text-sm font-black text-foreground mb-1">Habillage & Arrière-plan</h3>
-                  <p className="text-xs text-muted-foreground">Gérez le fond et ajoutez des éléments d'accroche.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Style d'arrière-plan</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: 'blur', label: 'Flou Vidéo' },
-                      { id: 'gradient', label: 'Dégradé IA' },
-                      { id: 'color', label: 'Noir Pur' },
-                    ].map((b) => (
-                      <button
-                        key={b.id}
-                        onClick={() => setBackgroundType(b.id as any)}
-                        className={cn(
-                          'p-2.5 rounded-xl border text-xs font-bold transition-all text-center',
-                          backgroundType === b.id
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border/60 bg-muted/20 text-muted-foreground'
-                        )}
-                      >
-                        {b.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Autocollants & Emojis tendance</label>
-                  <div className="grid grid-cols-6 gap-2 text-xl p-3 bg-muted/20 rounded-2xl border border-border/40">
-                    {['🔥', '🚀', '💡', '⚠️', '📈', '🎯', '👀', '🤯', '💰', '⚡', '⏳', '🏆'].map((em) => (
-                      <button
-                        key={em}
-                        onClick={() => alert(`Emoji ${em} ajouté au clip à la position actuelle`)}
-                        className="p-2 rounded-lg hover:bg-muted hover:scale-125 transition-all text-center"
-                      >
-                        {em}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 4 : AUDIO & SUPPRESSION SILENCES */}
-            {activeTab === 'audio' && (
-              <div className="space-y-5">
-                <div>
-                  <h3 className="text-sm font-black text-foreground mb-1">Dynamique Sonore</h3>
-                  <p className="text-xs text-muted-foreground">Optimisez le rythme pour captiver l'algorithme.</p>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-transparent border border-primary/30 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <VolumeX className="w-5 h-5 text-accent" />
-                      <div>
-                        <h4 className="font-bold text-xs text-foreground">Suppression Automatique des Silences</h4>
-                        <p className="text-[10px] text-muted-foreground">Coupe les pauses & hésitations {'>'} 0.3s</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={handleRemoveSilence}
-                    disabled={silenceRemoved}
-                    className="w-full rounded-xl text-xs font-bold bg-accent hover:bg-accent/90 text-white shadow-lg"
-                  >
-                    {silenceRemoved ? '✓ 4.2s de silences supprimés' : '⚡ Supprimer les silences en 1 clic'}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-
-      </div>
-
-      {/* ============================================================
-          ZONE INFÉRIEURE : TIMELINE MULTI-PISTES INTERACTIVE
-          ============================================================ */}
-      <footer className="h-44 border-t border-border/50 bg-card/60 backdrop-blur-xl p-3 flex flex-col shrink-0">
-        
-        {/* En-tête timeline : Outils de coupe & Zoom */}
-        <div className="flex items-center justify-between pb-2 border-b border-border/30 text-xs">
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => alert(`Coupe réalisée à ${currentTime.toFixed(2)}s`)}
-              className="h-7 text-xs rounded-lg border-border/60"
-            >
-              <Scissors className="w-3.5 h-3.5 mr-1" />
-              Scinder au curseur
-            </Button>
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleRemoveSilence}
-              className="h-7 text-xs rounded-lg border-border/60 text-accent"
-            >
-              <VolumeX className="w-3.5 h-3.5 mr-1" />
-              Nettoyer blancs
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="font-mono font-bold text-xs text-primary">
-              Point In: {inPoint.toFixed(1)}s ➔ Out: {outPoint.toFixed(1)}s (Durée: {(outPoint - inPoint).toFixed(1)}s)
-            </span>
-            <div className="flex items-center gap-1">
-              <button className="p-1 rounded hover:bg-muted text-muted-foreground"><ZoomOut className="w-3.5 h-3.5" /></button>
-              <button className="p-1 rounded hover:bg-muted text-muted-foreground"><ZoomIn className="w-3.5 h-3.5" /></button>
-            </div>
-          </div>
-        </div>
-
-        {/* Pistes de montage */}
-        <div className="flex-1 pt-2 space-y-1.5 relative overflow-x-auto select-none">
-          
-          {/* Piste 1 : Vidéo & Cut Points */}
-          <div className="h-7 bg-muted/30 rounded-lg flex items-center px-2 relative border border-border/30">
-            <span className="text-[10px] font-bold text-muted-foreground w-16 shrink-0 flex items-center gap-1">
-              <Film className="w-3 h-3 text-primary" /> Vidéo
-            </span>
-            <div className="flex-1 h-5 bg-primary/20 rounded relative flex items-center px-2">
-              <span className="text-[10px] font-semibold text-primary truncate">1080x1920 (Source HD)</span>
-              {/* Point In Draggable marker */}
-              <div
-                className="absolute top-0 bottom-0 w-2 bg-primary rounded cursor-ew-resize"
-                style={{ left: `${(inPoint / duration) * 100}%` }}
-                title="Point In"
-              />
-              {/* Point Out Draggable marker */}
-              <div
-                className="absolute top-0 bottom-0 w-2 bg-primary rounded cursor-ew-resize"
-                style={{ left: `${(outPoint / duration) * 100}%` }}
-                title="Point Out"
-              />
-            </div>
-          </div>
-
-          {/* Piste 2 : Audio & Silences */}
-          <div className="h-7 bg-muted/30 rounded-lg flex items-center px-2 relative border border-border/30">
-            <span className="text-[10px] font-bold text-muted-foreground w-16 shrink-0 flex items-center gap-1">
-              <Volume2 className="w-3 h-3 text-accent" /> Audio
-            </span>
-            <div className="flex-1 h-5 bg-accent/20 rounded relative flex items-center px-2 overflow-hidden">
-              {/* Onde sonore stylisée */}
-              <div className="w-full flex items-center gap-0.5 opacity-60">
-                {Array.from({ length: 60 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="w-1 bg-accent rounded-full"
-                    style={{ height: `${(i % 5 + 1) * 3}px` }}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Piste 3 : Sous-titres */}
-          <div className="h-7 bg-muted/30 rounded-lg flex items-center px-2 relative border border-border/30">
-            <span className="text-[10px] font-bold text-muted-foreground w-16 shrink-0 flex items-center gap-1">
-              <Type className="w-3 h-3 text-amber-400" /> Légendes
-            </span>
-            <div className="flex-1 h-5 bg-amber-500/20 rounded relative flex items-center px-2">
-              <span className="text-[10px] font-semibold text-amber-300 truncate">Hormozi Karaoke Sync (16 mots)</span>
-            </div>
-          </div>
-
-          {/* Curseur de lecture vertical (Playhead) */}
-          <div
-            className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg pointer-events-none z-20 flex flex-col items-center"
-            style={{ left: `calc(4rem + ${(currentTime / duration) * 80}%)` }}
-          >
-            <div className="w-2.5 h-2.5 bg-white rotate-45 -mt-1 shadow" />
-          </div>
-        </div>
-
-      </footer>
-
-      {/* ============================================================
-          MODAL D'EXPORTATION MP4 HD AVEC REMOTION
-          ============================================================ */}
-      <AnimatePresence>
-        {exportModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-card border border-border/80 rounded-3xl p-6 shadow-2xl text-center space-y-5"
-            >
-              <div className="w-16 h-16 rounded-3xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary mx-auto">
-                <Download className="w-8 h-8" />
-              </div>
-
-              <div>
-                <h3 className="text-xl font-black text-foreground">
-                  {isExporting ? 'Génération du rendu Remotion...' : 'Exportation Terminée !'}
-                </h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Format 1080×1920 HD · {fps} FPS · {bitrate} Mbps
-                </p>
-              </div>
-
-              {/* Barre de progression */}
-              <div className="space-y-2">
-                <div className="h-3 bg-muted/60 rounded-full overflow-hidden p-0.5 border border-border/40">
-                  <div
-                    className="h-full bg-gradient-to-r from-primary to-accent rounded-full transition-all duration-300"
-                    style={{ width: `${exportProgress}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs font-mono text-muted-foreground">
-                  <span>Encodage H.264</span>
-                  <span className="font-bold text-primary">{exportProgress}%</span>
-                </div>
-              </div>
-
-              {!isExporting && (
-                <div className="pt-2 flex flex-col gap-2">
-                  <Button
-                    variant="gradient"
-                    className="w-full rounded-xl font-bold h-11 glow-primary"
-                    onClick={() => {
-                      alert('Téléchargement du fichier MP4 (1080x1920) démarré !');
-                      setExportModal(false);
-                    }}
-                  >
-                    Télécharger le MP4 (1080×1920)
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="w-full rounded-xl h-10"
-                    onClick={() => setExportModal(false)}
-                  >
-                    Retour à l'éditeur
-                  </Button>
-                </div>
-              )}
-            </motion.div>
-          </div>
+function Toggle({
+  checked,
+  onChange,
+  disabled
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+        checked ? 'bg-primary' : 'bg-muted',
+        disabled && 'cursor-not-allowed opacity-50'
+      )}
+    >
+      <span
+        className={cn(
+          'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+          checked ? 'translate-x-6' : 'translate-x-1'
         )}
-      </AnimatePresence>
+      />
+    </button>
+  );
+}
 
+/** Ligne d'option : verrouillée (cadenas + lien offres) si non incluse. */
+function FeatureRow({
+  title,
+  description,
+  feature,
+  tier,
+  children
+}: {
+  title: string;
+  description: string;
+  feature?: LockableFeature;
+  tier: PlanTier;
+  children: ReactNode;
+}) {
+  const locked = feature ? !hasFeature(tier, feature) : false;
+  return (
+    <div
+      className={cn(
+        'flex items-center justify-between gap-3 rounded-2xl border p-3.5',
+        locked ? 'border-border/40 bg-muted/10' : 'border-border/50 bg-muted/20'
+      )}
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-xs font-bold text-foreground">
+          {title}
+          {locked && feature ? <TierBadge tier={requiredTier(feature)} /> : null}
+        </div>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{description}</p>
+      </div>
+      {locked ? (
+        <Link
+          href="/#pricing"
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-primary/40 px-2 py-1 text-[11px] font-bold text-primary hover:bg-primary/10"
+        >
+          <Lock className="h-3 w-3" /> Débloquer
+        </Link>
+      ) : (
+        children
+      )}
     </div>
   );
 }
 
+// ---------- Studio ----------
+
+export function VideoEditor({ clipId }: VideoEditorProps) {
+  const supabase = useMemo(() => createClient(), []);
+
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [clip, setClip] = useState<LoadedClip | null>(null);
+  const [tier, setTier] = useState<PlanTier>('free');
+  const [settings, setSettings] = useState<RenderSettings | null>(null);
+  const [words, setWords] = useState<TranscriptWord[]>([]);
+  const [title, setTitle] = useState('');
+  const [start, setStart] = useState(0);
+  const [end, setEnd] = useState(0);
+
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  const [renderedUrl, setRenderedUrl] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<'live' | 'final'>('live');
+  const [tab, setTab] = useState<Tab>('style');
+  const [showSafeZones, setShowSafeZones] = useState(false);
+
+  const [playing, setPlaying] = useState(false);
+  const [t, setT] = useState(0);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  /** Copie floutée de la vidéo (cadrage « fond flou »), synchronisée à la lecture. */
+  const bgRef = useRef<HTMLVideoElement | null>(null);
+
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string; upgrade?: boolean } | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  const entitlements = ENTITLEMENTS[tier];
+
+  // ---------- Chargement ----------
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error('Connectez-vous pour éditer ce clip.');
+
+      const { data: row, error } = await supabase
+        .from('clips')
+        .select(
+          'id, title, start_time, end_time, status, style_config, transcript_json, rendered_storage_path, projects ( storage_path, duration_seconds )'
+        )
+        .eq('id', clipId)
+        .maybeSingle();
+      if (error || !row) throw new Error('Clip introuvable : il a peut-être été supprimé.');
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('plan, subscription_status')
+        .eq('id', user.id)
+        .maybeSingle();
+      const userTier = resolvePlanTier(profile?.plan, profile?.subscription_status);
+
+      const r = row as Row;
+      const project = (r.projects ?? null) as Row | null;
+      const loaded: LoadedClip = {
+        id: String(r.id),
+        title: String(r.title ?? 'Clip sans titre'),
+        startTime: asNumber(r.start_time),
+        endTime: asNumber(r.end_time),
+        status: (r.status as ClipStatus) ?? 'suggested',
+        renderedStoragePath: typeof r.rendered_storage_path === 'string' ? r.rendered_storage_path : null,
+        sourceDuration: project?.duration_seconds != null ? asNumber(project.duration_seconds) : null,
+        storagePath: typeof project?.storage_path === 'string' ? project.storage_path : null
+      };
+
+      let source: string | null = null;
+      if (loaded.storagePath) {
+        const { data: signed } = await supabase.storage
+          .from('raw-videos')
+          .createSignedUrl(loaded.storagePath, 3600);
+        source = signed?.signedUrl ?? null;
+      }
+      const rendered = loaded.renderedStoragePath
+        ? await createClipSignedUrl(supabase, loaded.renderedStoragePath)
+        : null;
+
+      if (cancelled) return;
+      setClip(loaded);
+      setTier(userTier);
+      setSettings(sanitizeRenderSettings(r.style_config, userTier).settings);
+      setWords(readWords(r.transcript_json));
+      setTitle(loaded.title);
+      setStart(loaded.startTime);
+      setEnd(loaded.endTime);
+      setSourceUrl(source);
+      setRenderedUrl(rendered);
+      setPreviewMode(source ? 'live' : 'final');
+      setLoading(false);
+    })().catch((err: unknown) => {
+      if (cancelled) return;
+      setLoadError(err instanceof Error ? err.message : 'Impossible de charger ce clip.');
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [clipId, supabase]);
+
+  // ---------- Suivi du rendu en cours ----------
+  const status = clip?.status;
+  useEffect(() => {
+    if (status !== 'queued' && status !== 'rendering') return;
+    const timer = window.setInterval(async () => {
+      const { data } = await supabase
+        .from('clips')
+        .select('status, rendered_storage_path')
+        .eq('id', clipId)
+        .maybeSingle();
+      if (!data) return;
+      const next = data.status as ClipStatus;
+      const path = typeof data.rendered_storage_path === 'string' ? data.rendered_storage_path : null;
+      setClip((c) => (c ? { ...c, status: next, renderedStoragePath: path } : c));
+      if (next === 'ready' && path) {
+        setRenderedUrl(await createClipSignedUrl(supabase, path));
+        setPreviewMode('final');
+        setNotice({ kind: 'ok', text: 'Votre vidéo est prête : aperçu final affiché.' });
+      } else if (next === 'failed') {
+        setNotice({ kind: 'error', text: 'Le rendu a échoué. Modifiez un réglage puis relancez.' });
+      }
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [status, clipId, supabase]);
+
+  // ---------- Lecture de l'aperçu en direct ----------
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    const tick = () => {
+      const v = videoRef.current;
+      if (v) {
+        if (v.currentTime >= end) {
+          v.pause();
+          bgRef.current?.pause();
+          v.currentTime = start;
+          setPlaying(false);
+        }
+        setT(Math.max(0, v.currentTime - start));
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, start, end]);
+
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    const bg = bgRef.current;
+    if (playing) {
+      v.pause();
+      bg?.pause();
+      setPlaying(false);
+    } else {
+      if (v.currentTime < start || v.currentTime >= end) v.currentTime = start;
+      if (bg) {
+        bg.currentTime = v.currentTime;
+        void bg.play().catch(() => undefined);
+      }
+      void v.play().catch(() => setPlaying(false));
+      setPlaying(true);
+    }
+  };
+
+  const update = useCallback(<K extends keyof RenderSettings>(key: K, value: RenderSettings[K]) => {
+    setSettings((s) => (s ? { ...s, [key]: value } : s));
+    setDirty(true);
+  }, []);
+
+  // ---------- Enregistrement + rendu ----------
+  const boundsChanged = clip ? Math.abs(start - clip.startTime) > 0.01 || Math.abs(end - clip.endTime) > 0.01 : false;
+
+  const save = async () => {
+    if (!clip || !settings) return;
+    setSaving(true);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/clips/${clip.id}/render`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings,
+          start_time: start,
+          end_time: end,
+          title: title.trim() || undefined,
+          ...(boundsChanged ? {} : { words })
+        })
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        upgrade?: boolean;
+        removed?: string[];
+      };
+      if (!res.ok) {
+        setNotice({ kind: 'error', text: payload.error ?? 'Enregistrement impossible.', upgrade: payload.upgrade });
+        return;
+      }
+      setClip({ ...clip, status: 'queued', startTime: start, endTime: end, title });
+      setDirty(false);
+      setNotice({
+        kind: 'ok',
+        text:
+          payload.removed && payload.removed.length > 0
+            ? 'Rendu lancé. Certaines options réservées aux offres supérieures ont été ignorées.'
+            : 'Rendu lancé ! La vidéo finale apparaîtra ici automatiquement.',
+        upgrade: Boolean(payload.removed && payload.removed.length > 0)
+      });
+    } catch {
+      setNotice({ kind: 'error', text: 'Connexion impossible. Réessayez.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const download = async () => {
+    if (!clip?.renderedStoragePath) return;
+    const url = await createClipSignedUrl(supabase, clip.renderedStoragePath);
+    if (url) window.open(url, '_blank', 'noopener');
+  };
+
+  // ---------- États de chargement ----------
+  if (loading || loadError || !clip || !settings) {
+    return (
+      <div className="min-h-screen bg-background px-4 pb-16 pt-24 text-foreground">
+        <div className="container mx-auto max-w-3xl space-y-4">
+          <Button variant="ghost" size="sm" className="rounded-xl" asChild>
+            <Link href="/dashboard">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Tableau de bord
+            </Link>
+          </Button>
+          <Card
+            className={cn(
+              'rounded-2xl p-10 text-center text-sm',
+              loadError ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'text-muted-foreground'
+            )}
+          >
+            {loadError ?? 'Chargement du studio…'}
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- Aperçu : sous-titres à l'instant t ----------
+  const template = settings.template;
+  const page = pageAt(words, t, PAGE_WORDS[template]);
+  const activeIdx = page ? page.words.findIndex((w) => t >= w.start && t < w.end) : -1;
+  const previewFont = Math.round(settings.font_size * SIZE_FACTOR[template] * PREVIEW_SCALE);
+  const signature = overlaySignature(settings, tier);
+  const rendering = clip.status === 'queued' || clip.status === 'rendering';
+  const duration = Math.max(0, end - start);
+  const hookText = settings.hook_title ? settings.hook_title_text || title : '';
+
+  const shownWords: PageWord[] = page
+    ? page.words
+    : playing
+      ? []
+      : words.slice(0, PAGE_WORDS[template]).map((w, i) => ({ ...w, i }));
+
+  const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
+    { id: 'style', label: 'Style', icon: <Type className="h-3.5 w-3.5" /> },
+    { id: 'montage', label: 'Montage IA', icon: <Wand2 className="h-3.5 w-3.5" /> },
+    { id: 'cadrage', label: 'Cadrage', icon: <Crop className="h-3.5 w-3.5" /> },
+    { id: 'texte', label: 'Texte', icon: <Sparkles className="h-3.5 w-3.5" /> },
+    { id: 'export', label: 'Découpe', icon: <Scissors className="h-3.5 w-3.5" /> }
+  ];
+
+  return (
+    <div className="flex min-h-screen flex-col bg-background pt-16 text-foreground">
+      {/* ===== Barre supérieure ===== */}
+      <header className="z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-card/60 px-4 backdrop-blur-xl">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button variant="ghost" size="sm" className="h-9 rounded-xl" asChild>
+            <Link href="/dashboard">
+              <ArrowLeft className="mr-1.5 h-4 w-4" />
+              <span className="hidden sm:inline">Dashboard</span>
+            </Link>
+          </Button>
+          <input
+            type="text"
+            value={title}
+            maxLength={80}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setDirty(true);
+            }}
+            className="min-w-0 max-w-md truncate border-b border-transparent bg-transparent px-1 text-sm font-bold text-foreground hover:border-border focus:border-primary focus:outline-none"
+          />
+          {tier === 'free' ? (
+            <span className="hidden rounded-md bg-muted px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground sm:inline">
+              Free
+            </span>
+          ) : (
+            <TierBadge tier={tier} />
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {clip.renderedStoragePath && clip.status === 'ready' ? (
+            <Button variant="outline" size="sm" className="h-9 rounded-xl" onClick={download}>
+              <Download className="mr-1.5 h-4 w-4" />
+              <span className="hidden sm:inline">Télécharger</span>
+            </Button>
+          ) : null}
+          <Button
+            variant="gradient"
+            size="sm"
+            onClick={save}
+            disabled={saving || rendering}
+            className="glow-primary h-9 rounded-xl px-4 font-bold"
+          >
+            {saving || rendering ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="mr-1.5 h-4 w-4" />
+            )}
+            {rendering ? CLIP_STATUS_LABELS[clip.status] : dirty ? 'Générer la vidéo' : 'Régénérer'}
+          </Button>
+        </div>
+      </header>
+
+      {/* ===== Bandeau offre Free ===== */}
+      {tier === 'free' ? (
+        <div className="flex flex-wrap items-center justify-center gap-2 border-b border-primary/20 bg-gradient-to-r from-primary/15 via-accent/10 to-primary/15 px-4 py-2 text-center text-xs">
+          <Crown className="h-4 w-4 text-primary" />
+          <span className="text-foreground">
+            Offre Free : filigrane, 2 styles, 30 fps. Le <b>Pro</b> coupe les silences, ajoute zooms dynamiques, titre
+            d’accroche, fond flou, audio studio et 60 fps.
+          </span>
+          <Link href="/#pricing" className="font-bold text-primary underline-offset-2 hover:underline">
+            Voir les offres →
+          </Link>
+        </div>
+      ) : null}
+
+      {notice ? (
+        <div
+          role="status"
+          className={cn(
+            'flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold',
+            notice.kind === 'ok' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-destructive/10 text-destructive'
+          )}
+        >
+          {notice.kind === 'ok' ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+          {notice.text}
+          {notice.upgrade ? (
+            <Link href="/#pricing" className="underline">
+              Passer à l’offre supérieure
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+        {/* ===== Aperçu 9:16 ===== */}
+        <div className="relative flex flex-1 flex-col items-center justify-center gap-4 bg-black/40 p-4 sm:p-6">
+          <div className="flex gap-1 rounded-xl bg-muted/30 p-1 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setPreviewMode('live')}
+              disabled={!sourceUrl}
+              className={cn(
+                'rounded-lg px-3 py-1.5',
+                previewMode === 'live' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground',
+                !sourceUrl && 'opacity-40'
+              )}
+            >
+              Aperçu en direct
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreviewMode('final')}
+              disabled={!renderedUrl}
+              className={cn(
+                'rounded-lg px-3 py-1.5',
+                previewMode === 'final' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground',
+                !renderedUrl && 'opacity-40'
+              )}
+            >
+              Vidéo finale
+            </button>
+          </div>
+
+          <div
+            className="relative overflow-hidden rounded-[2.2rem] border-4 border-slate-700/80 bg-black shadow-2xl"
+            style={{ width: PREVIEW_WIDTH, aspectRatio: '9 / 16' }}
+          >
+            {previewMode === 'final' && renderedUrl ? (
+              <video src={renderedUrl} controls playsInline className="absolute inset-0 h-full w-full object-cover" />
+            ) : (
+              <>
+                {sourceUrl ? (
+                  <>
+                    {settings.layout === 'blur_fit' ? (
+                      <video
+                        src={sourceUrl}
+                        muted
+                        playsInline
+                        aria-hidden
+                        className="absolute inset-0 h-full w-full scale-125 object-cover"
+                        style={{ filter: 'blur(14px) brightness(0.55)' }}
+                        ref={bgRef}
+                        onLoadedMetadata={(e) => {
+                          e.currentTarget.currentTime = videoRef.current?.currentTime ?? start;
+                        }}
+                      />
+                    ) : null}
+                    <video
+                      ref={videoRef}
+                      src={sourceUrl}
+                      playsInline
+                      preload="metadata"
+                      onLoadedMetadata={(e) => {
+                        e.currentTarget.currentTime = start;
+                      }}
+                      className={cn(
+                        'absolute inset-0 h-full w-full',
+                        settings.layout === 'blur_fit' ? 'object-contain' : 'object-cover'
+                      )}
+                      style={{ objectPosition: `${settings.focus_x * 100}% 50%` }}
+                    />
+                  </>
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-slate-900 to-black p-6 text-center text-[11px] text-muted-foreground">
+                    Aperçu vidéo indisponible pour une source en lien. Les sous-titres ci-dessous reflètent le rendu.
+                  </div>
+                )}
+
+                {/* Barre de progression */}
+                {settings.progress_bar ? (
+                  <div
+                    className="absolute left-0 top-0 h-[3px]"
+                    style={{ width: `${Math.min(100, (t / Math.max(0.1, duration)) * 100)}%`, background: settings.active_color }}
+                  />
+                ) : null}
+
+                {/* Signature / filigrane */}
+                {signature ? (
+                  <div className="absolute inset-x-0 flex justify-center" style={{ top: '14.5%' }}>
+                    <span className="rounded-full bg-black/35 px-2 py-0.5 text-[9px] font-bold text-white/80">
+                      {signature}
+                    </span>
+                  </div>
+                ) : null}
+
+                {/* Titre d'accroche (3 premières secondes) */}
+                {hookText && t < 3.2 ? (
+                  <div className="absolute inset-x-4 flex justify-center" style={{ top: '20%' }}>
+                    <div
+                      className="rounded-lg bg-white px-2.5 py-1.5 text-center text-[15px] font-black leading-tight text-neutral-900 shadow-xl"
+                      style={{ borderBottom: `3px solid ${settings.active_color}` }}
+                    >
+                      {hookText}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Sous-titres */}
+                <div
+                  className="pointer-events-none absolute inset-x-0 flex -translate-y-1/2 flex-wrap items-center justify-center gap-1 px-4"
+                  style={{ top: `${settings.position * 100}%` }}
+                >
+                  {shownWords.map(
+                    (w, idx) => {
+                      const active = page ? idx === activeIdx : idx === 0;
+                      const box = template === 'karaoke_box' && active;
+                      return (
+                        <span
+                          key={`${w.i}-${idx}`}
+                          style={{
+                            fontSize: previewFont,
+                            fontWeight: template === 'minimal' ? 600 : 900,
+                            lineHeight: 1.1,
+                            textTransform: settings.uppercase && template !== 'minimal' ? 'uppercase' : 'none',
+                            color: box ? '#0A0A0A' : active ? settings.active_color : settings.text_color,
+                            background: box ? settings.active_color : 'transparent',
+                            padding: box ? '1px 4px' : undefined,
+                            borderRadius: 4,
+                            WebkitTextStroke:
+                              template === 'hormozi' || template === 'bold_pop' ? '1px #000' : undefined,
+                            textShadow:
+                              template === 'neon' && active
+                                ? `0 0 6px ${settings.active_color}, 0 0 14px ${settings.active_color}`
+                                : '0 2px 6px rgba(0,0,0,0.8)'
+                          }}
+                        >
+                          {w.word}
+                        </span>
+                      );
+                    }
+                  )}
+                </div>
+
+                {/* Safe zones */}
+                {showSafeZones ? (
+                  <div className="pointer-events-none absolute inset-0">
+                    <div className="absolute inset-x-0 top-0 h-[14%] border-b border-red-500/50 bg-red-500/20" />
+                    <div className="absolute inset-x-0 bottom-0 h-[22%] border-t border-red-500/50 bg-red-500/20" />
+                    <div className="absolute bottom-0 right-0 top-0 w-[15%] border-l border-red-500/40 bg-red-500/10" />
+                  </div>
+                ) : null}
+
+                {sourceUrl ? (
+                  <button
+                    type="button"
+                    onClick={togglePlay}
+                    aria-label={playing ? 'Pause' : 'Lecture'}
+                    className={cn(
+                      'absolute inset-0 m-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white backdrop-blur-md transition',
+                      playing && 'opacity-0 hover:opacity-100'
+                    )}
+                  >
+                    {playing ? <Pause className="h-6 w-6" /> : <Play className="ml-0.5 h-6 w-6 fill-white" />}
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="font-mono">
+              {t.toFixed(1)}s / {duration.toFixed(1)}s
+            </span>
+            <span>·</span>
+            <span>{CLIP_STATUS_LABELS[clip.status]}</span>
+            <span>·</span>
+            <button
+              type="button"
+              onClick={() => setShowSafeZones((v) => !v)}
+              className={cn('flex items-center gap-1', showSafeZones && 'text-red-400')}
+            >
+              <Shield className="h-3.5 w-3.5" /> Safe zones
+            </button>
+          </div>
+          {settings.remove_silences && previewMode === 'live' ? (
+            <p className="max-w-xs text-center text-[11px] text-muted-foreground">
+              L’aperçu en direct garde les silences : ils sont coupés dans la vidéo finale.
+            </p>
+          ) : null}
+        </div>
+
+        {/* ===== Panneau de réglages ===== */}
+        <div className="flex w-full shrink-0 flex-col border-l border-border/50 bg-card/40 backdrop-blur-xl lg:w-[460px]">
+          <div className="flex gap-1 border-b border-border/50 bg-muted/20 p-2">
+            {TABS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-bold transition-all',
+                  tab === item.id
+                    ? 'bg-primary text-primary-foreground shadow-md'
+                    : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                )}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 space-y-5 overflow-y-auto p-5">
+            {/* ---------- STYLE ---------- */}
+            {tab === 'style' ? (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  {CAPTION_TEMPLATES.map((tpl) => {
+                    const allowed = entitlements.templates.includes(tpl.key);
+                    return (
+                      <button
+                        key={tpl.key}
+                        type="button"
+                        onClick={() => (allowed ? update('template', tpl.key) : undefined)}
+                        className={cn(
+                          'relative rounded-2xl border p-3 text-left transition-all',
+                          settings.template === tpl.key
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border/50 bg-muted/20 hover:border-primary/40',
+                          !allowed && 'cursor-not-allowed opacity-60'
+                        )}
+                      >
+                        <div className="flex items-center justify-between text-xs font-black">
+                          {tpl.label}
+                          {!allowed ? <TierBadge tier="pro" /> : null}
+                        </div>
+                        <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{tpl.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Couleur du mot prononcé
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(entitlements.customColors ? PRO_COLORS : FREE_ACTIVE_COLORS).map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        aria-label={c}
+                        onClick={() => update('active_color', c)}
+                        style={{ background: c }}
+                        className={cn(
+                          'h-8 w-8 rounded-xl border-2 transition-transform',
+                          settings.active_color === c ? 'scale-110 border-white' : 'border-transparent'
+                        )}
+                      />
+                    ))}
+                    {entitlements.customColors ? (
+                      <input
+                        type="color"
+                        value={settings.active_color}
+                        onChange={(e) => update('active_color', e.target.value.toUpperCase())}
+                        className="h-8 w-8 cursor-pointer rounded-lg border border-border"
+                      />
+                    ) : (
+                      <Link href="/#pricing" className="flex items-center gap-1 text-[11px] font-bold text-primary">
+                        <Lock className="h-3 w-3" /> Couleurs libres en Pro
+                      </Link>
+                    )}
+                  </div>
+                </div>
+
+                <FeatureRow
+                  title="Couleur du texte"
+                  description="Adaptez les sous-titres à votre charte."
+                  feature="customColors"
+                  tier={tier}
+                >
+                  <input
+                    type="color"
+                    value={settings.text_color}
+                    onChange={(e) => update('text_color', e.target.value.toUpperCase())}
+                    className="h-8 w-8 cursor-pointer rounded-lg border border-border"
+                  />
+                </FeatureRow>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    <span>Taille</span>
+                    <span className="font-mono">{settings.font_size}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={48}
+                    max={140}
+                    value={settings.font_size}
+                    onChange={(e) => update('font_size', Number(e.target.value))}
+                    className="w-full accent-primary"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    <span>Position verticale</span>
+                    <span className="font-mono">{Math.round(settings.position * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={15}
+                    max={85}
+                    value={Math.round(settings.position * 100)}
+                    onChange={(e) => update('position', Number(e.target.value) / 100)}
+                    className="w-full accent-primary"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Idéal : 65–75 %, au-dessus de la zone masquée par la description.
+                  </p>
+                </div>
+
+                <FeatureRow title="Majuscules" description="Plus d’impact, lecture plus rapide." tier={tier}>
+                  <Toggle checked={settings.uppercase} onChange={(v) => update('uppercase', v)} />
+                </FeatureRow>
+              </>
+            ) : null}
+
+            {/* ---------- MONTAGE IA ---------- */}
+            {tab === 'montage' ? (
+              <>
+                <FeatureRow
+                  title="Suppression des silences"
+                  description="Coupe les blancs et hésitations > 0,45 s : rythme serré, meilleure rétention."
+                  feature="removeSilences"
+                  tier={tier}
+                >
+                  <Toggle checked={settings.remove_silences} onChange={(v) => update('remove_silences', v)} />
+                </FeatureRow>
+                <FeatureRow
+                  title="Zooms dynamiques"
+                  description="Punch-in automatique sur les débuts de phrase et les moments forts."
+                  feature="autoZoom"
+                  tier={tier}
+                >
+                  <Toggle checked={settings.auto_zoom} onChange={(v) => update('auto_zoom', v)} />
+                </FeatureRow>
+                <FeatureRow
+                  title="Titre d’accroche animé"
+                  description="Un titre choc les 3 premières secondes pour stopper le scroll."
+                  feature="hookTitle"
+                  tier={tier}
+                >
+                  <Toggle checked={settings.hook_title} onChange={(v) => update('hook_title', v)} />
+                </FeatureRow>
+                {settings.hook_title && hasFeature(tier, 'hookTitle') ? (
+                  <input
+                    type="text"
+                    maxLength={80}
+                    value={settings.hook_title_text}
+                    placeholder={`Par défaut : « ${title} »`}
+                    onChange={(e) => update('hook_title_text', e.target.value)}
+                    className="w-full rounded-xl border border-border/50 bg-muted/30 p-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
+                  />
+                ) : null}
+                <FeatureRow
+                  title="Barre de progression"
+                  description="Incite à regarder jusqu’au bout."
+                  feature="progressBar"
+                  tier={tier}
+                >
+                  <Toggle checked={settings.progress_bar} onChange={(v) => update('progress_bar', v)} />
+                </FeatureRow>
+                <FeatureRow
+                  title="Audio studio"
+                  description="Réduction du souffle, filtre des basses parasites, compression de la voix."
+                  feature="enhanceAudio"
+                  tier={tier}
+                >
+                  <Toggle checked={settings.enhance_audio} onChange={(v) => update('enhance_audio', v)} />
+                </FeatureRow>
+                <p className="text-[11px] text-muted-foreground">
+                  Toutes les offres bénéficient d’un volume normalisé (−14 LUFS, standard TikTok/YouTube).
+                </p>
+              </>
+            ) : null}
+
+            {/* ---------- CADRAGE ---------- */}
+            {tab === 'cadrage' ? (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      { id: 'crop', label: 'Plein écran', desc: 'Recadrage 9:16 sur le sujet', feature: undefined },
+                      { id: 'blur_fit', label: 'Fond flou', desc: 'Vidéo entière, rien n’est coupé', feature: 'blurLayout' }
+                    ] as const
+                  ).map((opt) => {
+                    const allowed = !opt.feature || hasFeature(tier, opt.feature);
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => (allowed ? update('layout', opt.id) : undefined)}
+                        className={cn(
+                          'rounded-2xl border p-3 text-left',
+                          settings.layout === opt.id ? 'border-primary bg-primary/10' : 'border-border/50 bg-muted/20',
+                          !allowed && 'cursor-not-allowed opacity-60'
+                        )}
+                      >
+                        <div className="flex items-center justify-between text-xs font-black">
+                          {opt.label}
+                          {!allowed ? <TierBadge tier="pro" /> : null}
+                        </div>
+                        <p className="mt-1 text-[10px] text-muted-foreground">{opt.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <FeatureRow
+                  title="Recadrage manuel"
+                  description="Choisissez la zone gardée (orateur à gauche, à droite…)."
+                  feature="manualReframe"
+                  tier={tier}
+                >
+                  <span className="font-mono text-xs">{Math.round(settings.focus_x * 100)}%</span>
+                </FeatureRow>
+                {hasFeature(tier, 'manualReframe') ? (
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={Math.round(settings.focus_x * 100)}
+                    onChange={(e) => update('focus_x', Number(e.target.value) / 100)}
+                    className="w-full accent-primary"
+                  />
+                ) : null}
+              </>
+            ) : null}
+
+            {/* ---------- TEXTE ---------- */}
+            {tab === 'texte' ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Corriger les sous-titres
+                  </label>
+                  <span className="text-[10px] text-muted-foreground">{words.length} mots</span>
+                </div>
+                {boundsChanged ? (
+                  <p className="rounded-xl bg-amber-500/10 p-2 text-[11px] text-amber-400">
+                    Vous avez modifié la découpe : les sous-titres seront recalculés depuis la transcription.
+                  </p>
+                ) : null}
+                <div className="flex max-h-[60vh] flex-wrap gap-1.5 overflow-y-auto rounded-2xl border border-border/40 bg-muted/20 p-3">
+                  {words.map((w, i) => (
+                    <input
+                      key={i}
+                      type="text"
+                      value={w.word}
+                      maxLength={60}
+                      title={`${w.start.toFixed(1)}s`}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setWords((prev) => prev.map((x, j) => (j === i ? { ...x, word: value } : x)));
+                        setDirty(true);
+                      }}
+                      style={{ width: `${Math.max(3, w.word.length + 1)}ch` }}
+                      className="rounded-lg border border-border/40 bg-card/60 px-1.5 py-1 text-center text-xs font-semibold text-foreground focus:border-primary focus:outline-none"
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {/* ---------- DÉCOUPE & EXPORT ---------- */}
+            {tab === 'export' ? (
+              <>
+                {(
+                  [
+                    { label: 'Début', value: start, set: setStart },
+                    { label: 'Fin', value: end, set: setEnd }
+                  ] as const
+                ).map((b) => (
+                  <div key={b.label} className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      {b.label} (secondes dans la vidéo source)
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      {[-1, -0.25].map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => {
+                            b.set(Math.max(0, Math.round((b.value + d) * 100) / 100));
+                            setDirty(true);
+                          }}
+                          className="rounded-lg bg-muted px-2 py-1 text-xs"
+                        >
+                          {d}s
+                        </button>
+                      ))}
+                      <input
+                        type="number"
+                        step={0.1}
+                        min={0}
+                        max={clip.sourceDuration ?? undefined}
+                        value={b.value}
+                        onChange={(e) => {
+                          b.set(Math.max(0, Number(e.target.value) || 0));
+                          setDirty(true);
+                        }}
+                        className="w-24 rounded-lg border border-border/50 bg-muted/30 p-1.5 text-center font-mono text-xs"
+                      />
+                      {[0.25, 1].map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => {
+                            b.set(Math.round((b.value + d) * 100) / 100);
+                            setDirty(true);
+                          }}
+                          className="rounded-lg bg-muted px-2 py-1 text-xs"
+                        >
+                          +{d}s
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <p className={cn('text-xs', duration < 5 || duration > 90 ? 'text-destructive' : 'text-muted-foreground')}>
+                  Durée : <b>{duration.toFixed(1)} s</b> (entre 5 et 90 s). Idéal : 20–45 s.
+                </p>
+
+                <FeatureRow
+                  title="60 images/seconde"
+                  description="Mouvements et animations plus fluides."
+                  feature="fps60"
+                  tier={tier}
+                >
+                  <Toggle checked={settings.fps === 60} onChange={(v) => update('fps', v ? 60 : 30)} />
+                </FeatureRow>
+
+                <FeatureRow
+                  title="Sans filigrane"
+                  description={
+                    entitlements.watermark
+                      ? 'Vos vidéos Free portent « Réalisé avec IziCut ».'
+                      : 'Vos vidéos sont livrées sans filigrane.'
+                  }
+                  feature="noWatermark"
+                  tier={tier}
+                >
+                  <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                </FeatureRow>
+
+                <FeatureRow
+                  title="Votre marque sur la vidéo"
+                  description="Votre @pseudo ou nom de marque incrusté à la place du filigrane."
+                  feature="brandText"
+                  tier={tier}
+                >
+                  <span />
+                </FeatureRow>
+                {hasFeature(tier, 'brandText') ? (
+                  <input
+                    type="text"
+                    maxLength={40}
+                    value={settings.brand_text}
+                    placeholder="@votremarque"
+                    onChange={(e) => update('brand_text', e.target.value)}
+                    className="w-full rounded-xl border border-border/50 bg-muted/30 p-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
+                  />
+                ) : null}
+
+                <p className="text-[11px] text-muted-foreground">
+                  Qualité d’encodage : {tier === 'free' ? 'standard' : 'maximale'} · Rendus par clip :{' '}
+                  {entitlements.maxRendersPerClip === null ? 'illimités' : entitlements.maxRendersPerClip}
+                </p>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

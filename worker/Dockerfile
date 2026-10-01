@@ -31,6 +31,10 @@ RUN npm install --omit=dev
 RUN node -e "require('@remotion/renderer').ensureBrowser().then(() => console.log('Chrome Headless Shell prêt'))"
 
 COPY worker ./worker
+# Droits par offre : module PUR partagé avec Next.js, importé par
+# worker/pipeline.js (../lib/entitlements.ts). Sans lui, le worker ne
+# démarre pas.
+COPY lib/entitlements.ts ./lib/entitlements.ts
 
 ENV NODE_ENV=production
 # Type stripping : le worker importe ./timestamps.ts (module pur testé)

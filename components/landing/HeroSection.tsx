@@ -1,15 +1,21 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { ArrowRight, Youtube, Upload, Play, Sparkles, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useIntake } from '@/stores/use-intake';
+import { validateVideoFile, validateVideoUrl } from '@/components/upload/validate-intake';
 import { VideoMockup } from './VideoMockup';
 
 export function HeroSection() {
+  const router = useRouter();
+  const { setUrl, setFile } = useIntake();
   const [activeTab, setActiveTab] = useState<'url' | 'file'>('url');
   const [videoUrl, setVideoUrl] = useState('');
+  const [urlError, setUrlError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -30,19 +36,42 @@ export function HeroSection() {
     return () => window.removeEventListener('mousemove', onMove);
   }, [mouseX, mouseY]);
 
-  const handleGenerate = async () => {
-    if (!videoUrl.trim()) return;
+  /**
+   * Le choix de l'utilisateur (lien ou fichier) est mémorisé dans le store
+   * `useIntake`, puis on navigue CÔTÉ CLIENT : la page d'import retrouve la
+   * source sans la redemander, et la barrière d'authentification du
+   * middleware s'applique normalement (`/upload` est protégé).
+   */
+  const goToUpload = () => {
     setIsGenerating(true);
-    await new Promise(r => setTimeout(r, 1500));
-    setIsGenerating(false);
-    window.location.href = '/upload?url=' + encodeURIComponent(videoUrl);
+    router.push('/upload');
+  };
+
+  const handleGenerate = () => {
+    const trimmed = videoUrl.trim();
+    const message = trimmed
+      ? validateVideoUrl(trimmed)
+      : 'Collez un lien vidéo ou importez un fichier pour commencer.';
+    setUrlError(message);
+    if (message) return;
+    setUrl(trimmed);
+    goToUpload();
+  };
+
+  /** Fichier déposé ou choisi : validation immédiate, puis passage à l'import. */
+  const handleFileSelection = (file: File | undefined | null) => {
+    if (!file) return;
+    const message = validateVideoFile({ name: file.name, size: file.size });
+    setUrlError(message);
+    if (message) return;
+    setFile(file);
+    goToUpload();
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) window.location.href = '/upload';
+    handleFileSelection(e.dataTransfer.files?.[0]);
   };
 
   return (
@@ -144,6 +173,14 @@ export function HeroSection() {
                     onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
                     className="pl-12 h-14 text-base bg-card/50 border-border/50 focus:border-primary rounded-xl"
                   />
+                  {urlError ? (
+                    <p
+                      role="alert"
+                      className="absolute -bottom-6 left-1 text-xs font-medium text-destructive"
+                    >
+                      {urlError}
+                    </p>
+                  ) : null}
                 </div>
                 <Button
                   variant="gradient"
@@ -181,7 +218,16 @@ export function HeroSection() {
                 {isDragging && (
                   <div className="absolute inset-0 rounded-2xl bg-primary/5 animate-shimmer" />
                 )}
-                <input ref={fileRef} type="file" accept="video/*" className="sr-only" />
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska"
+                  className="sr-only"
+                  onChange={(event) => {
+                    handleFileSelection(event.target.files?.[0]);
+                    event.target.value = '';
+                  }}
+                />
                 <Upload className={`w-12 h-12 mx-auto mb-4 transition-colors ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
                 <p className="text-lg font-semibold mb-1">
                   {isDragging ? 'Déposez votre vidéo ici !' : 'Glissez votre vidéo ou cliquez pour parcourir'}

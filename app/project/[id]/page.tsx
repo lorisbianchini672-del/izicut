@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, use } from 'react';
+import { useState, use, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
@@ -25,111 +25,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
+import {
+  createClipSignedUrl,
+  fetchProjectDetail,
+  type ProjectClip,
+  type ProjectDetail
+} from '@/lib/data/projects';
+import { formatDuration, formatRelativeDate, projectStatusTone, type StatusTone } from '@/lib/format';
+import { CLIP_STATUS_LABELS, PROJECT_STATUS_LABELS, type TranscriptWord } from '@/types';
 
-export type ClipItem = {
-  id: string;
-  title: string;
-  start_time: number;
-  end_time: number;
-  virality_score: number;
-  hook_text: string;
-  transcript: { word: string; start: number; end: number }[];
-  duration_seconds: number;
-  status: 'ready' | 'rendering';
-  tags: string[];
-};
-
-const SAMPLE_CLIPS: ClipItem[] = [
-  {
-    id: 'clip-101',
-    title: 'Le piège mental qui détruit 90% des créateurs',
-    start_time: 142.5,
-    end_time: 178.0,
-    virality_score: 94,
-    hook_text: 'Si vous faites encore cette erreur en 2026, vous perdez votre temps...',
-    duration_seconds: 35.5,
-    status: 'ready',
-    tags: ['mindset', 'business', 'viral', 'conseil'],
-    transcript: [
-      { word: 'Si', start: 0.0, end: 0.3 },
-      { word: 'vous', start: 0.3, end: 0.5 },
-      { word: 'faites', start: 0.5, end: 0.8 },
-      { word: 'encore', start: 0.8, end: 1.1 },
-      { word: 'cette', start: 1.1, end: 1.4 },
-      { word: 'erreur', start: 1.4, end: 1.9 },
-      { word: 'en', start: 1.9, end: 2.1 },
-      { word: '2026', start: 2.1, end: 2.6 },
-      { word: 'vous', start: 2.8, end: 3.1 },
-      { word: 'perdez', start: 3.1, end: 3.6 },
-      { word: 'votre', start: 3.6, end: 3.9 },
-      { word: 'temps', start: 3.9, end: 4.4 },
-    ]
-  },
-  {
-    id: 'clip-102',
-    title: 'La vérité cachée sur les algorithmes TikTok',
-    start_time: 410.0,
-    end_time: 452.0,
-    virality_score: 91,
-    hook_text: 'L’algorithme ne veut pas votre contenu, il veut votre audience...',
-    duration_seconds: 42.0,
-    status: 'ready',
-    tags: ['tiktok', 'growth', 'reels', 'hacks'],
-    transcript: [
-      { word: 'L’algorithme', start: 0.0, end: 0.6 },
-      { word: 'ne', start: 0.6, end: 0.8 },
-      { word: 'veut', start: 0.8, end: 1.1 },
-      { word: 'pas', start: 1.1, end: 1.3 },
-      { word: 'votre', start: 1.3, end: 1.6 },
-      { word: 'contenu', start: 1.6, end: 2.2 },
-      { word: 'il', start: 2.3, end: 2.5 },
-      { word: 'veut', start: 2.5, end: 2.8 },
-      { word: 'votre', start: 2.8, end: 3.1 },
-      { word: 'audience', start: 3.1, end: 3.8 },
-    ]
-  },
-  {
-    id: 'clip-103',
-    title: 'Pourquoi personne n’écoute vos podcasts',
-    start_time: 890.0,
-    end_time: 924.5,
-    virality_score: 87,
-    hook_text: 'Votre introduction est trop longue de 45 secondes complètes...',
-    duration_seconds: 34.5,
-    status: 'ready',
-    tags: ['podcast', 'storytelling', 'hook'],
-    transcript: [
-      { word: 'Votre', start: 0.0, end: 0.4 },
-      { word: 'introduction', start: 0.4, end: 1.1 },
-      { word: 'est', start: 1.1, end: 1.3 },
-      { word: 'trop', start: 1.3, end: 1.6 },
-      { word: 'longue', start: 1.6, end: 2.1 },
-      { word: 'de', start: 2.1, end: 2.3 },
-      { word: '45', start: 2.3, end: 2.8 },
-      { word: 'secondes', start: 2.8, end: 3.4 },
-    ]
-  },
-  {
-    id: 'clip-104',
-    title: 'Monétiser 1 000 vues comme si c’était 100 000',
-    start_time: 1250.0,
-    end_time: 1288.0,
-    virality_score: 82,
-    hook_text: 'Les vues ne payent pas vos factures, les offres oui...',
-    duration_seconds: 38.0,
-    status: 'ready',
-    tags: ['monetisation', 'business', 'stripe'],
-    transcript: [
-      { word: 'Les', start: 0.0, end: 0.3 },
-      { word: 'vues', start: 0.3, end: 0.7 },
-      { word: 'ne', start: 0.7, end: 0.9 },
-      { word: 'payent', start: 0.9, end: 1.3 },
-      { word: 'pas', start: 1.3, end: 1.6 },
-      { word: 'vos', start: 1.6, end: 1.8 },
-      { word: 'factures', start: 1.8, end: 2.4 },
-    ]
-  }
-];
 
 const PRESETS = [
   { id: 'hormozi', name: 'Hormozi', activeColor: '#FACC15', bg: '#000000' },
@@ -138,37 +43,167 @@ const PRESETS = [
   { id: 'emerald', name: 'Finance Pro', activeColor: '#34D399', bg: '#064E3B' },
 ];
 
+/** Couleurs de badge par tonalité de statut (teintes du tableau de bord). */
+const STATUS_BADGE_CLASSES: Record<StatusTone, string> = {
+  ready: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
+  working: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
+  queued: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+  error: 'bg-red-500/10 text-red-400 border border-red-500/20'
+};
+
 export default function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
-  const [clips, setClips] = useState<ClipItem[]>(SAMPLE_CLIPS);
-  const [selectedClipId, setSelectedClipId] = useState<string>(SAMPLE_CLIPS[0].id);
+  const projectId = resolvedParams.id;
+
+  const [project, setProject] = useState<ProjectDetail | null>(null);
+  const [clips, setClips] = useState<ProjectClip[]>([]);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  /**
+   * Mots affichés par clip, indexés par identifiant. Ils viennent de
+   * `clips.transcript_json` et sont RELATIFS au clip (0 = début du clip) :
+   * c'est le worker qui les a recalés, pas l'interface.
+   */
+  const [words, setWords] = useState<Record<string, TranscriptWord[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showSafeZones, setShowSafeZones] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState(PRESETS[0]);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState(false);
 
-  const selectedClip = clips.find((c) => c.id === selectedClipId) || clips[0];
+  // Client navigateur : la RLS ne laisse voir que les projets de
+  // l'utilisateur connecté, et les rendus ne sont accessibles que par
+  // URL signée (le compartiment `clips` est privé).
+  const supabase = useMemo(() => createClient(), []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      const detail = await fetchProjectDetail(supabase, projectId);
+      if (cancelled) return;
+
+      if (!detail) {
+        setLoadError('Projet introuvable : il a peut-être été supprimé.');
+        setLoading(false);
+        return;
+      }
+
+      setProject(detail.project);
+      setClips(detail.clips);
+      setSelectedClipId(detail.clips[0]?.id ?? null);
+      setWords(
+        Object.fromEntries(detail.clips.map((clip) => [clip.id, clip.words]))
+      );
+      setLoading(false);
+    };
+
+    load().catch((error: unknown) => {
+      if (cancelled) return;
+      setLoadError(
+        error instanceof Error ? error.message : 'Impossible de charger ce projet.'
+      );
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, supabase]);
+
+  const selectedClip =
+    clips.find((clip) => clip.id === selectedClipId) ?? clips[0] ?? null;
+  const selectedWords = selectedClip ? words[selectedClip.id] ?? [] : [];
+  const selectedDuration = selectedClip
+    ? Math.max(1, Math.round(selectedClip.endTime - selectedClip.startTime))
+    : 0;
+  const selectedTone = project ? projectStatusTone(project.status) : 'queued';
+  /** Un clip n'est téléchargeable que si le worker a produit son rendu. */
+  // `?.` obligatoire : ce calcul précède le retour anticipé « aucun clip »,
+  // et un projet encore en analyse n'a pas de clip sélectionné.
+  const clipIsReady =
+    selectedClip?.status === 'ready' && Boolean(selectedClip?.renderedStoragePath);
+
+  /**
+   * Correction d'un mot : elle reste LOCALE. Le rendu a déjà été produit à
+   * partir de la transcription ; réécrire le texte affiché ne change pas la
+   * vidéo, et l'interface n'a aucun droit d'écriture sur `transcripts`.
+   */
   const handleWordEdit = (index: number, newWord: string) => {
-    setClips((prev) =>
-      prev.map((clip) => {
-        if (clip.id !== selectedClip.id) return clip;
-        const newTranscript = [...clip.transcript];
-        newTranscript[index] = { ...newTranscript[index], word: newWord };
-        return { ...clip, transcript: newTranscript };
-      })
-    );
+    if (!selectedClip) return;
+    setWords((previous) => {
+      const current = previous[selectedClip.id] ?? [];
+      const next = [...current];
+      next[index] = { ...next[index], word: newWord };
+      return { ...previous, [selectedClip.id]: next };
+    });
   };
 
-  const handleExport = () => {
+  /** Téléchargement réel du rendu : URL signée courte, bucket privé. */
+  const handleExport = async () => {
+    if (!selectedClip?.renderedStoragePath) return;
+
     setIsExporting(true);
-    setTimeout(() => {
-      setIsExporting(false);
+    setExportError(null);
+
+    try {
+      const signedUrl = await createClipSignedUrl(supabase, selectedClip.renderedStoragePath);
+      if (!signedUrl) {
+        throw new Error('Rendu indisponible : ce clip n’a pas encore été généré.');
+      }
+      window.open(signedUrl, '_blank', 'noopener');
       setExportSuccess(true);
-      setTimeout(() => setExportSuccess(false), 4000);
-    }, 1800);
+      window.setTimeout(() => setExportSuccess(false), 4000);
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : 'Téléchargement impossible.'
+      );
+    } finally {
+      setIsExporting(false);
+    }
   };
+
+  // Chargement, erreur ou projet sans clip : on n'affiche pas le studio,
+  // qui suppose un clip sélectionné (rendu, score, mots horodatés).
+  if (loading || loadError || !selectedClip) {
+    return (
+      <div className="min-h-screen bg-background text-foreground px-4 pt-24 pb-16">
+        <div className="container mx-auto max-w-3xl space-y-4">
+          <Button variant="ghost" size="sm" className="rounded-xl" asChild>
+            <Link href="/dashboard">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Tableau de bord
+            </Link>
+          </Button>
+
+          {loading ? (
+            <Card className="rounded-2xl border border-border/60 bg-card/40 p-10 text-center text-sm text-muted-foreground">
+              Chargement du projet…
+            </Card>
+          ) : null}
+
+          {!loading && loadError ? (
+            <Card className="rounded-2xl border border-destructive/30 bg-destructive/5 p-10 text-center text-sm text-destructive">
+              {loadError}
+            </Card>
+          ) : null}
+
+          {!loading && !loadError && !selectedClip ? (
+            <Card className="rounded-2xl border border-border/60 bg-card/40 p-10 text-center">
+              <Scissors className="mx-auto mb-3 h-8 w-8 text-primary" />
+              <p className="mb-2 font-semibold">Aucun clip pour ce projet</p>
+              <p className="text-sm text-muted-foreground">
+                Le traitement est peut-être encore en cours : l’analyse des moments forts précède
+                le découpage.
+              </p>
+            </Card>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground pt-20 pb-16 px-4 relative overflow-hidden">
@@ -190,12 +225,23 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
             <span className="text-border">|</span>
             <div>
               <h1 className="text-xl font-bold flex items-center gap-2">
-                Podcast Tech & IA — Épisode 42
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  Prêt · 4 clips 9:16
+                <span className="line-clamp-1">{project?.title ?? 'Projet'}</span>
+                <span
+                  className={cn(
+                    'px-2.5 py-0.5 rounded-full text-xs font-bold shrink-0',
+                    STATUS_BADGE_CLASSES[selectedTone]
+                  )}
+                >
+                  {project ? PROJECT_STATUS_LABELS[project.status] : 'En attente'}
                 </span>
               </h1>
-              <p className="text-xs text-muted-foreground">ID: {resolvedParams.id} · Durée originale : 40m50s</p>
+              <p className="text-xs text-muted-foreground">
+                {clips.length} clip{clips.length > 1 ? 's' : ''} 9:16
+                {project?.durationSeconds
+                  ? ` · Durée source : ${formatDuration(project.durationSeconds)}`
+                  : ''}
+                {project ? ` · importé ${formatRelativeDate(project.createdAt)}` : ''}
+              </p>
             </div>
           </div>
 
@@ -234,7 +280,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                 <CheckCircle2 className="w-5 h-5" />
                 Clip exporté avec succès en 1080×1920 HD ! Prêt pour TikTok, Reels et Shorts.
               </div>
-              <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20">
+              <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20" onClick={handleExport}>
                 Télécharger à nouveau
               </Button>
             </motion.div>
@@ -282,19 +328,19 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                         {/* Badge de Score de Viralité */}
                         <div className={cn(
                           'px-2.5 py-1 rounded-xl font-black text-xs flex items-center gap-1 shadow-sm',
-                          clip.virality_score >= 90
+                          (clip.viralityScore ?? 0) >= 90
                             ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white'
                             : 'bg-primary text-primary-foreground'
                         )}>
-                          ⭐ {clip.virality_score}/100
+                          ⭐ {clip.viralityScore ?? '—'}/100
                         </div>
                         <span className="text-xs text-muted-foreground font-mono">
-                          {clip.duration_seconds}s
+                          {Math.round(clip.endTime - clip.startTime)}s
                         </span>
                       </div>
 
                       <span className="text-[11px] text-muted-foreground font-mono">
-                        {Math.floor(clip.start_time / 60)}:{(clip.start_time % 60).toFixed(0).padStart(2, '0')} ➔ {Math.floor(clip.end_time / 60)}:{(clip.end_time % 60).toFixed(0).padStart(2, '0')}
+                        {Math.floor(clip.startTime / 60)}:{(clip.startTime % 60).toFixed(0).padStart(2, '0')} ➔ {Math.floor(clip.endTime / 60)}:{(clip.endTime % 60).toFixed(0).padStart(2, '0')}
                       </span>
                     </div>
 
@@ -302,16 +348,14 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                       {clip.title}
                     </h3>
                     <p className="text-xs text-muted-foreground line-clamp-2 mb-3 italic">
-                      « {clip.hook_text} »
+                      « {clip.hookText} »
                     </p>
 
                     <div className="flex items-center justify-between pt-2 border-t border-border/30">
                       <div className="flex flex-wrap gap-1">
-                        {clip.tags.map((tag) => (
-                          <span key={tag} className="text-[10px] px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground">
-                            #{tag}
-                          </span>
-                        ))}
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground">
+                          {CLIP_STATUS_LABELS[clip.status]}
+                        </span>
                       </div>
 
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
@@ -350,13 +394,13 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
 
                       {/* Score flottant en haut */}
                       <div className="absolute top-8 right-3 z-20 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-xl border border-amber-500/30 text-amber-400 text-xs font-black">
-                        ⭐ {selectedClip.virality_score}
+                        ⭐ {selectedClip.viralityScore ?? '—'}
                       </div>
 
                       {/* Sous-titres dynamiques mot-à-mot */}
                       <div className="relative z-20 text-center px-2 py-4">
                         <div className="flex flex-wrap justify-center gap-1.5">
-                          {selectedClip.transcript.map((item, idx) => (
+                          {selectedWords.map((item, idx) => (
                             <span
                               key={idx}
                               className="font-black text-sm uppercase px-1 py-0.5 rounded transition-all duration-300 shadow-md"
@@ -382,7 +426,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
 
                       {/* Indicateur de durée */}
                       <div className="absolute bottom-4 left-4 z-20 text-[10px] font-mono text-white/70 bg-black/50 px-2 py-0.5 rounded">
-                        00:{isPlaying ? '14' : '00'} / 00:{selectedClip.duration_seconds.toFixed(0)}
+                        00:{isPlaying ? '14' : '00'} / 00:{selectedDuration.toFixed(0)}
                       </div>
                     </div>
 
@@ -469,12 +513,12 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                       <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                         Correction interactive mot-à-mot
                       </label>
-                      <span className="text-[10px] text-primary">Cliquez pour modifier</span>
+                      <span className="text-[10px] text-amber-400">Aperçu local, non enregistré</span>
                     </div>
 
                     <div className="p-3 rounded-2xl bg-muted/20 border border-border/40 max-h-36 overflow-y-auto space-y-1.5">
                       <div className="flex flex-wrap gap-1.5">
-                        {selectedClip.transcript.map((item, idx) => (
+                        {selectedWords.map((item, idx) => (
                           <input
                             key={idx}
                             type="text"
@@ -487,15 +531,32 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                     </div>
                   </div>
 
-                  {/* Export action */}
+                  {/* Studio : styles, montage IA, cadrage, re-rendu */}
+                  <Button variant="outline" className="w-full font-bold h-11" asChild>
+                    <Link href={`/editor/${selectedClip.id}`}>
+                      <Sliders className="w-4 h-4 mr-2" />
+                      Ouvrir le studio (styles, montage IA, cadrage)
+                    </Link>
+                  </Button>
+
+                  {/* Export réel : URL signée du rendu (compartiment privé) */}
                   <Button
                     variant="gradient"
                     className="w-full glow-primary font-bold h-11"
                     onClick={handleExport}
-                    disabled={isExporting}
+                    disabled={isExporting || !clipIsReady}
                   >
-                    {isExporting ? 'Génération du rendu en cours...' : 'Exporter ce clip MP4'}
+                    {isExporting
+                      ? 'Préparation du téléchargement…'
+                      : clipIsReady
+                        ? 'Télécharger ce clip MP4 (1080×1920)'
+                        : `Rendu ${CLIP_STATUS_LABELS[selectedClip.status].toLowerCase()}…`}
                   </Button>
+                  {exportError ? (
+                    <p role="alert" className="text-xs text-destructive">
+                      {exportError}
+                    </p>
+                  ) : null}
                 </div>
 
               </div>

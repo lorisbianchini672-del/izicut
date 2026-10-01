@@ -11,30 +11,48 @@
 
 // ---------- Statuts ----------
 
-/** Cycle de vie d'un projet (une vidéo source). */
+/** D'où vient la vidéo : fichier téléversé, ou lien externe (YouTube, Twitch). */
+export type SourceType = 'upload_gallery' | 'external_url';
+
+/**
+ * Cycle de vie d'un projet (une vidéo source).
+ * Aligné sur le CHECK SQL de `projects.status` (supabase/schema.sql).
+ */
 export type ProjectStatus =
-  | 'pending'
+  | 'draft'
+  | 'uploading'
+  | 'processing_audio'
   | 'transcribing'
   | 'analyzing'
   | 'completed'
   | 'error';
 
 export const PROJECT_STATUSES: ProjectStatus[] = [
-  'pending',
+  'draft',
+  'uploading',
+  'processing_audio',
   'transcribing',
   'analyzing',
   'completed',
   'error'
 ];
 
-/** Cycle de vie d'un clip. */
-export type ClipStatus = 'suggested' | 'rendering' | 'ready' | 'failed';
+/** Cycle de vie d'un clip. Aligné sur le CHECK SQL de `clips.status`. */
+export type ClipStatus = 'suggested' | 'queued' | 'rendering' | 'ready' | 'failed';
 
-export const CLIP_STATUSES: ClipStatus[] = ['suggested', 'rendering', 'ready', 'failed'];
+export const CLIP_STATUSES: ClipStatus[] = [
+  'suggested',
+  'queued',
+  'rendering',
+  'ready',
+  'failed'
+];
 
 /** Libellés français, pour l'interface uniquement. */
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
-  pending: 'En attente',
+  draft: 'Brouillon',
+  uploading: 'Téléversement',
+  processing_audio: 'Préparation de la vidéo',
   transcribing: 'Transcription en cours',
   analyzing: 'Analyse des moments forts',
   completed: 'Terminé',
@@ -43,6 +61,7 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
 
 export const CLIP_STATUS_LABELS: Record<ClipStatus, string> = {
   suggested: 'Suggéré',
+  queued: 'En file',
   rendering: 'Rendu en cours',
   ready: 'Prêt',
   failed: 'Échec'
@@ -91,14 +110,14 @@ export type Project = {
   id: string;
   user_id: string;
   title: string;
-  source_type: 'upload_gallery' | 'external_url';
+  source_type: SourceType;
   source_url: string | null;
   storage_path: string | null;
   duration_seconds: number | null;
   status: ProjectStatus;
   error_message: string | null;
   created_at: string;
-  updated_at: string | null;
+  updated_at: string;
 };
 
 export type Clip = {

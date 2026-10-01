@@ -1,19 +1,23 @@
-import { HeroSection } from '@/components/landing/HeroSection';
-import { StatsSection } from '@/components/landing/StatsSection';
-import { BentoGrid } from '@/components/landing/BentoGrid';
-import { PricingSection } from '@/components/landing/PricingSection';
-import { FAQAccordion } from '@/components/landing/FAQAccordion';
-import { Footer } from '@/components/landing/Footer';
+import { CaptionStudio } from '@/components/home/caption-studio';
+import { Faq } from '@/components/home/faq';
+import { FeatureBento } from '@/components/home/feature-bento';
+import { FinalCta } from '@/components/home/final-cta';
+import { Hero } from '@/components/home/hero';
+import { Pipeline } from '@/components/home/pipeline';
+import { Pricing } from '@/components/home/pricing';
+import { SiteFooter } from '@/components/home/site-footer';
 
 export default function HomePage() {
   return (
-    <>
-      <HeroSection />
-      <StatsSection />
-      <BentoGrid />
-      <PricingSection />
-      <FAQAccordion />
-      <Footer />
-    </>
+    <main className="izi-page">
+      <Hero />
+      <Pipeline />
+      <FeatureBento />
+      <CaptionStudio />
+      <Pricing />
+      <Faq />
+      <FinalCta />
+      <SiteFooter />
+    </main>
   );
 }

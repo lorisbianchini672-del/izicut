@@ -43,7 +43,7 @@ export function useHeroForm(): HeroFormApi {
       const message = validateVideoFile({ name: file.name, size: file.size });
       setUrlError(message);
       if (message) return;
-      setFile(file.name, file.size);
+      setFile(file);
     },
     [setFile, setUrlError]
   );

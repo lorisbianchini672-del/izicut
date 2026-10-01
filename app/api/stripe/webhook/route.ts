@@ -18,8 +18,19 @@ import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { getStripe, planFromPriceId, planCreditsSeconds } from '@/lib/stripe';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { tierFromPlanKey } from '@/lib/entitlements';
 
 export const runtime = 'nodejs';
+
+/**
+ * Offre de l'utilisateur (`profiles.plan`) : c'est elle que le worker lit
+ * pour débloquer les fonctions payantes au rendu (lib/entitlements.ts).
+ */
+async function setUserPlan(userId: string, plan: 'free' | 'pro' | 'agency'): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.from('profiles').update({ plan }).eq('id', userId);
+  if (error) throw new Error(`Mise à jour du plan : ${error.message}`);
+}
 
 /** Marque un événement comme traité. Retourne false si déjà vu. */
 async function beginEvent(
@@ -115,6 +126,7 @@ export async function POST(request: Request) {
         const planKey = planFromPriceId(priceId);
         if (!planKey) break;
 
+        await setUserPlan(userId, tierFromPlanKey(planKey));
         await grantForUser(
           userId,
           planCreditsSeconds(planKey),
@@ -138,21 +150,23 @@ export async function POST(request: Request) {
             : session.customer?.id;
         if (!userId || !subscriptionId) break;
 
+        const priceId = session.metadata?.price_id ?? null;
+        const planKey = planFromPriceId(priceId);
+
         const admin = createAdminClient();
         await admin
           .from('profiles')
           .update({
             stripe_subscription_id: subscriptionId,
             ...(customerId ? { stripe_customer_id: customerId } : {}),
-            subscription_status: 'active'
+            subscription_status: 'active',
+            ...(planKey ? { plan: tierFromPlanKey(planKey) } : {})
           })
           .eq('id', userId);
 
         // Les crédits du premier mois arrivent via invoice.paid ;
         // on les octroie ici aussi par sûreté (idempotence garantie
         // par stripe_events : l'un des deux passe, pas les deux).
-        const priceId = session.metadata?.price_id ?? null;
-        const planKey = planFromPriceId(priceId);
         if (planKey) {
           await grantForUser(
             userId,
@@ -174,12 +188,17 @@ export async function POST(request: Request) {
         const userId = await userIdFromCustomer(customerId);
         if (!userId) break;
 
+        // Changement d'offre (Pro ↔ Agency) : le prix de l'abonnement dit
+        // quelle offre est désormais active.
+        const planKey = planFromPriceId(subscription.items?.data?.[0]?.price?.id ?? null);
+
         const admin = createAdminClient();
         await admin
           .from('profiles')
           .update({
             stripe_subscription_id: subscription.id,
-            subscription_status: subscription.status
+            subscription_status: subscription.status,
+            ...(planKey ? { plan: tierFromPlanKey(planKey) } : {})
           })
           .eq('id', userId);
         break;
@@ -198,7 +217,7 @@ export async function POST(request: Request) {
         const admin = createAdminClient();
         await admin
           .from('profiles')
-          .update({ subscription_status: 'canceled' })
+          .update({ subscription_status: 'canceled', plan: 'free' })
           .eq('id', userId);
         break;
       }

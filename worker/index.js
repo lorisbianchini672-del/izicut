@@ -17,36 +17,10 @@
  * s'arrête ; utile en cron / CI / debug).
  * ============================================================
  */
+import './load-env.js'; // doit rester le premier import (voir load-env.js)
 import { setTimeout as sleep } from 'node:timers/promises';
-import { readFileSync, existsSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { createSupabase, processJob } from './pipeline.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// ------------------------------------------------------------
-// Chargement d'environnement : .env.local puis .env (sans dépendance
-// dotenv). Les variables déjà présentes dans l'environnement gagnent
-// toujours : on n'écrase jamais.
-// ------------------------------------------------------------
-function loadEnvFile(file) {
-  if (!existsSync(file)) return;
-  const content = readFileSync(file, 'utf8');
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    const eq = line.indexOf('=');
-    if (eq === -1) continue;
-    const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
-    if (!(key in process.env)) process.env[key] = value;
-  }
-}
-
-loadEnvFile(path.join(__dirname, '..', '.env.local'));
-loadEnvFile(path.join(__dirname, '..', '.env'));
 
 const WORKER_NAME =
   process.env.WORKER_NAME ?? `worker-${process.pid}`;
@@ -63,7 +37,7 @@ let stopping = false;
 async function tryClaimAndRun(supabase) {
   if (running.size >= CONCURRENCY || stopping) return false;
 
-  const { data: job, error: claimError } = await supabase.rpc(
+  const { data: claimed, error: claimError } = await supabase.rpc(
     'claim_render_job',
     { p_worker_name: WORKER_NAME }
   );
@@ -72,7 +46,11 @@ async function tryClaimAndRun(supabase) {
     console.error('[worker] claim_render_job :', claimError.message);
     return false;
   }
-  if (!job) return false;
+  // La RPC renvoie un enregistrement composite : quand la file est vide,
+  // Postgres rend une ligne dont tous les champs sont NULL (et selon le
+  // client, parfois un tableau). Aucun id = aucun job.
+  const job = Array.isArray(claimed) ? claimed[0] : claimed;
+  if (!job || !job.id) return false;
 
   const id = job.id;
   console.log(`[worker] ${WORKER_NAME} ▶ job ${id} (${job.kind}) projet ${job.project_id ?? '—'}`);

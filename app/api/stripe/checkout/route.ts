@@ -14,6 +14,7 @@
  */
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { getStripe, planPriceId, appBaseUrl } from '@/lib/stripe';
 import { PLANS, type PlanKey } from '@/lib/plans';
 
@@ -68,7 +69,10 @@ export async function POST(request: Request) {
       });
       customerId = customer.id;
 
-      await supabase
+      // Écriture « système » : les colonnes de facturation sont en lecture
+      // seule pour le client (trigger profiles_protect_billing). Sinon un
+      // utilisateur pourrait se rattacher le customer Stripe d'un autre.
+      await createAdminClient()
         .from('profiles')
         .update({ stripe_customer_id: customerId })
         .eq('id', user.id);

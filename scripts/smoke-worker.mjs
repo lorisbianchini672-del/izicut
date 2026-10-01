@@ -22,7 +22,17 @@ try {
   const cue = timestamps.buildSrt([{ word: 'bonjour', start: 0, end: 0.4 }]);
   assert.ok(cue.includes('00:00:00,000 --> 00:00:00,400'), 'SRT invalide');
 
-  out.push('✅ worker/pipeline.js + worker/timestamps.ts se chargent');
+  // Modules de montage et de droits, importés par pipeline.js.
+  const editPlan = await import('../worker/edit-plan.ts');
+  assert.equal(typeof editPlan.computeKeepSegments, 'function', 'computeKeepSegments manquant');
+  const entitlements = await import('../lib/entitlements.ts');
+  assert.equal(
+    entitlements.sanitizeRenderSettings({ fps: 60 }, 'free').settings.fps,
+    30,
+    'le rabotage Free ne fonctionne pas'
+  );
+
+  out.push('✅ worker/pipeline.js + timestamps.ts + edit-plan.ts + lib/entitlements.ts se chargent');
   out.push('Exports : ' + Object.keys(pipeline).join(', '));
   writeFileSync(new URL('./smoke-worker.out.txt', import.meta.url), out.join('\n') + '\n');
   console.log(out.join('\n'));

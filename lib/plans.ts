@@ -29,12 +29,13 @@ export const PLANS: Record<string, Plan> = {
     description: 'Parfait pour tester sur vos premières vidéos',
     free: true,
     priceEnv: null,
+    // Chaque ligne correspond à un droit réel de lib/entitlements.ts.
     features: [
       '30 minutes de vidéo / mois',
-      'Découpage IA & Score de viralité',
-      'Sous-titres animés mot-à-mot (style Hormozi)',
-      'Recadrage automatique 9:16',
-      'Export 1080x1920 HD'
+      'Jusqu’à 3 clips IA par vidéo, calés sur les phrases',
+      'Sous-titres animés mot-à-mot (2 styles)',
+      'Recadrage 9:16 & volume normalisé',
+      'Export HD 1080×1920 avec filigrane IziCut'
     ]
   },
   pro: {
@@ -47,11 +48,13 @@ export const PLANS: Record<string, Plan> = {
     priceEnv: 'STRIPE_PRICE_PRO',
     features: [
       '150 minutes de vidéo / mois',
-      'Rendu Remotion prioritaire ultra-rapide',
-      'Styles illimités & suppression des silences',
-      'Overlay Safe Zones (TikTok, Reels, Shorts)',
-      'Détection multi-locuteurs & split-screen',
-      'Export HD sans filigrane'
+      'Jusqu’à 6 clips IA par vidéo',
+      'Suppression automatique des silences',
+      'Zooms dynamiques & titre d’accroche animé',
+      '6 styles de sous-titres + couleurs libres',
+      'Fond flou, recadrage manuel & barre de progression',
+      'Audio studio (débruitage, compression voix)',
+      '60 fps, qualité maximale, sans filigrane, rendus illimités'
     ]
   },
   agency: {
@@ -64,11 +67,10 @@ export const PLANS: Record<string, Plan> = {
     priceEnv: 'STRIPE_PRICE_AGENCY',
     features: [
       '600 minutes de vidéo / mois',
-      'Traitement parallèle multi-vidéos',
-      'Marque blanche & polices personnalisées',
-      'Accès API & intégrations webhooks',
-      'Collaboration d’équipe (5 sièges)',
-      'Support dédié prioritaire 7j/7'
+      'Jusqu’à 10 clips IA par vidéo',
+      'Toutes les fonctions Pro incluses',
+      'Votre marque (@pseudo, nom) incrustée sur chaque vidéo',
+      'Support dédié prioritaire'
     ]
   }
 };
