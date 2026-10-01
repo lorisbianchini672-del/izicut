@@ -70,16 +70,18 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  // Méthode recommandée par @supabase/ssr (getAll / setAll) : les cookies
+  // rafraîchis sont recopiés sur la requête ET sur la réponse, sinon la
+  // session « saute » (déconnexions aléatoires, connexion qui ne tient pas).
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
-      get(name: string) {
-        return request.cookies.get(name)?.value;
+      getAll() {
+        return request.cookies.getAll();
       },
-      set(name: string, value: string, options: Record<string, unknown>) {
-        response.cookies.set(name, value, options);
-      },
-      remove(name: string, options: Record<string, unknown>) {
-        response.cookies.set(name, '', { ...options, maxAge: 0 });
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
       }
     }
   });
@@ -90,7 +92,10 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (isProtected && !user) {
-    response = redirectToLogin(request, pathname);
+    const redirect = redirectToLogin(request, pathname);
+    // Conserve les cookies éventuellement nettoyés par Supabase.
+    response.cookies.getAll().forEach((c) => redirect.cookies.set(c));
+    return redirect;
   }
 
   return response;
