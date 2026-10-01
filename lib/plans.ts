@@ -9,7 +9,7 @@ export type PlanKey = 'free' | 'pro' | 'agency' | 'creator' | 'studio';
 export type Plan = {
   key: PlanKey;
   name: string;
-  amount: number; // en centimes (1900 = 19,00 €)
+  amount: number; // en centimes (700 = 7,00 €)
   minutesPerPeriod: number;
   description: string;
   free: boolean;
@@ -41,7 +41,7 @@ export const PLANS: Record<string, Plan> = {
   pro: {
     key: 'pro',
     name: 'Pro',
-    amount: 1900,
+    amount: 700,
     minutesPerPeriod: 150,
     description: 'Pour les créateurs réguliers (TikTok, Reels, Shorts)',
     free: false,
@@ -60,7 +60,7 @@ export const PLANS: Record<string, Plan> = {
   agency: {
     key: 'agency',
     name: 'Agency',
-    amount: 5900,
+    amount: 2500,
     minutesPerPeriod: 600,
     description: 'Pour les équipes, agences et podcasteurs',
     free: false,
