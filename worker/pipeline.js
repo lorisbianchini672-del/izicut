@@ -231,12 +231,15 @@ export async function runIngest(supabase, job, project, options = {}) {
       const formatArgs = audioOnly
         ? ['-f', 'ba/b', '-o', sourcePath]
         : [
-            // 1080p suffit pour un rendu 1080×1920 : téléchargement plus rapide.
-            '-f', 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b', '--merge-output-format', 'mp4',
+            // 1080p suffit pour un rendu 1080×1920. H.264 en priorité : l'AV1
+            // coûte très cher en mémoire à décoder (processus tué sinon).
+            '-f', 'bv*[height<=1080][vcodec^=avc1]+ba/bv*[height<=1080][vcodec!^=av01]+ba/b[height<=1080]/bv*+ba/b', '--merge-output-format', 'mp4',
             '-o', sourcePath,
           ];
       const sectionArgs = section
-        ? ['--download-sections', `*${section.start.toFixed(2)}-${section.end.toFixed(2)}`, '--force-keyframes-at-cuts']
+        ? ['--download-sections', `*${section.start.toFixed(2)}-${section.end.toFixed(2)}`, '--force-keyframes-at-cuts',
+           // Réencodage de l'extrait : léger en mémoire (2 threads, preset rapide).
+           '--downloader-args', 'ffmpeg_o:-threads 2 -preset veryfast']
         : [];
       // YouTube bloque souvent les IP de serveur (« not a bot ») selon le
       // client imité : on essaie plusieurs clients avant d'abandonner.
@@ -821,7 +824,7 @@ export async function runRender(supabase, job, project, ctx) {
     '-i', sourcePath,
     '-vf', videoFilters.join(','),
     '-af', audioChain.join(','),
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '14', '-pix_fmt', 'yuv420p',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-threads', '2', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
     '-movflags', '+faststart',
     cutPath,
@@ -876,6 +879,8 @@ export async function runRender(supabase, job, project, ctx) {
     outputLocation: outputPath,
     inputProps,
     imageFormat: 'jpeg',
+    // Une seule page Chrome à la fois : tient dans 1 Go de mémoire.
+    concurrency: Number(process.env.RENDER_CONCURRENCY ?? 1),
     jpegQuality: 92,
     chromiumOptions: { gl: 'angle' },
     onProgress: ({ progress }) => void updateProgress(25 + progress * 60),
