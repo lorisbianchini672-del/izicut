@@ -429,9 +429,10 @@ export async function runTranscribe(supabase, job, project, ctx) {
       }
     }));
     // RECALAGE OBLIGATOIRE : décalage de chaque tranche + collage, dans l'ordre.
-    for (const chunk of chunks) {
-      allWords = mergeChunkWords(allWords, { offset: chunk.start, words: results[chunk.index] ?? [] });
-    }
+    // mergeChunkWords attend la LISTE des tranches { offset, words } :
+    // il décale chaque tranche puis dédoublonne les mots aux jointures.
+    allWords = mergeChunkWords(chunks.map((chunk) => ({ offset: chunk.start, words: results[chunk.index] ?? [] })));
+    console.log(`[worker] transcription : ${allWords.length} mots (${chunks.length} tranche(s))`);
   }
 
   if (allWords.length === 0) {
