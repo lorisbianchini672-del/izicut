@@ -19,8 +19,16 @@ BindAddress = 127.0.0.1:40000
 CONF
     wireproxy -c /tmp/warp/wireproxy.conf > /tmp/warp/wireproxy.log 2>&1 &
     sleep 3
-    export YTDLP_PROXY="socks5://127.0.0.1:40000"
-    echo "[start] WARP actif : téléchargements YouTube via Cloudflare"
+    # Vérification : le proxy doit répondre ET sortir par Cloudflare.
+    TRACE=$(curl -s -m 15 --socks5-hostname 127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace | grep -E '^(warp|ip|colo)=' | tr '\n' ' ')
+    YT=$(curl -s -o /dev/null -w '%{http_code}' -m 15 --socks5-hostname 127.0.0.1:40000 https://www.youtube.com/)
+    if echo "$TRACE" | grep -q 'warp=on'; then
+      export YTDLP_PROXY="socks5://127.0.0.1:40000"
+      echo "[start] WARP actif ($TRACE) — youtube.com HTTP $YT"
+    else
+      echo "[start] WARP ne répond pas ($TRACE / youtube $YT), démarrage sans proxy"
+      tail -5 /tmp/warp/wireproxy.log
+    fi
   else
     echo "[start] WARP indisponible ($(tail -1 /tmp/warp/register.log)), démarrage sans proxy"
   fi

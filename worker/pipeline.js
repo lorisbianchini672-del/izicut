@@ -239,11 +239,14 @@ export async function runIngest(supabase, job, project, options = {}) {
       // client imité : on essaie plusieurs clients avant d'abandonner.
       const clients = [null, 'tv_simply', 'tv', 'web_safari', 'mweb', 'android_vr', 'web_embedded'];
       let lastErr = null;
+      console.log(`[worker] téléchargement ${audioOnly ? 'audio' : section ? 'extrait' : 'vidéo'}${config.ytdlpProxy ? ' via proxy' : ''}…`);
+      const t0 = Date.now();
       for (const client of clients) {
         try {
           await run(config.ytdlp, [
             '--no-playlist', '--no-warnings',
             '--concurrent-fragments', '8',
+            '--socket-timeout', '20', '--retries', '3',
             // YouTube exige désormais un moteur JavaScript : Node est présent.
             ...(process.env.YTDLP_JS_RUNTIME !== 'none' ? ['--js-runtimes', process.env.YTDLP_JS_RUNTIME || 'node'] : []),
             ...(await ytdlpAuthArgs()),
@@ -251,7 +254,7 @@ export async function runIngest(supabase, job, project, options = {}) {
             ...formatArgs,
             ...sectionArgs,
             project.source_url,
-          ], { timeoutMs: 30 * 60 * 1000 });
+          ], { timeoutMs: (audioOnly || section ? 8 : 30) * 60 * 1000 });
           if (client) console.log(`[worker] yt-dlp OK avec le client « ${client} »`);
           lastErr = null;
           break;
@@ -264,6 +267,7 @@ export async function runIngest(supabase, job, project, options = {}) {
         }
       }
       if (lastErr) throw lastErr;
+      console.log(`[worker] téléchargé en ${Math.round((Date.now() - t0) / 1000)} s`);
     } else if (project.storage_path) {
       // Bucket privé : URL signée courte (1 h), jamais d'objet public.
       const { data, error } = await supabase.storage
