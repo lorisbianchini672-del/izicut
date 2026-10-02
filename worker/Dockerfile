@@ -28,6 +28,14 @@ RUN BGUTIL_TAG=$(curl -fsSL https://api.github.com/repos/Brainicism/bgutil-ytdlp
     && git clone --depth 1 --branch "$BGUTIL_TAG" https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil \
     && cd /opt/bgutil/server && npm ci && npx tsc
 
+# Cloudflare WARP gratuit en espace utilisateur (pas besoin de droits réseau) :
+# wgcf crée le profil WireGuard, wireproxy l'expose en proxy SOCKS5 local.
+RUN set -e; \
+    WGCF_URL=$(curl -fsSL https://api.github.com/repos/ViRb3/wgcf/releases/latest | python3 -c "import sys,json; print([a['browser_download_url'] for a in json.load(sys.stdin)['assets'] if a['name'].endswith('_linux_amd64')][0])"); \
+    curl -fsSL "$WGCF_URL" -o /usr/local/bin/wgcf && chmod +x /usr/local/bin/wgcf; \
+    WP_URL=$(curl -fsSL https://api.github.com/repos/whyvl/wireproxy/releases/latest | python3 -c "import sys,json; print([a['browser_download_url'] for a in json.load(sys.stdin)['assets'] if a['name']=='wireproxy_linux_amd64.tar.gz'][0])"); \
+    curl -fsSL "$WP_URL" | tar -xz -C /usr/local/bin wireproxy && chmod +x /usr/local/bin/wireproxy
+
 WORKDIR /app
 
 # Dépendances d'exécution uniquement (pas de Next.js dans cette image).
@@ -48,4 +56,4 @@ ENV NODE_ENV=production
 # Type stripping : le worker importe ./timestamps.ts (module pur testé)
 # sans étape de build. Requis sur Node 22 ; natif à partir de Node 23.6.
 # Le serveur de PO token démarre en arrière-plan avant le worker.
-CMD ["sh", "-c", "(node /opt/bgutil/server/build/main.js > /tmp/bgutil.log 2>&1 &) ; exec node --experimental-strip-types worker/index.js"]
+CMD ["sh", "worker/start.sh"]
