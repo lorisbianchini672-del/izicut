@@ -19,6 +19,7 @@ import { mkdir, mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { ffmpegRenderArgs } from './ffmpeg-render.js';
 
 import {
   planChunks,
@@ -812,7 +813,8 @@ export async function runRender(supabase, job, project, ctx) {
 
   // Petit serveur (1 Go) : rendu à l'échelle RENDER_SCALE (0.667 → 720×1280).
   // Passer RENDER_SCALE=1 (offre Railway avec plus de mémoire) pour du 1080×1920.
-  const renderScale = Math.min(1, Math.max(0.3, Number(process.env.RENDER_SCALE ?? 0.667)));
+  const useRemotion = process.env.RENDER_ENGINE === 'remotion';
+  const renderScale = useRemotion ? Math.min(1, Math.max(0.3, Number(process.env.RENDER_SCALE ?? 0.667))) : 1;
   const cutHeight = Math.round((1080 * renderScale) / 2) * 2;
   const videoFilters = [`scale=-2:'min(${cutHeight},ih)'`, `fps=${fps}`];
   const audioChain = audioFilters(settings.enhance_audio);
@@ -842,6 +844,18 @@ export async function runRender(supabase, job, project, ctx) {
     : '';
   const signature = overlaySignature(settings, tier);
 
+  const outputPath = path.join(workdir, `${clip.id}.mp4`);
+  if (!useRemotion) {
+    // Rendu léger ffmpeg + sous-titres ASS (voir ffmpeg-render.js).
+    const args = await ffmpegRenderArgs({
+      cutPath, workdir, outputPath, settings,
+      words: finalWords, duration: finalDuration, hookTitle, signature,
+      width: RENDER_WIDTH, height: RENDER_HEIGHT, crf: entitlements.crf,
+    });
+    await updateProgress(30);
+    await run(config.ffmpeg, args, { timeoutMs: 15 * 60 * 1000 });
+    await updateProgress(88);
+  } else {
   const { renderMedia, selectComposition } = await import('@remotion/renderer');
 
   // Bundle Remotion compilé UNE fois par processus (avant : ~20-40 s à
@@ -875,7 +889,6 @@ export async function runRender(supabase, job, project, ctx) {
   composition.width = RENDER_WIDTH;
   composition.height = RENDER_HEIGHT;
 
-  const outputPath = path.join(workdir, `${clip.id}.mp4`);
   await renderMedia({
     composition,
     serveUrl: bundleLocation,
@@ -898,6 +911,7 @@ export async function runRender(supabase, job, project, ctx) {
   });
   await updateProgress(88);
   await rm(mediaPath, { force: true });
+  }
 
   // Upload du rendu dans le bucket privé. Le premier segment du chemin est
   // l'identifiant de l'utilisateur — même convention que le SRT et que la
