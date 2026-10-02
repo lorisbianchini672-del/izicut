@@ -84,12 +84,38 @@ async function tryClaimAndRun(supabase) {
   return true;
 }
 
+/**
+ * Jobs orphelins : un serveur qui redémarre (mise à jour, mémoire saturée)
+ * laisse ses jobs « processing » pour toujours. Au démarrage on remet en
+ * file ceux de CE worker, puis régulièrement ceux bloqués depuis 20 min.
+ */
+async function requeueStale(supabase, { atStartup = false } = {}) {
+  let query = supabase
+    .from('render_jobs')
+    .update({ status: 'queued', locked_at: null, locked_by: null })
+    .eq('status', 'processing');
+  query = atStartup
+    ? query.eq('locked_by', WORKER_NAME)
+    : query.lt('locked_at', new Date(Date.now() - 20 * 60 * 1000).toISOString());
+  const { data, error } = await query.select('id, clip_id');
+  if (error) return console.warn(`[worker] reprise des jobs orphelins : ${error.message}`);
+  if (data?.length) {
+    console.log(`[worker] ${data.length} job(s) orphelin(s) remis en file`);
+    const clipIds = data.map((j) => j.clip_id).filter(Boolean);
+    if (clipIds.length) await supabase.from('clips').update({ status: 'queued' }).in('id', clipIds);
+  }
+}
+
 async function main() {
   console.log(`[worker] ${WORKER_NAME} démarré (concurrence ${CONCURRENCY}, poll ${POLL_MS} ms${ONCE ? ', mode --once' : ''})`);
   const supabase = createSupabase();
   // Pré-compile le moteur de rendu en arrière-plan : le premier clip
   // exporté n'attend plus la compilation.
-  if (!ONCE) getRemotionBundle().catch((err) => console.warn(`[worker] pré-compilation du rendu : ${err.message}`));
+  if (!ONCE && process.env.RENDER_ENGINE === 'remotion') getRemotionBundle().catch((err) => console.warn(`[worker] pré-compilation du rendu : ${err.message}`));
+  if (!ONCE) {
+    await requeueStale(supabase, { atStartup: true });
+    setInterval(() => void requeueStale(supabase), 5 * 60 * 1000).unref();
+  }
 
   let idleLoops = 0;
 
