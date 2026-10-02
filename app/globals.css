@@ -536,3 +536,9 @@
 }
 @keyframes izi-pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes izi-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* IziCut editor trim handles */
+.izi-trim::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; pointer-events: auto; width: 14px; height: 44px; border-radius: 6px; background: var(--color-neon); border: 2px solid #0a0a0a; cursor: ew-resize; box-shadow: 0 0 10px rgba(198,255,61,.6); }
+.izi-trim::-moz-range-thumb { pointer-events: auto; width: 14px; height: 44px; border-radius: 6px; background: var(--color-neon); border: 2px solid #0a0a0a; cursor: ew-resize; }
+.izi-trim::-webkit-slider-runnable-track { background: transparent; }
+.izi-trim::-moz-range-track { background: transparent; }

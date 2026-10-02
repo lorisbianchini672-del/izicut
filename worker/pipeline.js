@@ -214,6 +214,26 @@ export function makeProgressUpdater(supabase, jobId) {
  * que du fichier source, et ne doivent PAS remettre le projet en
  * « transcription » (il est déjà transcrit et analysé).
  */
+/**
+ * État des téléchargements YouTube, lu par le tableau de bord de l'admin :
+ * dès que YouTube refuse (cookies expirés), un bandeau rouge l'indique.
+ * Écrit seulement quand l'état change (pas de requête à chaque vidéo).
+ */
+let lastYoutubeOk = null;
+async function reportYoutubeStatus(supabase, err) {
+  const msg = String(err?.message ?? '');
+  const blocked = !!err && /not a bot|sign in|cookies|429/i.test(msg);
+  const ok = !blocked;
+  if (lastYoutubeOk === ok) return;
+  lastYoutubeOk = ok;
+  const body = JSON.stringify({ ok, at: new Date().toISOString(), message: blocked ? msg.slice(0, 300) : '' });
+  await supabase.storage
+    .from('clips')
+    .upload('system/youtube-status.json', Buffer.from(body), { upsert: true, contentType: 'application/json' })
+    .catch(() => undefined);
+  if (blocked) console.error('[worker] ⚠️ YouTube bloque le serveur : cookies à renouveler');
+}
+
 export async function runIngest(supabase, job, project, options = {}) {
   // audioOnly : l'analyse n'a besoin que du son → téléchargement 10 à 30×
   // plus léger qu'une vidéo 1080p. section : le rendu d'un clip ne
@@ -278,6 +298,7 @@ export async function runIngest(supabase, job, project, options = {}) {
           console.warn(`[worker] yt-dlp refusé (client ${client ?? 'défaut'}), essai suivant…`);
         }
       }
+      await reportYoutubeStatus(supabase, lastErr);
       if (lastErr) throw lastErr;
       console.log(`[worker] téléchargé en ${Math.round((Date.now() - t0) / 1000)} s`);
     } else if (project.storage_path) {
@@ -927,6 +948,25 @@ export async function runRender(supabase, job, project, ctx) {
       contentType: 'video/mp4',
     });
   if (uploadError) throw new Error(`Upload rendu : ${uploadError.message}`);
+
+  // Aperçu « brut » léger (480p, ± 3 s) : l'éditeur l'utilise pour montrer
+  // la vraie vidéo sous les sous-titres en direct, même pour une source
+  // YouTube (qui n'est pas stockée). Échec non bloquant.
+  try {
+    const previewStart = Math.max(0, clip.start_time - 3);
+    const previewPath = path.join(workdir, 'preview.mp4');
+    await run(config.ffmpeg, [
+      '-y', '-ss', String(Math.max(0, previewStart - sectionOffset)), '-t', String(clipDuration + 6),
+      '-i', sourcePath,
+      '-vf', 'scale=-2:480', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-threads', '2',
+      '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', previewPath,
+    ], { timeoutMs: 5 * 60 * 1000 });
+    await supabase.storage
+      .from('clips')
+      .upload(`${project.user_id}/${clip.id}-preview.mp4`, await readFile(previewPath), { upsert: true, contentType: 'video/mp4' });
+  } catch (err) {
+    console.warn(`[worker] aperçu éditeur non généré : ${err?.message ?? err}`);
+  }
 
   await supabase
     .from('clips')

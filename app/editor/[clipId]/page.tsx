@@ -1,4 +1,4 @@
-import { VideoEditor } from '@/components/editor/VideoEditor';
+import { ClipStudio } from '@/components/editor/ClipStudio';
 
 export default async function EditorClipPage({
   params,
@@ -7,6 +7,6 @@ export default async function EditorClipPage({
 }) {
   const { clipId } = await params;
 
-  return <VideoEditor clipId={clipId} />;
+  return <ClipStudio clipId={clipId} />;
 }
 

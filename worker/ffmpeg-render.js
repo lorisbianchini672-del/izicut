@@ -48,15 +48,28 @@ function groupWords(words, maxWords = 3, maxChars = 18) {
   return groups;
 }
 
+/** Variantes de style, alignées sur les modèles de l'éditeur. */
+const TEMPLATES = {
+  hormozi:     { words: 3, size: 1,    outline: 6, activeTag: (c) => `{\\c${c}\\fscx108\\fscy108}` },
+  clean:       { words: 6, size: 0.8,  outline: 3, activeTag: (c) => `{\\c${c}}` },
+  karaoke_box: { words: 4, size: 0.95, outline: 6, activeTag: (c) => `{\\3c${c}\\bord14\\c&H00FFFFFF}` },
+  neon:        { words: 3, size: 1,    outline: 3, activeTag: (c) => `{\\c${c}\\3c${c}\\bord5\\blur6}` },
+  bold_pop:    { words: 1, size: 1.55, outline: 8, activeTag: (c) => `{\\c${c}\\fscx112\\fscy112}` },
+  minimal:     { words: 7, size: 0.6,  outline: 2, activeTag: (c) => `{\\c${c}}` },
+};
+// \r remet le style de base (couleur, contour) pour les mots suivants.
+const RESET = () => '{\\r}';
+
 export function buildAss({ words, settings, width, height, duration, hookTitle, signature }) {
   const scale = width / 1080;
-  const upper = settings.uppercase !== false;
-  const fontSize = Math.round((Number(settings.font_size) || 84) * scale);
+  const tpl = TEMPLATES[settings.template] ?? TEMPLATES.hormozi;
+  const upper = settings.uppercase !== false && settings.template !== 'clean' && settings.template !== 'minimal';
+  const fontSize = Math.round((Number(settings.font_size) || 84) * tpl.size * scale);
   const active = assColor(settings.active_color, '#FFD400');
   const base = assColor(settings.text_color, '#FFFFFF');
   const y = Math.round(height * Math.min(0.92, Math.max(0.1, Number(settings.position) || 0.72)));
   const x = Math.round(width / 2);
-  const outline = Math.max(2, Math.round(6 * scale));
+  const outline = Math.max(2, Math.round(tpl.outline * scale));
 
   const lines = [
     '[Script Info]', 'ScriptType: v4.00+', `PlayResX: ${width}`, `PlayResY: ${height}`, 'WrapStyle: 0', 'ScaledBorderAndShadow: yes', '',
@@ -70,14 +83,14 @@ export function buildAss({ words, settings, width, height, duration, hookTitle, 
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
   ];
 
-  for (const group of groupWords(words)) {
+  for (const group of groupWords(words, tpl.words, tpl.words === 1 ? 40 : 18 + (tpl.words - 3) * 6)) {
     group.forEach((w, i) => {
       const start = w.start;
       const end = i < group.length - 1 ? group[i + 1].start : Math.max(w.end, start + 0.25);
       const text = group
         .map((g, j) => {
           const t = escapeAss(upper ? g.text.toUpperCase() : g.text);
-          return j === i ? `{\\c${active}\\fscx108\\fscy108}${t}{\\c${base}\\fscx100\\fscy100}` : t;
+          return j === i ? `${tpl.activeTag(active)}${t}${RESET(base)}` : t;
         })
         .join(' ');
       lines.push(`Dialogue: 1,${assTime(start)},${assTime(end)},Cap,,0,0,0,,{\\pos(${x},${y})}${text}`);

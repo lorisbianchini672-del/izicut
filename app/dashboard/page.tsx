@@ -41,6 +41,7 @@ import {
   type StatusTone
 } from '@/lib/format';
 import { PROJECT_STATUS_LABELS } from '@/types';
+import { YoutubeStatusBanner } from '@/components/dashboard/YoutubeStatusBanner';
 
 /** Filtres rapides, alignés sur les tonalités de statut (pas sur les libellés). */
 const STATUS_FILTERS = [
@@ -159,6 +160,8 @@ export default function DashboardPage() {
             </Link>
           </Button>
         </div>
+
+        <YoutubeStatusBanner />
 
         {/* ============================================================
             1. BARRE DE PROGRESSION ANIMÉE DES CRÉDITS DE MINUTES
