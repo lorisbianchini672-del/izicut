@@ -244,6 +244,8 @@ export async function runIngest(supabase, job, project, options = {}) {
           await run(config.ytdlp, [
             '--no-playlist', '--no-warnings',
             '--concurrent-fragments', '8',
+            // YouTube exige désormais un moteur JavaScript : Node est présent.
+            ...(process.env.YTDLP_JS_RUNTIME !== 'none' ? ['--js-runtimes', process.env.YTDLP_JS_RUNTIME || 'node'] : []),
             ...(await ytdlpAuthArgs()),
             ...(client ? ['--extractor-args', `youtube:player_client=${client}`] : []),
             ...formatArgs,
