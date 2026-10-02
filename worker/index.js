@@ -21,7 +21,7 @@ import './load-env.js'; // doit rester le premier import (voir load-env.js)
 import { friendlyError } from './friendly-error.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { createSupabase, processJob } from './pipeline.js';
+import { createSupabase, getRemotionBundle, processJob } from './pipeline.js';
 
 const WORKER_NAME =
   process.env.WORKER_NAME ?? `worker-${process.pid}`;
@@ -87,6 +87,9 @@ async function tryClaimAndRun(supabase) {
 async function main() {
   console.log(`[worker] ${WORKER_NAME} démarré (concurrence ${CONCURRENCY}, poll ${POLL_MS} ms${ONCE ? ', mode --once' : ''})`);
   const supabase = createSupabase();
+  // Pré-compile le moteur de rendu en arrière-plan : le premier clip
+  // exporté n'attend plus la compilation.
+  if (!ONCE) getRemotionBundle().catch((err) => console.warn(`[worker] pré-compilation du rendu : ${err.message}`));
 
   let idleLoops = 0;
 

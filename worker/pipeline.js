@@ -211,7 +211,10 @@ export function makeProgressUpdater(supabase, jobId) {
  * « transcription » (il est déjà transcrit et analysé).
  */
 export async function runIngest(supabase, job, project, options = {}) {
-  const { withAudio = true } = options;
+  // audioOnly : l'analyse n'a besoin que du son → téléchargement 10 à 30×
+  // plus léger qu'une vidéo 1080p. section : le rendu d'un clip ne
+  // télécharge que l'extrait utile (+ marge), pas toute la vidéo.
+  const { withAudio = true, audioOnly = false, section = null } = options;
   const workdir = await mkdtemp(path.join(tmpdir(), 'izicut-ingest-'));
   const updateProgress = makeProgressUpdater(supabase, job.id);
 
@@ -222,12 +225,22 @@ export async function runIngest(supabase, job, project, options = {}) {
     if (project.source_type === 'external_url') {
       // yt-dlp : uniquement des contenus dont l'utilisateur détient
       // les droits (condition des CGU YouTube — risque juridique réel).
+      const formatArgs = audioOnly
+        ? ['-f', 'ba/b', '-o', sourcePath]
+        : [
+            // 1080p suffit pour un rendu 1080×1920 : téléchargement plus rapide.
+            '-f', 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b', '--merge-output-format', 'mp4',
+            '-o', sourcePath,
+          ];
+      const sectionArgs = section
+        ? ['--download-sections', `*${section.start.toFixed(2)}-${section.end.toFixed(2)}`, '--force-keyframes-at-cuts']
+        : [];
       await run(config.ytdlp, [
         '--no-playlist', '--no-warnings',
+        '--concurrent-fragments', '8',
         ...(await ytdlpAuthArgs()),
-        // 1080p suffit pour un rendu 1080×1920 : téléchargement plus rapide.
-        '-f', 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b', '--merge-output-format', 'mp4',
-        '-o', sourcePath,
+        ...formatArgs,
+        ...sectionArgs,
         project.source_url,
       ], { timeoutMs: 30 * 60 * 1000 });
     } else if (project.storage_path) {
@@ -274,7 +287,7 @@ export async function runIngest(supabase, job, project, options = {}) {
         .eq('id', project.id);
     }
 
-    return { workdir, sourcePath, durationSeconds };
+    return { workdir, sourcePath, durationSeconds, sectionOffset: section ? section.start : 0 };
   } catch (err) {
     await rm(workdir, { recursive: true, force: true });
     throw err;
@@ -305,6 +318,7 @@ async function transcribeChunk(audioBuffer, filename) {
     form.append('model', ai.transcribeModel);
     form.append('response_format', 'verbose_json');
     form.append('timestamp_granularities[]', 'word');
+    form.append('timestamp_granularities[]', 'segment');
 
     const res = await fetch(`${ai.base}/audio/transcriptions`, {
       method: 'POST',
@@ -314,11 +328,23 @@ async function transcribeChunk(audioBuffer, filename) {
 
     if (res.ok) {
       const data = await res.json();
-      const words = (data.words ?? []).map((w) => ({
+      let words = (data.words ?? []).map((w) => ({
         word: w.word,
         start: w.start,
         end: w.end ?? w.start + 0.2,
       }));
+      // Repli : certains fournisseurs ne renvoient que des segments.
+      // On répartit alors les mots du segment à parts égales.
+      if (words.length === 0 && Array.isArray(data.segments)) {
+        for (const seg of data.segments) {
+          const parts = String(seg.text ?? '').trim().split(/\s+/).filter(Boolean);
+          const span = Math.max(0.01, (seg.end - seg.start) / Math.max(1, parts.length));
+          parts.forEach((word, i) => words.push({ word, start: seg.start + i * span, end: seg.start + (i + 1) * span }));
+        }
+      }
+      if (words.length === 0) {
+        console.warn(`[worker] transcription vide (${filename}) — clés: ${Object.keys(data).join(',')} texte: ${String(data.text ?? '').slice(0, 80)}`);
+      }
       return words;
     }
 
@@ -334,7 +360,8 @@ export async function runTranscribe(supabase, job, project, ctx) {
   const updateProgress = makeProgressUpdater(supabase, job.id);
 
   // Plan de découpage sous la limite de 25 Mo (module pur, testé).
-  const chunks = planChunks(durationSeconds);
+  // Tranches de 5 min max (MP3 48 kb/s ≈ 1,8 Mo) : plus de parallélisme.
+  const chunks = planChunks(durationSeconds, { maxDurationSeconds: 300, bytesPerSecond: 6000 });
   const audioFile = path.join(workdir, 'audio.wav');
 
   let allWords = [];
@@ -345,22 +372,33 @@ export async function runTranscribe(supabase, job, project, ctx) {
     await updateProgress(50);
     allWords = await transcribeFileLocal(audioFile, durationSeconds);
     await updateProgress(80);
-  } else for (const chunk of chunks) {
-    const chunkPath = path.join(workdir, `chunk_${String(chunk.index).padStart(3, '0')}.wav`);
-    await run(config.ffmpeg, [
-      '-y', '-i', audioFile,
-      '-ss', String(chunk.start),
-      '-t', String(chunk.duration),
-      '-c', 'copy',
-      chunkPath,
-    ]);
-
-    const audio = await readFile(chunkPath);
-    const localWords = await transcribeChunk(audio, path.basename(chunkPath));
-
-    // RECALAGE OBLIGATOIRE : décalage de la tranche + collage.
-    allWords = mergeChunkWords(allWords, { offset: chunk.start, words: localWords });
-    await updateProgress(45 + Math.round(((chunk.index + 1) / chunks.length) * 35));
+  } else {
+    // Tranches compressées (MP3 mono 48 kb/s : ~10× plus léger que le WAV,
+    // envoi bien plus rapide) et transcrites EN PARALLÈLE (3 à la fois).
+    const results = new Array(chunks.length);
+    let done = 0;
+    const queue = [...chunks];
+    const workerCount = Math.min(3, chunks.length);
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (queue.length) {
+        const chunk = queue.shift();
+        const chunkPath = path.join(workdir, `chunk_${String(chunk.index).padStart(3, '0')}.mp3`);
+        await run(config.ffmpeg, [
+          '-y', '-ss', String(chunk.start), '-t', String(chunk.duration),
+          '-i', audioFile,
+          '-ac', '1', '-ar', '16000', '-c:a', 'libmp3lame', '-b:a', '48k',
+          chunkPath,
+        ]);
+        const audio = await readFile(chunkPath);
+        results[chunk.index] = await transcribeChunk(audio, path.basename(chunkPath));
+        done += 1;
+        await updateProgress(45 + Math.round((done / chunks.length) * 35));
+      }
+    }));
+    // RECALAGE OBLIGATOIRE : décalage de chaque tranche + collage, dans l'ordre.
+    for (const chunk of chunks) {
+      allWords = mergeChunkWords(allWords, { offset: chunk.start, words: results[chunk.index] ?? [] });
+    }
   }
 
   if (allWords.length === 0) {
@@ -624,8 +662,60 @@ function audioFilters(enhance) {
   ];
 }
 
+// ---------- Rendu : bundle mis en cache + serveur média local ----------
+const MEDIA_DIR = path.join(tmpdir(), 'izicut-media');
+let bundlePromise = null;
+let mediaServerPromise = null;
+
+export function getRemotionBundle() {
+  bundlePromise ??= (async () => {
+    const { bundle } = await import('@remotion/bundler');
+    const emptyPublic = await mkdtemp(path.join(tmpdir(), 'izicut-public-'));
+    const started = Date.now();
+    const location = await bundle({
+      entryPoint: path.resolve(import.meta.dirname, 'remotion', 'index.ts'),
+      publicDir: emptyPublic,
+    });
+    console.log(`[worker] bundle Remotion prêt (${Math.round((Date.now() - started) / 1000)} s, mis en cache)`);
+    return location;
+  })().catch((err) => {
+    bundlePromise = null;
+    throw err;
+  });
+  return bundlePromise;
+}
+
+/** Sert MEDIA_DIR sur 127.0.0.1 (requêtes Range gérées). */
+function getMediaServer() {
+  mediaServerPromise ??= (async () => {
+    await mkdir(MEDIA_DIR, { recursive: true });
+    const http = await import('node:http');
+    const { createReadStream, statSync } = await import('node:fs');
+    const server = http.createServer((req, res) => {
+      const name = path.basename(decodeURIComponent((req.url ?? '/').split('?')[0]));
+      const file = path.join(MEDIA_DIR, name);
+      let size;
+      try { size = statSync(file).size; } catch { res.writeHead(404).end(); return; }
+      const range = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? '');
+      const headers = { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': '*' };
+      if (range) {
+        const start = range[1] ? Number(range[1]) : 0;
+        const end = range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+        res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+        createReadStream(file, { start, end }).pipe(res);
+      } else {
+        res.writeHead(200, { ...headers, 'Content-Length': size });
+        createReadStream(file).pipe(res);
+      }
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    return `http://127.0.0.1:${server.address().port}`;
+  })();
+  return mediaServerPromise;
+}
+
 export async function runRender(supabase, job, project, ctx) {
-  const { workdir, sourcePath } = ctx;
+  const { workdir, sourcePath, sectionOffset = 0 } = ctx;
   const updateProgress = makeProgressUpdater(supabase, job.id);
 
   if (!job.clip_id) throw new Error('Job de rendu sans clip_id');
@@ -692,7 +782,7 @@ export async function runRender(supabase, job, project, ctx) {
 
   await run(config.ffmpeg, [
     '-y',
-    '-ss', String(clip.start_time),
+    '-ss', String(Math.max(0, clip.start_time - sectionOffset)),
     '-t', String(clipDuration),
     '-i', sourcePath,
     '-vf', videoFilters.join(','),
@@ -711,17 +801,19 @@ export async function runRender(supabase, job, project, ctx) {
     : '';
   const signature = overlaySignature(settings, tier);
 
-  const { bundle } = await import('@remotion/bundler');
   const { renderMedia, selectComposition } = await import('@remotion/renderer');
 
-  const bundleLocation = await bundle({
-    entryPoint: path.resolve(import.meta.dirname, 'remotion', 'index.ts'),
-    publicDir,
-    onProgress: (p) => void updateProgress(15 + (p / 100) * 10),
-  });
+  // Bundle Remotion compilé UNE fois par processus (avant : ~20-40 s à
+  // chaque clip). L'extrait est servi par un petit serveur HTTP local.
+  const bundleLocation = await getRemotionBundle();
+  const mediaBase = await getMediaServer();
+  const mediaName = `${clip.id}-${Date.now()}.mp4`;
+  const mediaPath = path.join(MEDIA_DIR, mediaName);
+  await writeFile(mediaPath, await readFile(cutPath));
+  await updateProgress(25);
 
   const inputProps = {
-    videoSrc: 'clip.mp4',
+    videoSrc: `${mediaBase}/${mediaName}`,
     words: finalWords,
     style: settings,
     zoomTimes,
@@ -755,6 +847,7 @@ export async function runRender(supabase, job, project, ctx) {
     onProgress: ({ progress }) => void updateProgress(25 + progress * 60),
   });
   await updateProgress(88);
+  await rm(mediaPath, { force: true });
 
   // Upload du rendu dans le bucket privé. Le premier segment du chemin est
   // l'identifiant de l'utilisateur — même convention que le SRT et que la
@@ -802,14 +895,14 @@ export async function processJob(job) {
     // ingest → transcribe → analyze s'enchaînent sur le même job
     // « racine » : chaque étape met le projet au statut suivant.
     if (job.kind === 'ingest') {
-      ctx = { ...ctx, ...(await runIngest(supabase, job, project)) };
+      ctx = { ...ctx, ...(await runIngest(supabase, job, project, { audioOnly: true })) };
       ctx.words = (await runTranscribe(supabase, job, project, ctx)).words;
       await runAnalyze(supabase, job, project, ctx);
     } else if (job.kind === 'transcribe') {
-      ctx = { ...ctx, ...(await runIngest(supabase, job, project)) };
+      ctx = { ...ctx, ...(await runIngest(supabase, job, project, { audioOnly: true })) };
       ctx.words = (await runTranscribe(supabase, job, project, ctx)).words;
     } else if (job.kind === 'analyze') {
-      ctx = { ...ctx, ...(await runIngest(supabase, job, project)) };
+      ctx = { ...ctx, ...(await runIngest(supabase, job, project, { audioOnly: true, withAudio: false })) };
       const { data: transcript } = await supabase
         .from('transcripts')
         .select('words')
@@ -819,7 +912,13 @@ export async function processJob(job) {
       ctx.durationSeconds = project.duration_seconds ?? 0;
       await runAnalyze(supabase, job, project, ctx);
     } else if (job.kind === 'render') {
-      ctx = { ...ctx, ...(await runIngest(supabase, job, project, { withAudio: false })) };
+      // Source en ligne : on ne télécharge que l'extrait du clip (± 2 s).
+      let section = null;
+      if (project.source_type === 'external_url' && job.clip_id) {
+        const { data: c } = await supabase.from('clips').select('start_time, end_time').eq('id', job.clip_id).maybeSingle();
+        if (c) section = { start: Math.max(0, Number(c.start_time) - 2), end: Number(c.end_time) + 2 };
+      }
+      ctx = { ...ctx, ...(await runIngest(supabase, job, project, { withAudio: false, section })) };
       return await runRender(supabase, job, project, ctx);
     }
 
