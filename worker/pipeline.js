@@ -810,7 +810,11 @@ export async function runRender(supabase, job, project, ctx) {
   await mkdir(publicDir, { recursive: true });
   const cutPath = path.join(publicDir, 'clip.mp4');
 
-  const videoFilters = [`scale=-2:'min(1080,ih)'`, `fps=${fps}`];
+  // Petit serveur (1 Go) : rendu à l'échelle RENDER_SCALE (0.667 → 720×1280).
+  // Passer RENDER_SCALE=1 (offre Railway avec plus de mémoire) pour du 1080×1920.
+  const renderScale = Math.min(1, Math.max(0.3, Number(process.env.RENDER_SCALE ?? 0.667)));
+  const cutHeight = Math.round((1080 * renderScale) / 2) * 2;
+  const videoFilters = [`scale=-2:'min(${cutHeight},ih)'`, `fps=${fps}`];
   const audioChain = audioFilters(settings.enhance_audio);
   if (selectExpr) {
     videoFilters.push(`select='${selectExpr}'`, 'setpts=N/FRAME_RATE/TB');
@@ -880,6 +884,7 @@ export async function runRender(supabase, job, project, ctx) {
     outputLocation: outputPath,
     inputProps,
     imageFormat: 'jpeg',
+    scale: renderScale,
     // Une seule page Chrome à la fois : tient dans 1 Go de mémoire.
     concurrency: Number(process.env.RENDER_CONCURRENCY ?? 1),
     jpegQuality: 92,
