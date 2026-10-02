@@ -810,7 +810,7 @@ export async function runRender(supabase, job, project, ctx) {
   await mkdir(publicDir, { recursive: true });
   const cutPath = path.join(publicDir, 'clip.mp4');
 
-  const videoFilters = [`scale='min(1920,iw)':-2`, `fps=${fps}`];
+  const videoFilters = [`scale=-2:'min(1080,ih)'`, `fps=${fps}`];
   const audioChain = audioFilters(settings.enhance_audio);
   if (selectExpr) {
     videoFilters.push(`select='${selectExpr}'`, 'setpts=N/FRAME_RATE/TB');
@@ -864,6 +864,7 @@ export async function runRender(supabase, job, project, ctx) {
     serveUrl: bundleLocation,
     id: 'ClipVertical',
     inputProps,
+    chromiumOptions: { gl: process.env.REMOTION_GL || 'swangle' },
   });
   composition.durationInFrames = Math.max(1, Math.ceil(finalDuration * fps));
   composition.fps = fps;
@@ -882,7 +883,12 @@ export async function runRender(supabase, job, project, ctx) {
     // Une seule page Chrome à la fois : tient dans 1 Go de mémoire.
     concurrency: Number(process.env.RENDER_CONCURRENCY ?? 1),
     jpegQuality: 92,
-    chromiumOptions: { gl: 'angle' },
+    // Serveur sans GPU et 1 Go de mémoire : rendu logiciel + caches réduits,
+    // sinon Chrome plante (« Page crashed! »).
+    chromiumOptions: { gl: process.env.REMOTION_GL || 'swangle' },
+    offthreadVideoCacheSizeInBytes: 150 * 1024 * 1024,
+    offthreadVideoThreads: 1,
+    disallowParallelEncoding: true,
     onProgress: ({ progress }) => void updateProgress(25 + progress * 60),
   });
   await updateProgress(88);
