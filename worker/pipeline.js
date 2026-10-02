@@ -235,14 +235,33 @@ export async function runIngest(supabase, job, project, options = {}) {
       const sectionArgs = section
         ? ['--download-sections', `*${section.start.toFixed(2)}-${section.end.toFixed(2)}`, '--force-keyframes-at-cuts']
         : [];
-      await run(config.ytdlp, [
-        '--no-playlist', '--no-warnings',
-        '--concurrent-fragments', '8',
-        ...(await ytdlpAuthArgs()),
-        ...formatArgs,
-        ...sectionArgs,
-        project.source_url,
-      ], { timeoutMs: 30 * 60 * 1000 });
+      // YouTube bloque souvent les IP de serveur (« not a bot ») selon le
+      // client imité : on essaie plusieurs clients avant d'abandonner.
+      const clients = [null, 'tv_simply', 'tv', 'web_safari', 'mweb', 'android_vr', 'web_embedded'];
+      let lastErr = null;
+      for (const client of clients) {
+        try {
+          await run(config.ytdlp, [
+            '--no-playlist', '--no-warnings',
+            '--concurrent-fragments', '8',
+            ...(await ytdlpAuthArgs()),
+            ...(client ? ['--extractor-args', `youtube:player_client=${client}`] : []),
+            ...formatArgs,
+            ...sectionArgs,
+            project.source_url,
+          ], { timeoutMs: 30 * 60 * 1000 });
+          if (client) console.log(`[worker] yt-dlp OK avec le client « ${client} »`);
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          const msg = String(err?.message ?? err);
+          // Seules les erreurs de blocage/format justifient d'essayer un autre client.
+          if (!/not a bot|sign in|confirm|429|403|format is not available|requested format|po token|HTTP Error/i.test(msg)) break;
+          console.warn(`[worker] yt-dlp refusé (client ${client ?? 'défaut'}), essai suivant…`);
+        }
+      }
+      if (lastErr) throw lastErr;
     } else if (project.storage_path) {
       // Bucket privé : URL signée courte (1 h), jamais d'objet public.
       const { data, error } = await supabase.storage
