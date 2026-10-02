@@ -136,7 +136,10 @@ function run(cmd, args, options = {}) {
       ? setTimeout(() => child.kill('SIGKILL'), options.timeoutMs)
       : null;
 
-    child.stdout.on('data', (d) => { stdout += d; });
+    child.stdout.on('data', (d) => {
+      stdout += d;
+      if (options.onStdout) options.onStdout(d.toString());
+    });
     child.stderr.on('data', (d) => {
       stderr += d;
       if (options.onStderr) options.onStderr(d.toString());
@@ -244,7 +247,8 @@ export async function runIngest(supabase, job, project, options = {}) {
       for (const client of clients) {
         try {
           await run(config.ytdlp, [
-            '--no-playlist', '--no-warnings',
+            '--no-playlist', '--newline',
+            ...(process.env.YTDLP_VERBOSE === '1' ? ['-v'] : []),
             '--concurrent-fragments', '8',
             '--socket-timeout', '20', '--retries', '3',
             // YouTube exige désormais un moteur JavaScript : Node est présent.
@@ -254,7 +258,11 @@ export async function runIngest(supabase, job, project, options = {}) {
             ...formatArgs,
             ...sectionArgs,
             project.source_url,
-          ], { timeoutMs: (audioOnly || section ? 8 : 30) * 60 * 1000 });
+          ], {
+            timeoutMs: (audioOnly || section ? 8 : 30) * 60 * 1000,
+            onStderr: (t) => t.split('\n').filter(Boolean).forEach((l) => console.log(`[yt-dlp] ${l.slice(0, 220)}`)),
+            onStdout: (() => { let last = 0; return (t) => { if (Date.now() - last > 5000) { last = Date.now(); const l = t.trim().split('\n').pop(); if (l) console.log(`[yt-dlp] ${l.slice(0, 160)}`); } }; })(),
+          });
           if (client) console.log(`[worker] yt-dlp OK avec le client « ${client} »`);
           lastErr = null;
           break;
