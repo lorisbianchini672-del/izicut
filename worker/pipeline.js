@@ -940,6 +940,31 @@ export async function runRender(supabase, job, project, ctx) {
 // ============================================================
 // DISPATCH : choix de l'étape selon le kind du job
 // ============================================================
+// ---------- Cache des sources YouTube (6 h) ----------
+const SOURCE_CACHE_DIR = path.join(tmpdir(), 'izicut-source-cache');
+const SOURCE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+async function cachedSource(projectId) {
+  const { stat, readdir } = await import('node:fs/promises');
+  await mkdir(SOURCE_CACHE_DIR, { recursive: true });
+  // Ménage : on supprime les sources de plus de 6 h.
+  for (const name of await readdir(SOURCE_CACHE_DIR).catch(() => [])) {
+    const file = path.join(SOURCE_CACHE_DIR, name);
+    const info = await stat(file).catch(() => null);
+    if (info && Date.now() - info.mtimeMs > SOURCE_CACHE_TTL_MS) await rm(file, { force: true });
+  }
+  const file = path.join(SOURCE_CACHE_DIR, `${projectId}.mp4`);
+  return (await stat(file).catch(() => null)) ? file : null;
+}
+
+async function storeSourceInCache(projectId, sourcePath) {
+  const { rename, copyFile } = await import('node:fs/promises');
+  await mkdir(SOURCE_CACHE_DIR, { recursive: true });
+  const file = path.join(SOURCE_CACHE_DIR, `${projectId}.mp4`);
+  await rename(sourcePath, file).catch(async () => { await copyFile(sourcePath, file); });
+  return file;
+}
+
 export async function processJob(job) {
   const supabase = createSupabase();
 
@@ -976,13 +1001,22 @@ export async function processJob(job) {
       ctx.durationSeconds = project.duration_seconds ?? 0;
       await runAnalyze(supabase, job, project, ctx);
     } else if (job.kind === 'render') {
-      // Source en ligne : on ne télécharge que l'extrait du clip (± 2 s).
-      let section = null;
-      if (project.source_type === 'external_url' && job.clip_id) {
-        const { data: c } = await supabase.from('clips').select('start_time, end_time').eq('id', job.clip_id).maybeSingle();
-        if (c) section = { start: Math.max(0, Number(c.start_time) - 2), end: Number(c.end_time) + 2 };
+      // Source YouTube : la vidéo est téléchargée UNE fois par projet puis
+      // gardée en cache 6 h sur le serveur. Les clips suivants du même
+      // projet ne refont aucune requête à YouTube (qui bloque les serveurs
+      // trop bavards).
+      if (project.source_type === 'external_url') {
+        const cached = await cachedSource(project.id);
+        if (cached) {
+          console.log('[worker] source en cache, aucun téléchargement');
+          ctx = { ...ctx, workdir: await mkdtemp(path.join(tmpdir(), 'izicut-job-')), sourcePath: cached, sectionOffset: 0 };
+        } else {
+          ctx = { ...ctx, ...(await runIngest(supabase, job, project, { withAudio: false })) };
+          ctx.sourcePath = await storeSourceInCache(project.id, ctx.sourcePath);
+        }
+      } else {
+        ctx = { ...ctx, ...(await runIngest(supabase, job, project, { withAudio: false })) };
       }
-      ctx = { ...ctx, ...(await runIngest(supabase, job, project, { withAudio: false, section })) };
       return await runRender(supabase, job, project, ctx);
     }
 
