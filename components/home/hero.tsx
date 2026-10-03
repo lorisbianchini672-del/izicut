@@ -66,7 +66,7 @@ export function Hero() {
         <motion.div style={{ y: textY, opacity: textOpacity }} className="flex flex-col items-start">
           <motion.p {...rise(0)} className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-white/[0.03] px-3 py-1 font-code text-[11px] uppercase tracking-[0.18em] text-fg-muted">
             <span className="h-1.5 w-1.5 animate-pulse-rec rounded-full bg-rec" aria-hidden />
-            Clipping vidéo par IA
+            Le clipping IA pensé pour le français
           </motion.p>
 
           <h1 className="mt-6 text-balance text-[2.6rem] font-semibold leading-[1.02] tracking-[-0.035em] text-fg sm:text-6xl lg:text-[4.4rem]">
@@ -76,8 +76,9 @@ export function Hero() {
           </h1>
 
           <motion.p {...rise(0.65)} className="mt-6 max-w-lg text-pretty text-lg leading-relaxed text-fg-muted">
-            Collez un lien : IziCut transcrit chaque mot, repère les passages qui accrochent
-            et rend des clips 9:16 sous-titrés, prêts pour TikTok, Reels et Shorts.
+            Collez un lien ou importez une vidéo : IziCut transcrit chaque mot (accents et
+            ponctuation compris), repère les passages qui accrochent et livre des clips 9:16
+            sous-titrés, avec la légende et les hashtags prêts à publier.
           </motion.p>
 
           <motion.div {...rise(0.8)} className="mt-9 w-full">
@@ -86,9 +87,9 @@ export function Hero() {
 
           <motion.dl {...rise(0.95)} className="mt-10 grid w-full max-w-lg grid-cols-3 gap-6 border-t border-line pt-6">
             {[
-              ['Mot à mot', 'sous-titres synchronisés'],
-              ['9:16', 'rendu 1080×1920'],
-              ['6 styles', 'de sous-titres animés'],
+              ['100 % FR', 'sous-titres, légendes, support'],
+              ['Prêt à poster', 'légende + hashtags par IA'],
+              ['7 €/mois', 'offre Pro, sans engagement'],
             ].map(([k, v]) => (
               <div key={k}>
                 <dt className="font-code text-sm font-semibold text-fg">{k}</dt>

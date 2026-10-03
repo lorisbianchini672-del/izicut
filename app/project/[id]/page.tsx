@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, use, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Download, Pencil, Play, Flame, Clock, Scissors, Plus } from 'lucide-react';
+import { ArrowLeft, Download, Pencil, Play, Flame, Clock, Scissors, Plus, Sparkles, Copy, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -226,6 +226,7 @@ function ClipCard({
   const [url, setUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [showSocial, setShowSocial] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const ready = clip.status === 'ready' && Boolean(clip.renderedStoragePath);
   const working = clip.status === 'queued' || clip.status === 'rendering';
@@ -273,6 +274,7 @@ function ClipCard({
 
   return (
     <Card className="group overflow-hidden rounded-2xl border border-border/60 bg-card/40 p-0">
+      {showSocial ? <SocialPanel clipId={clip.id} onClose={() => setShowSocial(false)} /> : null}
       <div className="relative aspect-[9/16] w-full overflow-hidden bg-black">
         {ready && url ? (
           <>
@@ -351,7 +353,123 @@ function ClipCard({
             </Link>
           </Button>
         </div>
+        <button
+          type="button"
+          onClick={() => setShowSocial(true)}
+          className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-neon/30 bg-neon/[0.06] px-3 py-2 text-xs font-semibold text-neon transition hover:bg-neon/[0.12]"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          Texte à publier (IA)
+        </button>
       </div>
     </Card>
+  );
+}
+
+type SocialText = { description: string; hashtags: string[]; hooks: string[] };
+
+/** Fenêtre « Texte à publier » : description, hashtags et accroches générés par l'IA. */
+function SocialPanel({ clipId, onClose }: { clipId: string; onClose: () => void }) {
+  const [data, setData] = useState<SocialText | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setError(null);
+    fetch(`/api/clips/${clipId}/social`)
+      .then(async (res) => {
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error ?? 'Génération impossible');
+        if (!cancelled) setData(json as SocialText);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Génération impossible');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clipId, tick]);
+
+  const copy = async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      window.setTimeout(() => setCopied(null), 1500);
+    } catch {
+      /* presse-papiers refusé : l'utilisateur peut sélectionner le texte */
+    }
+  };
+
+  const all = data ? `${data.description}\n\n${data.hashtags.join(' ')}` : '';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4" onClick={onClose}>
+      <div
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-white/10 bg-ink-950 p-5 sm:rounded-3xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
+            <Sparkles className="h-5 w-5 text-neon" />
+            Texte à publier
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Fermer" className="cursor-pointer rounded-lg p-1.5 text-fg-muted hover:bg-white/10">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {!data && !error ? (
+          <div className="flex flex-col items-center gap-3 py-10 text-sm text-fg-muted">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-neon/20 border-t-neon" />
+            L’IA écrit votre légende…
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="space-y-3 py-6 text-center">
+            <p className="text-sm text-red-300">{error}</p>
+            <Button size="sm" variant="outline" className="rounded-xl" onClick={() => setTick((t) => t + 1)}>
+              Réessayer
+            </Button>
+          </div>
+        ) : null}
+
+        {data ? (
+          <div className="space-y-4">
+            <section>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Légende</p>
+              <p className="whitespace-pre-line rounded-xl bg-white/[0.04] p-3 text-sm leading-relaxed">{data.description}</p>
+            </section>
+            <section>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Hashtags</p>
+              <p className="rounded-xl bg-white/[0.04] p-3 text-sm text-neon">{data.hashtags.join(' ')}</p>
+            </section>
+            <Button variant="gradient" className="w-full rounded-xl font-bold" onClick={() => copy('all', all)}>
+              {copied === 'all' ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+              {copied === 'all' ? 'Copié !' : 'Copier légende + hashtags'}
+            </Button>
+            <section>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Autres accroches (texte sur la vidéo)</p>
+              <ul className="space-y-2">
+                {data.hooks.map((hook, i) => (
+                  <li key={hook} className="flex items-center justify-between gap-2 rounded-xl bg-white/[0.04] px-3 py-2 text-sm">
+                    <span>{hook}</span>
+                    <button type="button" onClick={() => copy(`h${i}`, hook)} className="shrink-0 cursor-pointer rounded-lg p-1.5 text-fg-muted hover:bg-white/10" aria-label="Copier l’accroche">
+                      {copied === `h${i}` ? <Check className="h-4 w-4 text-neon" /> : <Copy className="h-4 w-4" />}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <button type="button" onClick={() => setTick((t) => t + 1)} className="w-full cursor-pointer text-center text-xs text-fg-muted underline-offset-2 hover:underline">
+              Proposer une autre version
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -10,7 +10,7 @@ const QUESTIONS = [
   },
   {
     q: 'Quelles sources puis-je importer ?',
-    a: "Un lien YouTube ou Twitch, ou un fichier MP4, MOV, WebM ou MKV. N'importez que des contenus dont vous détenez les droits.",
+    a: "Un lien YouTube ou Twitch, ou un fichier MP4, MOV, WebM ou MKV jusqu'à 800 Mo (environ 10 à 15 min en 1080p, 25 à 30 min en 720p, 1 h en 480p). N'importez que des contenus dont vous détenez les droits.",
   },
   {
     q: 'Puis-je corriger un clip ?',
