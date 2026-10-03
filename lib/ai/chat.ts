@@ -5,8 +5,8 @@
  * mais intégré : aucun serveur exposé, clés uniquement dans les variables
  * d'environnement). Si l'un est saturé (429), en panne (5xx) ou trop lent,
  * on passe automatiquement au suivant.
- *   GROQ_API_KEY       → Groq (rapide)
- *   GEMINI_API_KEY     → Google Gemini (AI Studio, gratuit, voit les images)
+ *   GEMINI_API_KEY     → Google Gemini (IA principale : gratuite, voit les images)
+ *   GROQ_API_KEY       → Groq (rapide, secours)
  *   OPENROUTER_API_KEY → OpenRouter (modèles « :free »)
  *   MISTRAL_API_KEY    → Mistral (offre gratuite « Experiment »)
  *   OPENAI_API_KEY     → OpenAI (payant, dernier recours)
@@ -25,8 +25,8 @@ type Part = { type: 'text'; text: string } | { type: 'image_url'; image_url: { u
 function providers(): Provider[] {
   const list: Provider[] = [];
   const env = process.env;
-  if (env.GROQ_API_KEY) list.push({ name: 'groq', url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_API_KEY, model: env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b', vision: env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b', json: true });
   if (env.GEMINI_API_KEY) list.push({ name: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: env.GEMINI_API_KEY, model: env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash', vision: env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash', json: true });
+  if (env.GROQ_API_KEY) list.push({ name: 'groq', url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_API_KEY, model: env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b', vision: env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b', json: true });
   if (env.OPENROUTER_API_KEY) list.push({ name: 'openrouter', url: 'https://openrouter.ai/api/v1/chat/completions', key: env.OPENROUTER_API_KEY, model: env.OPENROUTER_CHAT_MODEL || 'openrouter/free', vision: env.OPENROUTER_VISION_MODEL, json: false });
   if (env.MISTRAL_API_KEY) list.push({ name: 'mistral', url: 'https://api.mistral.ai/v1/chat/completions', key: env.MISTRAL_API_KEY, model: env.MISTRAL_CHAT_MODEL || 'mistral-small-latest', vision: env.MISTRAL_VISION_MODEL || 'mistral-small-latest', json: true });
   if (env.OPENAI_API_KEY) list.push({ name: 'openai', url: 'https://api.openai.com/v1/chat/completions', key: env.OPENAI_API_KEY, model: env.OPENAI_CHAT_MODEL || 'gpt-4o-mini', vision: env.OPENAI_CHAT_MODEL || 'gpt-4o-mini', json: true });

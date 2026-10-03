@@ -79,8 +79,9 @@ export function remoteAi() {
       key: config.groqKey,
       transcribeModel: config.transcribeModel || 'whisper-large-v3-turbo',
       analyzeModel: config.analyzeModel || 'openai/gpt-oss-120b',
-      // Offre gratuite : ~8 000 jetons/minute → fenêtres de transcription courtes.
-      windowChars: 14000,
+      // Groq gratuit : ~8 000 jetons/minute → fenêtres courtes. Avec Gemini
+      // (fenêtre de contexte énorme), toute la transcription passe d'un coup.
+      windowChars: process.env.GEMINI_API_KEY ? 400000 : 14000,
     };
   }
   return {
@@ -661,7 +662,38 @@ export async function runTranscribe(supabase, job, project, ctx) {
 // ÉTAPE 3 — ANALYZE : sélection virale par GPT-4o-mini
 // ============================================================
 /** Appel chat JSON distant, avec reprise sur limite de débit (429). */
+/** Gemini (Google AI Studio) : IA d'analyse principale quand la clé est présente. */
+async function geminiChat(system, user) {
+  if (!process.env.GEMINI_API_KEY) return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.GEMINI_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: process.env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash',
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      }),
+    }).catch(() => null);
+    if (res?.ok) {
+      const payload = await res.json();
+      const content = payload.choices?.[0]?.message?.content;
+      if (content) return content;
+    }
+    console.warn(`[worker] Gemini indisponible (${res?.status ?? 'réseau'}), ${attempt ? 'bascule sur Groq' : 'nouvel essai'}`);
+    if (res && res.status !== 429 && res.status < 500) break;
+    await sleep(3000);
+  }
+  return null;
+}
+
 async function chatJsonRemote(system, user) {
+  const viaGemini = await geminiChat(system, user);
+  if (viaGemini) return viaGemini;
   const ai = remoteAi();
   for (let attempt = 0; attempt < 5; attempt++) {
     const res = await fetch(`${ai.base}/chat/completions`, {
@@ -791,7 +823,7 @@ export async function runAnalyze(supabase, job, project, ctx) {
     // puis on garde les meilleurs extraits toutes fenêtres confondues.
     const fullText = buildTimedTranscript(words, { maxChars: Number.MAX_SAFE_INTEGER });
     const windows = fullText.length <= ai.windowChars ? [words] : splitWordsByChars(words, ai.windowChars);
-    console.log(`[worker] analyse ${ai.name} (${ai.analyzeModel}) — ${windows.length} fenêtre(s)`);
+    console.log(`[worker] analyse ${process.env.GEMINI_API_KEY ? 'gemini (secours groq)' : `${ai.name} (${ai.analyzeModel})`} — ${windows.length} fenêtre(s)`);
     for (let i = 0; i < windows.length; i++) {
       if (i > 0 && ai.name === 'groq' && !process.env.GEMINI_API_KEY) await sleep(61_000); // respecte ~8k jetons/min (inutile si Gemini prend le relais)
       const text = buildTimedTranscript(windows[i], { maxChars: ai.windowChars });
