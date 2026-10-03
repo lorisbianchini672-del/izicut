@@ -5,7 +5,7 @@
  */
 import { FORMAT_SIZE, TRANSITION, type MotionProject, type Scene } from './types';
 
-export type MotionAssets = { logo?: HTMLImageElement | null; screenshot?: HTMLImageElement | null };
+export type MotionAssets = { logo?: HTMLImageElement | null; screenshot?: HTMLImageElement | null; videos?: (HTMLVideoElement | null)[] };
 export type RenderOptions = { fontFamily: string; watermark?: boolean };
 
 // ---------- Courbes d'animation ----------
@@ -533,6 +533,86 @@ function sceneCta(c: Ctx, s: Extract<Scene, { type: 'cta' }>, lt: number) {
   }
 }
 
+function sceneVideo(c: Ctx, s: Extract<Scene, { type: 'video' }>, lt: number) {
+  const { ctx, W, H, U } = c;
+  const video = c.assets.videos?.[s.media] ?? null;
+  const ready = Boolean(video && video.readyState >= 2 && video.videoWidth);
+  if (s.layout === 'full') {
+    if (ready && video) {
+      const k = Math.max(W / video.videoWidth, H / video.videoHeight);
+      const zoom = 1.04 + 0.04 * Math.min(1, lt / Math.max(1, s.duration)); // léger mouvement « Ken Burns »
+      const vw = video.videoWidth * k * zoom;
+      const vh = video.videoHeight * k * zoom;
+      ctx.drawImage(video, (W - vw) / 2, (H - vh) / 2, vw, vh);
+    } else {
+      placeholder(c, 0, 0, W, H);
+    }
+    if (s.caption) {
+      // Dégradé pour que le texte reste lisible sur n'importe quelle vidéo.
+      const g = ctx.createLinearGradient(0, H * 0.55, 0, H);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,0.75)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, H * 0.55, W, H * 0.45);
+      kinetic(c, s.caption, W / 2, c.vertical ? H * 0.74 : H * 0.8, U * 0.075, W * 0.86, lt, { start: 0.2 });
+    }
+    return;
+  }
+  // Cadre incliné qui flotte (comme la capture produit).
+  const capY = c.vertical ? H * 0.17 : H * 0.14;
+  if (s.caption) kinetic(c, s.caption, W / 2, capY, U * 0.075, W * 0.86, lt);
+  const ratio = ready && video ? video.videoHeight / video.videoWidth : 16 / 9;
+  const maxW = c.vertical ? W * 0.8 : W * 0.6;
+  const maxH = c.vertical ? H * 0.58 : H * 0.62;
+  let fw = maxW;
+  let fh = fw * ratio;
+  if (fh > maxH) { fh = maxH; fw = fh / ratio; }
+  const enter = easeOutCubic(progress(lt, 0.1, 1));
+  const tilt = (1 - enter) * 0.3;
+  ctx.save();
+  ctx.globalAlpha *= clamp(enter * 1.4);
+  ctx.translate(W / 2, (c.vertical ? H * 0.58 : H * 0.6) + Math.sin(lt * 1.6) * U * 0.008 + (1 - enter) * U * 0.1);
+  ctx.transform(1, -tilt * 0.25, tilt * 0.35, 1, 0, 0);
+  ctx.save();
+  ctx.shadowColor = rgba(c.theme.primary, 0.45);
+  ctx.shadowBlur = U * 0.09;
+  ctx.fillStyle = rgba(c.theme.primary, 0.25);
+  roundRect(ctx, -fw / 2, -fh / 2, fw, fh, U * 0.03);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  roundRect(ctx, -fw / 2, -fh / 2, fw, fh, U * 0.03);
+  ctx.clip();
+  if (ready && video) ctx.drawImage(video, -fw / 2, -fh / 2, fw, fh);
+  else placeholder(c, -fw / 2, -fh / 2, fw, fh);
+  ctx.restore();
+  ctx.strokeStyle = rgba(c.theme.text, 0.18);
+  ctx.lineWidth = U * 0.003;
+  roundRect(ctx, -fw / 2, -fh / 2, fw, fh, U * 0.03);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function placeholder(c: Ctx, x: number, y: number, w: number, h: number) {
+  const { ctx, U } = c;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = rgba(c.theme.primary, 0.5);
+  ctx.setLineDash([U * 0.02, U * 0.015]);
+  ctx.lineWidth = U * 0.004;
+  ctx.strokeRect(x + U * 0.02, y + U * 0.02, w - U * 0.04, h - U * 0.04);
+  setFont(c, 800, U * 0.04);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = rgba(c.theme.text, 0.8);
+  ctx.fillText('Ajoutez votre vidéo', x + w / 2, y + h / 2 - U * 0.03);
+  setFont(c, 800, U * 0.028);
+  ctx.fillStyle = rgba(c.theme.text, 0.55);
+  ctx.fillText('onglet « Médias »', x + w / 2, y + h / 2 + U * 0.03);
+  ctx.restore();
+}
+
 /** Position dans le projet : scène courante + temps local. */
 export function locate(project: MotionProject, t: number): { index: number; lt: number; start: number } {
   let start = 0;
@@ -573,6 +653,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
     case 'screenshot': sceneScreenshot(c, scene, lt, d); break;
     case 'quote': sceneQuote(c, scene, lt); break;
     case 'cta': sceneCta(c, scene, lt); break;
+    case 'video': sceneVideo(c, scene, lt); break;
   }
   ctx.restore();
 

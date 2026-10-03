@@ -23,7 +23,17 @@ export const SceneSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('screenshot'), duration, caption: txt(80) }),
   z.object({ type: z.literal('quote'), duration, text: txt(160), author: z.string().trim().max(50).optional() }),
-  z.object({ type: z.literal('cta'), duration, title: txt(70), button: txt(30) })
+  z.object({ type: z.literal('cta'), duration, title: txt(70), button: txt(30) }),
+  z.object({
+    type: z.literal('video'),
+    duration: z.number().min(1.5).max(15),
+    /** Index de la vidéo importée par le client (0, 1 ou 2). */
+    media: z.number().int().min(0).max(2),
+    /** Seconde de départ dans la vidéo importée. */
+    from: z.number().min(0).max(3600),
+    caption: z.string().trim().max(80).optional(),
+    layout: z.enum(['full', 'frame'])
+  })
 ]);
 
 export const MotionProjectSchema = z.object({
@@ -55,7 +65,8 @@ export const SCENE_LABELS: Record<SceneType, string> = {
   stat: 'Chiffre clé',
   screenshot: 'Capture produit',
   quote: 'Citation',
-  cta: 'Appel à l’action'
+  cta: 'Appel à l’action',
+  video: 'Votre vidéo'
 };
 
 export const TRANSITION = 0.45;
@@ -78,6 +89,8 @@ export function defaultScene(type: SceneType): Scene {
       return { type, duration: 4, text: 'Le meilleur moment pour commencer, c’est *maintenant*.', author: 'Votre marque' };
     case 'cta':
       return { type, duration: 3, title: 'Essayez *gratuitement*', button: 'Commencer' };
+    case 'video':
+      return { type, duration: 4, media: 0, from: 0, caption: 'Découvrez *notre savoir-faire*', layout: 'full' };
   }
 }
 

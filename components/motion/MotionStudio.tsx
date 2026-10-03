@@ -22,7 +22,8 @@ import {
   Send,
   Sparkles,
   Trash2,
-  Wand2
+  Wand2,
+  Film
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -45,7 +46,8 @@ import { cn } from '@/lib/utils';
 const motionFont = Montserrat({ subsets: ['latin'], weight: ['800', '900'], display: 'swap' });
 const STORAGE_KEY = 'izicut-motion-project-v1';
 
-type Tab = 'ia' | 'scenes' | 'style';
+type Tab = 'ia' | 'medias' | 'scenes' | 'style';
+type Media = { name: string; url: string; duration: number; el: HTMLVideoElement };
 type ChatMessage = { role: 'user' | 'ai'; text: string };
 
 const NEW_IDEAS = [
@@ -64,8 +66,9 @@ function loadSaved(): MotionProject | null {
   }
 }
 
-function pickMime(): { mime: string; ext: string } {
+function pickMime(withAudio = false): { mime: string; ext: string } {
   const candidates = [
+    ...(withAudio ? [{ mime: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4' }, { mime: 'video/webm;codecs=vp9,opus', ext: 'webm' }] : []),
     { mime: 'video/mp4;codecs=avc1.42E01E', ext: 'mp4' },
     { mime: 'video/webm;codecs=vp9', ext: 'webm' },
     { mime: 'video/webm', ext: 'webm' }
@@ -78,6 +81,9 @@ export function MotionStudio() {
   const supabase = useMemo(() => createClient(), []);
   const [project, setProject] = useState<MotionProject>(TEMPLATES[0].project);
   const [assets, setAssets] = useState<MotionAssets>({});
+  const [media, setMedia] = useState<Media[]>([]);
+  const mediaRef = useRef<Media[]>([]);
+  const audioRef = useRef<{ ctx: AudioContext; dest: MediaStreamAudioDestinationNode; wired: Set<HTMLVideoElement> } | null>(null);
   const [tab, setTab] = useState<Tab>('ia');
   const [playing, setPlaying] = useState(true);
   const [time, setTime] = useState(0);
@@ -97,7 +103,8 @@ export function MotionStudio() {
   const assetsRef = useRef(assets);
   const exportingRef = useRef(false);
   projectRef.current = project;
-  assetsRef.current = assets;
+  assetsRef.current = { ...assets, videos: media.map((m) => m.el) };
+  mediaRef.current = media;
   playingRef.current = playing;
 
   const duration = totalDuration(project);
@@ -131,6 +138,33 @@ export function MotionStudio() {
       .finally(() => setFontReady(true));
   }, []);
 
+  /**
+   * Vidéos du client : on cale la lecture de chaque vidéo importée sur la
+   * scène qui l'utilise (départ « from » + temps local de la scène).
+   */
+  const syncMedia = useCallback((t: number, live: boolean) => {
+    const list = mediaRef.current;
+    if (!list.length) return;
+    const proj = projectRef.current;
+    const { index, lt } = locate(proj, t);
+    const scene = proj.scenes[index];
+    list.forEach((m, i) => {
+      const v = m.el;
+      if (scene?.type === 'video' && scene.media === i) {
+        const target = Math.min(Math.max(0, m.duration - 0.05), scene.from + lt);
+        if (live) {
+          if (v.paused) void v.play().catch(() => undefined);
+          if (Math.abs(v.currentTime - target) > 0.35) v.currentTime = target;
+        } else {
+          if (!v.paused) v.pause();
+          if (Math.abs(v.currentTime - target) > 0.05) v.currentTime = target;
+        }
+      } else if (!v.paused) {
+        v.pause();
+      }
+    });
+  }, []);
+
   const draw = useCallback(
     (t: number) => {
       const canvas = canvasRef.current;
@@ -154,6 +188,7 @@ export function MotionStudio() {
           const total = totalDuration(projectRef.current);
           timeRef.current = (timeRef.current + dt) % total;
         }
+        syncMedia(timeRef.current, playingRef.current);
         draw(timeRef.current);
         if (now - lastUi > 100) { lastUi = now; setTime(timeRef.current); }
       }
@@ -161,7 +196,7 @@ export function MotionStudio() {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [draw, fontReady, project.format]);
+  }, [draw, syncMedia, fontReady, project.format]);
 
   const seek = (t: number) => {
     timeRef.current = Math.max(0, Math.min(duration - 0.01, t));
@@ -199,6 +234,39 @@ export function MotionStudio() {
     img.src = url;
   };
 
+  const addVideo = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith('video/') && !/\.(mov|mp4|webm|m4v|mkv)$/i.test(file.name)) { setNotice('Choisissez une vidéo (MP4, MOV, WebM).'); return; }
+    if (mediaRef.current.length >= 3) { setNotice('3 vidéos maximum par projet.'); return; }
+    const url = URL.createObjectURL(file);
+    const el = document.createElement('video');
+    el.src = url;
+    el.playsInline = true;
+    el.preload = 'auto';
+    el.onloadedmetadata = () => {
+      const item: Media = { name: file.name.replace(/\.[^.]+$/, '').slice(0, 40), url, duration: el.duration || 0, el };
+      const index = mediaRef.current.length;
+      setMedia((list) => [...list, item]);
+      // Première vidéo : on l'ajoute tout de suite au projet en plein écran.
+      setProject((p) => {
+        if (p.scenes.some((sc) => sc.type === 'video') || p.scenes.length >= 8) return p;
+        const scene: Scene = { type: 'video', duration: Math.min(8, Math.max(2, Math.round(item.duration * 10) / 10 || 4)), media: index, from: 0, caption: 'Découvrez *notre savoir-faire*', layout: 'full' };
+        return { ...p, scenes: [p.scenes[0], scene, ...p.scenes.slice(1)] };
+      });
+      setNotice('Vidéo ajoutée ✓ Demandez à l’IA « crée une pub à partir de ma vidéo » pour qu’elle construise tout autour.');
+    };
+    el.onerror = () => setNotice('Cette vidéo ne peut pas être lue par votre navigateur. Essayez un MP4.');
+  };
+  const removeVideo = (index: number) => {
+    setMedia((list) => list.filter((_, i) => i !== index));
+    setProject((p) => {
+      const scenes = p.scenes
+        .filter((sc) => !(sc.type === 'video' && sc.media === index))
+        .map((sc) => (sc.type === 'video' && sc.media > index ? { ...sc, media: sc.media - 1 } : sc));
+      return { ...p, scenes: scenes.length ? scenes : [defaultScene('title')] };
+    });
+  };
+
   const askAi = async (text: string) => {
     const value = text.trim();
     if (!value || aiBusy) return;
@@ -210,7 +278,11 @@ export function MotionStudio() {
       const res = await fetch('/api/motion/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: value, project: messages.length || project !== TEMPLATES[0].project ? project : undefined })
+        body: JSON.stringify({
+          prompt: value,
+          project: messages.length || project !== TEMPLATES[0].project ? project : undefined,
+          media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 }))
+        })
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.project) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
@@ -230,11 +302,33 @@ export function MotionStudio() {
       setNotice('Votre navigateur ne permet pas l’export vidéo. Utilisez Chrome, Edge ou Safari récent sur ordinateur.');
       return;
     }
-    const { mime, ext } = pickMime();
+    const { mime, ext } = pickMime(mediaRef.current.length > 0);
     exportingRef.current = true;
     setExporting(0);
     setPlaying(false);
-    const stream = canvas.captureStream(30);
+    // Son des vidéos importées dans l'export.
+    let audioTracks: MediaStreamTrack[] = [];
+    if (mediaRef.current.length) {
+      try {
+        if (!audioRef.current) {
+          const ac = new AudioContext();
+          audioRef.current = { ctx: ac, dest: ac.createMediaStreamDestination(), wired: new Set() };
+        }
+        const a = audioRef.current;
+        for (const m of mediaRef.current) {
+          if (a.wired.has(m.el)) continue;
+          const src = a.ctx.createMediaElementSource(m.el);
+          src.connect(a.dest);
+          src.connect(a.ctx.destination);
+          a.wired.add(m.el);
+        }
+        await a.ctx.resume();
+        audioTracks = a.dest.stream.getAudioTracks();
+      } catch {
+        audioTracks = [];
+      }
+    }
+    const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...audioTracks]);
     const recorder = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 10_000_000 });
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
@@ -247,6 +341,7 @@ export function MotionStudio() {
       const step = (now: number) => {
         const t = (now - t0) / 1000;
         if (t >= total + 0.15) { resolve(); return; }
+        syncMedia(Math.min(t, total - 0.001), true);
         draw(Math.min(t, total - 0.001));
         setExporting(Math.min(99, Math.round((t / total) * 100)));
         requestAnimationFrame(step);
@@ -255,7 +350,8 @@ export function MotionStudio() {
     });
     recorder.stop();
     await done;
-    stream.getTracks().forEach((tr) => tr.stop());
+    mediaRef.current.forEach((m) => m.el.pause());
+    stream.getVideoTracks().forEach((tr) => tr.stop());
     const blob = new Blob(chunks, { type: mime || 'video/webm' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -354,13 +450,13 @@ export function MotionStudio() {
 
         {/* ---------- Panneau d'édition ---------- */}
         <div className="flex min-h-[420px] flex-col rounded-2xl border border-white/10 bg-white/[0.03]">
-          <div className="grid grid-cols-3 gap-1 border-b border-white/10 p-1.5">
-            {([['ia', 'IA', <Wand2 key="i" className="h-4 w-4" />], ['scenes', 'Scènes', <Plus key="s" className="h-4 w-4" />], ['style', 'Style', <Palette key="p" className="h-4 w-4" />]] as [Tab, string, ReactNode][]).map(([id, label, icon]) => (
+          <div className="grid grid-cols-4 gap-1 border-b border-white/10 p-1.5">
+            {([['ia', 'IA', <Wand2 key="i" className="h-4 w-4" />], ['medias', 'Médias', <Film key="m" className="h-4 w-4" />], ['scenes', 'Scènes', <Plus key="s" className="h-4 w-4" />], ['style', 'Style', <Palette key="p" className="h-4 w-4" />]] as [Tab, string, ReactNode][]).map(([id, label, icon]) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
-                className={cn('flex cursor-pointer items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-semibold transition', tab === id ? 'bg-neon text-ink-950' : 'text-fg-muted hover:bg-white/[0.05]')}
+                className={cn('flex cursor-pointer items-center justify-center gap-1 rounded-xl py-2 text-xs font-semibold transition sm:text-sm', tab === id ? 'bg-neon text-ink-950' : 'text-fg-muted hover:bg-white/[0.05]')}
               >
                 {icon}
                 {label}
@@ -423,6 +519,44 @@ export function MotionStudio() {
               </div>
             ) : null}
 
+            {tab === 'medias' ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-neon/30 bg-neon/[0.05] p-3 text-sm text-fg">
+                  <p className="font-semibold">Partez de vos propres images</p>
+                  <p className="mt-1 text-xs text-fg-muted">Ajoutez une vidéo de votre produit, de votre boutique, de votre équipe… L’IA construit la pub animée autour pour valoriser votre activité.</p>
+                </div>
+                <label className="flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed border-neon/40 p-5 text-center text-sm text-fg hover:bg-neon/[0.04]">
+                  <Film className="h-6 w-6 text-neon" />
+                  <span className="font-semibold">Ajouter une vidéo</span>
+                  <span className="text-[11px] text-fg-muted">MP4, MOV, WebM · 3 vidéos maximum</span>
+                  <input type="file" accept="video/*,.mov" className="sr-only" onChange={(e) => { addVideo(e.target.files?.[0]); e.target.value = ''; }} />
+                </label>
+                {media.map((m, i) => (
+                  <div key={m.url} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="min-w-0 truncate text-sm font-semibold text-fg">Vidéo {i + 1} · {m.name}</p>
+                      <span className="shrink-0 font-code text-xs text-fg-muted">{m.duration.toFixed(1)} s</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button type="button" onClick={() => setProject((p) => (p.scenes.length >= 8 ? p : { ...p, scenes: [...p.scenes, { type: 'video', duration: Math.min(8, Math.max(2, m.duration)), media: i, from: 0, layout: 'full' }] }))} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Plein écran</button>
+                      <button type="button" onClick={() => setProject((p) => (p.scenes.length >= 8 ? p : { ...p, scenes: [...p.scenes, { type: 'video', duration: Math.min(6, Math.max(2, m.duration)), media: i, from: 0, layout: 'frame', caption: 'Votre *produit*' }] }))} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Dans un cadre</button>
+                      <button type="button" onClick={() => removeVideo(i)} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-red-300 hover:border-red-400/40">Retirer</button>
+                    </div>
+                  </div>
+                ))}
+                {media.length ? (
+                  <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => { setTab('ia'); void askAi('Crée une pub professionnelle à partir de ma vidéo : accroche forte, mon contenu en plein écran avec des textes animés, les points forts, et un appel à l’action'); }}>
+                    <Sparkles className="h-4 w-4" /> Créer une pub avec ma vidéo (IA)
+                  </Button>
+                ) : null}
+                <div className="grid grid-cols-2 gap-2">
+                  <Upload label="Logo" hint="scène finale" loaded={Boolean(assets.logo)} onFile={(f) => loadImage(f, 'logo')} onClear={() => setAssets((a) => ({ ...a, logo: null }))} />
+                  <Upload label="Photo / capture" hint="scène produit" loaded={Boolean(assets.screenshot)} onFile={(f) => loadImage(f, 'screenshot')} onClear={() => setAssets((a) => ({ ...a, screenshot: null }))} />
+                </div>
+                <p className="text-[11px] text-fg-subtle">Vos fichiers restent sur votre appareil : ils ne sont pas envoyés sur nos serveurs. Gardez cette page ouverte pendant votre création.</p>
+              </div>
+            ) : null}
+
             {tab === 'scenes' ? (
               <div className="space-y-3">
                 <p className="text-xs text-fg-subtle">Astuce : mettez un mot entre *astérisques* pour le colorer.</p>
@@ -438,10 +572,10 @@ export function MotionStudio() {
                         <IconBtn label="Supprimer" onClick={() => removeScene(i)}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
                       </div>
                     </div>
-                    <SceneFields scene={scene} onChange={(patch) => updateScene(i, patch)} />
+                    <SceneFields scene={scene} media={media} onChange={(patch) => updateScene(i, patch)} />
                     <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
                       Durée
-                      <input type="range" min={1.5} max={8} step={0.5} value={scene.duration} onChange={(e) => updateScene(i, { duration: Number(e.target.value) })} className="flex-1 accent-[var(--color-neon)]" />
+                      <input type="range" min={1.5} max={scene.type === 'video' ? 15 : 8} step={0.5} value={scene.duration} onChange={(e) => updateScene(i, { duration: Number(e.target.value) })} className="flex-1 accent-[var(--color-neon)]" />
                       <span className="w-8 text-right font-code">{scene.duration}s</span>
                     </label>
                   </div>
@@ -505,11 +639,7 @@ export function MotionStudio() {
                 <Field label="Nom de la marque">
                   <input value={project.brand} maxLength={40} onChange={(e) => setProject((p) => ({ ...p, brand: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-fg outline-none focus:border-neon/50" />
                 </Field>
-                <div className="grid grid-cols-2 gap-2">
-                  <Upload label="Logo" hint="scène finale" loaded={Boolean(assets.logo)} onFile={(f) => loadImage(f, 'logo')} onClear={() => setAssets((a) => ({ ...a, logo: null }))} />
-                  <Upload label="Capture d’écran" hint="scène produit" loaded={Boolean(assets.screenshot)} onFile={(f) => loadImage(f, 'screenshot')} onClear={() => setAssets((a) => ({ ...a, screenshot: null }))} />
-                </div>
-                <p className="text-[11px] text-fg-subtle">Vos images restent sur votre appareil : elles ne sont pas envoyées sur nos serveurs.</p>
+                <p className="text-[11px] text-fg-subtle">Logo, photos et vidéos : onglet « Médias ».</p>
               </div>
             ) : null}
           </div>
@@ -568,7 +698,7 @@ function Upload({ label, hint, loaded, onFile, onClear }: { label: string; hint:
 
 const inputCls = 'w-full rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-sm text-fg outline-none focus:border-neon/50';
 
-function SceneFields({ scene, onChange }: { scene: Scene; onChange: (patch: Partial<Scene>) => void }) {
+function SceneFields({ scene, media, onChange }: { scene: Scene; media: Media[]; onChange: (patch: Partial<Scene>) => void }) {
   switch (scene.type) {
     case 'title':
       return (
@@ -619,5 +749,33 @@ function SceneFields({ scene, onChange }: { scene: Scene; onChange: (patch: Part
           <input className={inputCls} value={scene.button} maxLength={30} onChange={(e) => onChange({ button: e.target.value })} placeholder="Texte du bouton" />
         </div>
       );
+    case 'video': {
+      const m = media[scene.media];
+      return (
+        <div className="space-y-1.5">
+          {media.length === 0 ? <p className="text-xs text-amber-300">Ajoutez d’abord une vidéo dans l’onglet « Médias ».</p> : null}
+          {media.length > 1 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {media.map((mm, k) => (
+                <button key={mm.url} type="button" onClick={() => onChange({ media: k })} className={cn('cursor-pointer rounded-lg border px-2 py-1 text-xs', scene.media === k ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>Vidéo {k + 1}</button>
+              ))}
+            </div>
+          ) : null}
+          <input className={inputCls} value={scene.caption ?? ''} maxLength={80} onChange={(e) => onChange({ caption: e.target.value || undefined })} placeholder="Texte sur la vidéo (facultatif)" />
+          <div className="flex gap-1.5">
+            {(['full', 'frame'] as const).map((lay) => (
+              <button key={lay} type="button" onClick={() => onChange({ layout: lay })} className={cn('flex-1 cursor-pointer rounded-lg border px-2 py-1 text-xs', scene.layout === lay ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>{lay === 'full' ? 'Plein écran' : 'Dans un cadre'}</button>
+            ))}
+          </div>
+          {m ? (
+            <label className="flex items-center gap-2 text-xs text-fg-muted">
+              Départ
+              <input type="range" min={0} max={Math.max(0, m.duration - 0.5)} step={0.1} value={Math.min(scene.from, m.duration)} onChange={(e) => onChange({ from: Number(e.target.value) })} className="flex-1 accent-[var(--color-neon)]" />
+              <span className="w-10 text-right font-code">{scene.from.toFixed(1)}s</span>
+            </label>
+          ) : null}
+        </div>
+      );
+    }
   }
 }
