@@ -210,6 +210,40 @@ function postFx(ctx: CanvasRenderingContext2D, bufs: ReturnType<typeof buffers>,
         ctx.restore();
       }
     }
+    if (f.effect === 'zoomblur') {
+      // Copies agrandies et transparentes = flou de mouvement radial.
+      const steps = 5;
+      ctx.save();
+      for (let i = 1; i <= steps; i++) {
+        const sc = 1 + 0.045 * i * k;
+        ctx.globalAlpha = 0.22 * k;
+        ctx.drawImage(ctx.canvas, (W - W * sc) / 2, (H - H * sc) / 2, W * sc, H * sc);
+      }
+      ctx.restore();
+    }
+    if (f.effect === 'whip') {
+      // Filé horizontal (transition « whip pan »).
+      const p = clamp((t - f.start) / Math.max(0.05, f.end - f.start));
+      const amt = Math.sin(p * Math.PI) * f.intensity;
+      ctx.save();
+      for (let i = 1; i <= 6; i++) {
+        ctx.globalAlpha = 0.2 * amt;
+        ctx.drawImage(ctx.canvas, i * W * 0.035 * amt, 0);
+        ctx.drawImage(ctx.canvas, -i * W * 0.035 * amt, 0);
+      }
+      ctx.restore();
+    }
+    if (f.effect === 'leak') {
+      const g = ctx.createRadialGradient(W * (0.2 + 0.6 * ((Math.sin(clock * 0.7) + 1) / 2)), H * 0.25, 0, W * 0.5, H * 0.4, Math.max(W, H) * 0.7);
+      g.addColorStop(0, `rgba(255,170,80,${0.55 * f.intensity})`);
+      g.addColorStop(0.4, `rgba(255,60,90,${0.25 * f.intensity})`);
+      g.addColorStop(1, 'rgba(255,60,90,0)');
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
     if (f.effect === 'invert') {
       ctx.save();
       ctx.globalCompositeOperation = 'difference';
@@ -294,6 +328,22 @@ function drawFilters(ctx: CanvasRenderingContext2D, W: number, H: number, layers
         g.addColorStop(0, 'rgba(0,0,0,0)');
         g.addColorStop(1, `rgba(0,0,0,${0.75 * a})`);
         ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+        break;
+      }
+      case 'teal': {
+        // Étalonnage « blockbuster » : ombres bleu-vert, peau orangée, contraste.
+        ctx.globalCompositeOperation = 'soft-light';
+        ctx.fillStyle = `rgba(0,110,140,${0.5 * a})`;
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.fillStyle = `rgba(255,150,70,${0.18 * a})`;
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalCompositeOperation = 'source-over';
+        const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+        vg.addColorStop(0, 'rgba(0,0,0,0)');
+        vg.addColorStop(1, `rgba(0,0,0,${0.45 * a})`);
+        ctx.fillStyle = vg;
         ctx.fillRect(0, 0, W, H);
         break;
       }

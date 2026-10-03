@@ -13,10 +13,10 @@ export const TEXT_ANIMS = ['pop', 'fade', 'slide', 'bounce', 'zoom', 'typewriter
 export const TEXT_BOXES = ['none', 'box', 'pill', 'highlight', 'outline'] as const;
 export const EMOJI_ANIMS = ['pop', 'bounce', 'float', 'spin', 'shake'] as const;
 export const SHAPES = ['arrow', 'circle', 'underline', 'box'] as const;
-export const FILTERS = ['bw', 'warm', 'cool', 'vibrant', 'vintage', 'cinema', 'dark'] as const;
+export const FILTERS = ['bw', 'warm', 'cool', 'vibrant', 'vintage', 'cinema', 'dark', 'teal'] as const;
 export const ZOOM_EASES = ['smooth', 'punch', 'shake'] as const;
 /** Effets appliqués à l'IMAGE de la vidéo elle-même (pas des ajouts). */
-export const VIDEO_FX = ['glitch', 'rgb', 'mirror', 'pulse', 'strobe', 'echo', 'invert', 'grain', 'vhs', 'spin', 'split', 'blur', 'zoomin', 'shake'] as const;
+export const VIDEO_FX = ['glitch', 'rgb', 'mirror', 'pulse', 'strobe', 'echo', 'invert', 'grain', 'vhs', 'spin', 'split', 'blur', 'zoomin', 'shake', 'zoomblur', 'leak', 'whip'] as const;
 
 export const LayerSchema = z.discriminatedUnion('type', [
   z.object({
@@ -127,7 +127,10 @@ export const FX_LABELS: Record<(typeof VIDEO_FX)[number], string> = {
   split: 'Écran divisé ×3',
   blur: 'Flou',
   zoomin: 'Zoom progressif',
-  shake: 'Tremblement'
+  shake: 'Tremblement',
+  zoomblur: 'Flou de zoom (transition)',
+  leak: 'Lumière (light leak)',
+  whip: 'Transition éclair (whip)'
 };
 
 export const FILTER_LABELS: Record<(typeof FILTERS)[number], string> = {
@@ -137,7 +140,8 @@ export const FILTER_LABELS: Record<(typeof FILTERS)[number], string> = {
   vibrant: 'Éclatant',
   vintage: 'Vintage',
   cinema: 'Cinéma',
-  dark: 'Sombre'
+  dark: 'Sombre',
+  teal: 'Ciné bleu-orangé'
 };
 
 let counter = 0;

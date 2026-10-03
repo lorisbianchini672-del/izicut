@@ -17,14 +17,27 @@ const BodySchema = z.object({
   duration: z.number().min(1).max(3600),
   layers: z.array(z.unknown()).max(60),
   words: z.array(z.object({ word: z.string(), start: z.number(), end: z.number() })).max(4000).optional(),
-  beats: z.array(z.number().min(0).max(3600)).max(400).optional()
+  beats: z.array(z.number().min(0).max(3600)).max(400).optional(),
+  style: z.string().max(20).nullable().optional(),
+  energy: z.number().min(0).max(1).optional(),
+  motion: z.object({ peaks: z.array(z.number()).max(20), calm: z.array(z.number()).max(20) }).optional()
 });
+
+const RECIPES = ['velocity', 'hype', 'cinematic', 'beatzoom', 'smooth', 'product'] as const;
 
 const SYSTEM = `Tu es un monteur vidéo expert (style CapCut / clips TikTok). Tu modifies la vidéo du client avec des CALQUES : certains transforment la VIDÉO ELLE-MÊME (vitesse, coupes, arrêts sur image, effets d'image, zooms, filtres), d'autres s'AJOUTENT par-dessus (textes, emojis, formes, intro, carte de fin, barre, flash).
 
 RÈGLE N°1 : fais EXACTEMENT ce que le client demande, rien de plus. N'ajoute JAMAIS de texte, d'emoji, d'intro, de carte de fin ou de barre de progression s'il ne l'a pas demandé (ou s'il demande un « montage complet »). S'il demande de modifier sa vidéo (ralenti, accéléré, rythme, effet, couper, style clip, danse…), utilise UNIQUEMENT les calques qui transforment la vidéo.
 RÈGLE N°2 : les temps sont ceux de la vidéo d'origine (en secondes). Les "temps forts" fournis sont les beats de la musique : cale les effets dessus pour un résultat pro.
-Réponds UNIQUEMENT par un JSON : {"message": "phrase courte en français qui résume ce que tu as fait", "layers": [ ...liste COMPLÈTE des calques... ]}
+Tu as DEUX façons de répondre (UNIQUEMENT en JSON) :
+
+A) Demande de STYLE / montage global (« fais un montage », « style danse », « rends-la stylée / pro / cinéma », « plus énergique », « plus doux », « autre version »…) :
+{"message": "phrase en français", "recipe": "velocity|hype|cinematic|beatzoom|smooth|product", "energy": 0-1, "layers": [calques AJOUTÉS par-dessus SEULEMENT si demandés : textes, emojis…], "dropOverlays": true si le client veut retirer textes/emojis}
+   velocity = danse (accélérés/ralentis sur les temps forts, zooms, traînées) ; hype = glitch/flash/secousses ; cinematic = film, ralentis, étalonnage ; beatzoom = zooms alternés au rythme ; smooth = vlog doux ; product = pub produit premium.
+   Un moteur professionnel génère alors un montage DENSE calé sur la musique et les mouvements de la vidéo. C'est la meilleure option pour la qualité : utilise-la dès que la demande est globale.
+
+B) Demande PRÉCISE (« ralenti entre 3 et 5 s », « mets BRAVO en jaune à 2 s », « enlève le glitch », « zoom sur la fin ») :
+{"message": "phrase en français", "layers": [ ...liste COMPLÈTE des calques mise à jour... ]}
 
 Types de calques (tous ont "id" texte unique, "start" et "end" en secondes, 0 <= start < end <= durée) :
 - {"type":"text","text":"max 140 car., mots clés entre *astérisques* pour la couleur d'accent","x":0-1,"y":0-1,"size":20-220 (px sur 1080 de large, 70-110 conseillé),"color":"#RRGGBB","accent":"#RRGGBB","box":"none|box|pill|highlight|outline","boxColor":"#RRGGBB","anim":"pop|fade|slide|bounce|zoom|typewriter|words","uppercase":true|false}
@@ -123,7 +136,8 @@ export async function POST(request: Request) {
   }
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Demande invalide' }, { status: 400 });
-  const { prompt, duration, layers, words, beats } = parsed.data;
+  const { prompt, duration, layers, words, beats, style, energy, motion } = parsed.data;
+  const motionText = motion ? `Moments les plus animés (s) : ${motion.peaks.join(', ')}. Moments calmes : ${motion.calm.join(', ')}.` : '';
   const beatText = (beats ?? []).map((b) => b.toFixed(2)).join(', ').slice(0, 2500);
   const current = LayersSchema.safeParse(layers).success ? layers : [];
   const transcript = (words ?? [])
@@ -134,17 +148,25 @@ export async function POST(request: Request) {
   try {
     const raw = (await chatJson({
       system: SYSTEM,
-      user: `Durée de la vidéo : ${duration.toFixed(1)} s.\nTemps forts de la musique (s) : ${beatText || '(non détectés)'}\nTranscription (secondes mot) : ${transcript || '(pas de parole)'}\nCalques actuels : ${JSON.stringify(current)}\n\nDemande du client : ${prompt}`,
+      user: `Style actuel : ${style ?? 'aucun'} (énergie ${energy ?? 0.7}). ${motionText}\nDurée de la vidéo : ${duration.toFixed(1)} s.\nTemps forts de la musique (s) : ${beatText || '(non détectés)'}\nTranscription (secondes mot) : ${transcript || '(pas de parole)'}\nCalques actuels : ${JSON.stringify(current)}\n\nDemande du client : ${prompt}`,
       maxTokens: 4000,
       temperature: 0.5
-    })) as { message?: unknown; layers?: unknown };
+    })) as { message?: unknown; layers?: unknown; recipe?: unknown; energy?: unknown; dropOverlays?: unknown };
+    const message = typeof raw?.message === 'string' ? raw.message.slice(0, 300) : 'C’est fait.';
+    if (typeof raw?.recipe === 'string' && (RECIPES as readonly string[]).includes(raw.recipe)) {
+      const extra = Array.isArray(raw.layers) ? repair(raw.layers, duration).filter((l) => ['text', 'emoji', 'shape', 'intro', 'endcard', 'progress'].includes(l.type)) : [];
+      return NextResponse.json({
+        message,
+        recipe: raw.recipe,
+        energy: typeof raw.energy === 'number' ? Math.min(1, Math.max(0, raw.energy)) : energy ?? 0.7,
+        layers: extra,
+        dropOverlays: raw.dropOverlays === true
+      });
+    }
     const list = Array.isArray(raw?.layers) ? raw.layers : null;
     if (!list) return NextResponse.json({ error: "L'IA n'a pas compris, reformulez votre demande." }, { status: 502 });
     const result = repair(list, duration);
-    return NextResponse.json({
-      layers: result,
-      message: typeof raw.message === 'string' ? raw.message.slice(0, 300) : 'C’est fait.'
-    });
+    return NextResponse.json({ layers: result, message });
   } catch (err) {
     if (err instanceof AiNotConfiguredError) return NextResponse.json({ error: err.message }, { status: 503 });
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Erreur IA' }, { status: 502 });

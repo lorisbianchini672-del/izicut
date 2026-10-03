@@ -12,6 +12,8 @@ import { Montserrat } from 'next/font/google';
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ArrowLeft, Copy, Download, Film, Layers, Pause, Play, Plus, Send, Sparkles, Trash2, Undo2, Wand2 } from 'lucide-react';
 import { detectBeats, takePendingVideo } from '@/lib/overlay/beats';
+import { analyzeVideo, type VideoAnalysis } from '@/lib/overlay/analyze';
+import { STYLES, generateEdit, type StyleId } from '@/lib/overlay/recipes';
 
 import { Button } from '@/components/ui/button';
 import { resolvePlanTier } from '@/lib/entitlements';
@@ -44,7 +46,8 @@ const font = Montserrat({ subsets: ['latin'], weight: ['800', '900'], display: '
 const W = 1080;
 const H = 1920;
 type Word = { word: string; start: number; end: number };
-type Panel = 'ia' | 'ajouter' | 'calque';
+type Panel = 'styles' | 'ia' | 'ajouter' | 'calque';
+const VIDEO_LAYER_TYPES = new Set(['speed', 'cut', 'freeze', 'effect', 'zoom', 'filter', 'flash']);
 type Msg = { role: 'user' | 'ai'; text: string };
 
 const AI_IDEAS = [
@@ -90,7 +93,13 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
   const [layers, setLayersState] = useState<Layer[]>([]);
   const [history, setHistory] = useState<Layer[][]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [panel, setPanel] = useState<Panel>('ia');
+  const [panel, setPanel] = useState<Panel>('styles');
+  const [advanced, setAdvanced] = useState(false);
+  const [analysis, setAnalysis] = useState<VideoAnalysis | null>(null);
+  const [analyzing, setAnalyzing] = useState<number | null>(null);
+  const [style, setStyle] = useState<StyleId | null>(null);
+  const [energy, setEnergy] = useState(0.7);
+  const [variant, setVariant] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [isPaid, setIsPaid] = useState(false);
@@ -205,6 +214,29 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
   const patchLayer = (id: string, patch: Partial<Layer>, record = false) =>
     setLayers((prev) => prev.map((l) => (l.id === id ? clampLayer({ ...l, ...patch } as Layer, duration || 9999) : l)), record);
 
+  // Analyse visuelle (mouvement + position du sujet) dès que la vidéo est prête.
+  useEffect(() => {
+    if (!videoUrl || !duration) return;
+    let cancelled = false;
+    setAnalysis(null);
+    setAnalyzing(0);
+    analyzeVideo(videoUrl, duration, (p) => { if (!cancelled) setAnalyzing(p); })
+      .then((a) => { if (!cancelled) setAnalysis(a); })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setAnalyzing(null); });
+    return () => { cancelled = true; };
+  }, [videoUrl, duration]);
+
+  /** Applique un style : montage vidéo régénéré, textes / emojis conservés. */
+  const applyStyle = useCallback((id: StyleId, level: number, v: number, extra: Layer[] = [], dropOverlays = false) => {
+    if (!duration) return;
+    const base = generateEdit(id, { duration, beats: beatsRef.current, analysis, energy: level, variant: v });
+    setStyle(id);
+    setLayers((prev) => [...base, ...(dropOverlays ? [] : prev.filter((l) => !VIDEO_LAYER_TYPES.has(l.type))), ...extra].map((l) => clampLayer(l, duration)));
+    const vid = videoRef.current;
+    if (vid) { vid.currentTime = 0; prevTimeRef.current = 0; freezeRef.current = null; void vid.play(); setPlaying(true); }
+  }, [analysis, duration, setLayers]);
+
   /**
    * Pilote de lecture : vitesse (ralenti / accéléré), coupes et arrêts sur
    * image modifient la VRAIE lecture de la vidéo, en direct et à l'export.
@@ -229,8 +261,12 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
       return;
     }
     const speed = list.find((l) => l.type === 'speed' && t >= l.start && t < l.end);
-    const rate = speed && speed.type === 'speed' ? speed.rate : 1;
-    if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
+    const target = speed && speed.type === 'speed' ? speed.rate : 1;
+    // Rampe de vitesse progressive (rendu « speed ramp » pro, sans à-coup).
+    const cur = video.playbackRate;
+    const next = cur + (target - cur) * 0.35;
+    const rate = Math.abs(target - next) < 0.03 ? target : next;
+    if (Math.abs(cur - rate) > 0.01) video.playbackRate = Math.min(4, Math.max(0.25, rate));
   }, []);
 
   // ---------- Boucle d'aperçu ----------
@@ -339,15 +375,24 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
       const res = await fetch('/api/overlay/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: value, duration, layers, words: words.slice(0, 3000), beats: beats.slice(0, 400) })
+        body: JSON.stringify({ prompt: value, duration, layers, words: words.slice(0, 3000), beats: beats.slice(0, 400), style, energy, motion: summarizeMotion(analysis) })
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || !Array.isArray(json.layers)) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
-      setLayers((json.layers as Layer[]).map((l) => clampLayer(l, duration)));
-      setMsgs((m) => [...m, { role: 'ai', text: `${json.message ?? 'C’est fait.'} (${json.layers.length} calques)` }]);
-      seek(0);
-      void videoRef.current?.play();
-      setPlaying(true);
+      if (!res.ok || (!Array.isArray(json.layers) && !json.recipe)) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
+      if (json.recipe && STYLES.some((st) => st.id === json.recipe)) {
+        const level = typeof json.energy === 'number' ? json.energy : energy;
+        setEnergy(level);
+        const nextVariant = variant + 1;
+        setVariant(nextVariant);
+        applyStyle(json.recipe as StyleId, level, nextVariant, Array.isArray(json.layers) ? (json.layers as Layer[]) : [], Boolean(json.dropOverlays));
+        setMsgs((m) => [...m, { role: 'ai', text: json.message ?? 'C’est fait.' }]);
+      } else {
+        setLayers((json.layers as Layer[]).map((l) => clampLayer(l, duration)));
+        setMsgs((m) => [...m, { role: 'ai', text: `${json.message ?? 'C’est fait.'} (${json.layers.length} effets)` }]);
+        seek(0);
+        void videoRef.current?.play();
+        setPlaying(true);
+      }
     } catch (err) {
       setMsgs((m) => [...m, { role: 'ai', text: err instanceof Error ? err.message : 'Erreur de l’IA.' }]);
     } finally {
@@ -464,6 +509,9 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
           <p className="flex items-center gap-1.5 text-xs font-semibold text-neon"><Sparkles className="h-3.5 w-3.5" /> Montage IA</p>
           <h1 className="truncate text-lg font-semibold text-fg">{title}</h1>
         </div>
+        <button type="button" onClick={() => { setAdvanced((a) => !a); if (advanced && (panel === 'ajouter' || panel === 'calque')) setPanel('styles'); }} className={cn('hidden cursor-pointer rounded-xl border px-3 py-2 text-xs font-semibold sm:block', advanced ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>
+          Mode avancé {advanced ? '✓' : ''}
+        </button>
         <Button variant="outline" size="sm" className="rounded-xl" onClick={undo} disabled={!history.length} title="Annuler la dernière modification">
           <Undo2 className="h-4 w-4" /> <span className="hidden sm:inline">Annuler</span>
         </Button>
@@ -505,12 +553,26 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
               onEnded={() => setPlaying(false)}
             />
           ) : null}
-          <p className="mt-2 text-center text-xs text-fg-subtle">
-            Touchez un texte ou un emoji pour le sélectionner, glissez-le pour le déplacer. Touchez la vidéo pour lecture / pause.
-          </p>
+          {advanced ? (
+            <p className="mt-2 text-center text-xs text-fg-subtle">
+              Touchez un texte ou un emoji pour le sélectionner, glissez-le pour le déplacer. Touchez la vidéo pour lecture / pause.
+            </p>
+          ) : null}
 
+          {analyzing !== null ? (
+            <p className="mt-2 text-center text-xs text-neon">Analyse de votre vidéo (mouvements, musique)… {Math.round(analyzing * 100)} %</p>
+          ) : null}
+          {!advanced ? (
+            <div className="mt-3 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+              <button type="button" onClick={togglePlay} className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-full bg-neon text-ink-950" aria-label={playing ? 'Pause' : 'Lecture'}>
+                {playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
+              </button>
+              <input type="range" min={0} max={duration || 1} step={0.01} value={time} onChange={(e) => seek(Number(e.target.value))} className="flex-1 accent-[var(--color-neon)]" />
+              <span className="w-20 text-right font-code text-xs text-fg-muted">{time.toFixed(1)} / {duration.toFixed(1)} s</span>
+            </div>
+          ) : null}
           {/* Timeline */}
-          <Timeline
+          {advanced ? <Timeline
             beats={beats}
             duration={duration}
             time={time}
@@ -522,19 +584,52 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
             onSelect={(id) => { setSelected(id); setPanel('calque'); }}
             onChange={(id, start, end) => patchLayer(id, { start, end })}
             onDragStart={() => setHistory((h) => [...h.slice(-30), layersRef.current])}
-          />
+          /> : null}
         </div>
 
         {/* Panneau */}
         <div className="flex min-h-[460px] flex-col rounded-2xl border border-white/10 bg-white/[0.03]">
-          <div className="grid grid-cols-3 gap-1 border-b border-white/10 p-1.5">
-            {([['ia', 'IA', <Wand2 key="a" className="h-4 w-4" />], ['ajouter', 'Ajouter', <Plus key="b" className="h-4 w-4" />], ['calque', 'Calque', <Layers key="c" className="h-4 w-4" />]] as [Panel, string, ReactNode][]).map(([id, label, icon]) => (
+          <div className={cn('grid gap-1 border-b border-white/10 p-1.5', advanced ? 'grid-cols-4' : 'grid-cols-2')}>
+            {(([['styles', 'Styles', <Sparkles key="s" className="h-4 w-4" />], ['ia', 'IA', <Wand2 key="a" className="h-4 w-4" />], ['ajouter', 'Ajouter', <Plus key="b" className="h-4 w-4" />], ['calque', 'Calque', <Layers key="c" className="h-4 w-4" />]] as [Panel, string, ReactNode][]).filter(([id]) => advanced || id === 'styles' || id === 'ia')).map(([id, label, icon]) => (
               <button key={id} type="button" onClick={() => setPanel(id)} className={cn('flex cursor-pointer items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-semibold', panel === id ? 'bg-neon text-ink-950' : 'text-fg-muted hover:bg-white/[0.05]')}>
                 {icon}{label}
               </button>
             ))}
           </div>
           <div className="flex-1 overflow-y-auto p-4">
+            {panel === 'styles' ? (
+              <div className="space-y-4">
+                <p className="text-sm text-fg-muted">Choisissez un style : le montage est créé d’après les mouvements et la musique de <b className="text-fg">votre</b> vidéo.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {STYLES.map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      disabled={!duration}
+                      onClick={() => { const v = variant + 1; setVariant(v); applyStyle(st.id, energy, v); }}
+                      className={cn('cursor-pointer rounded-2xl border p-3 text-left transition', style === st.id ? 'border-neon bg-neon/[0.08]' : 'border-white/10 bg-white/[0.02] hover:border-neon/40')}
+                    >
+                      <span className="text-2xl">{st.emoji}</span>
+                      <span className="mt-1 block text-sm font-bold text-fg">{st.name}</span>
+                      <span className="mt-0.5 block text-[11px] leading-snug text-fg-muted">{st.description}</span>
+                    </button>
+                  ))}
+                </div>
+                <div>
+                  <div className="mb-1 flex justify-between text-xs font-semibold text-fg-muted"><span>Énergie</span><span>{energy < 0.35 ? 'Douce' : energy < 0.7 ? 'Dynamique' : 'Explosive'}</span></div>
+                  <input type="range" min={0} max={1} step={0.05} value={energy} onChange={(e) => setEnergy(Number(e.target.value))} onPointerUp={() => style && applyStyle(style, energy, variant)} onKeyUp={() => style && applyStyle(style, energy, variant)} className="w-full accent-[var(--color-neon)]" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button variant="outline" className="rounded-xl" disabled={!style} onClick={() => { if (!style) return; const v = variant + 1; setVariant(v); applyStyle(style, energy, v); }}>Autre version</Button>
+                  <Button variant="outline" className="rounded-xl" onClick={() => { setLayers([]); setStyle(null); }}>Tout retirer</Button>
+                </div>
+                <p className="text-xs text-fg-subtle">
+                  {analysis ? 'Vidéo analysée ✓' : analyzing !== null ? 'Analyse en cours…' : 'Analyse indisponible : le montage suit la musique.'}
+                  {beats.length ? ` · ${beats.length} temps forts` : ''} · Pour un détail précis, demandez à l’IA ou activez le « Mode avancé ».
+                </p>
+              </div>
+            ) : null}
+
             {panel === 'ia' ? (
               <div className="flex h-full flex-col gap-3">
                 <p className="text-sm text-fg-muted">Dites exactement ce que vous voulez : ralenti, accéléré, coupe, effets au rythme de la musique, filtre, texte… L’IA fait ce que vous demandez, rien de plus. Vous pouvez ensuite tout retoucher à la main.</p>
@@ -920,4 +1015,12 @@ function Inspector({ layer, duration, onChange, onDelete, onDuplicate }: { layer
       ) : null}
     </div>
   );
+}
+
+/** Résumé du mouvement pour l'IA : moments les plus et les moins animés. */
+function summarizeMotion(a: VideoAnalysis | null): { peaks: number[]; calm: number[] } | undefined {
+  if (!a || !a.motion.length) return undefined;
+  const idx = a.motion.map((m, i) => ({ m, t: Math.round(i * a.step * 10) / 10 }));
+  const sorted = [...idx].sort((x, y) => y.m - x.m);
+  return { peaks: sorted.slice(0, 8).map((x) => x.t).sort((x, y) => x - y), calm: sorted.slice(-5).map((x) => x.t).sort((x, y) => x - y) };
 }
