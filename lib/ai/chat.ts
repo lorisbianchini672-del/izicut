@@ -1,74 +1,112 @@
 /**
- * lib/ai/chat.ts — Appel LLM côté serveur (routes API Vercel).
- * Groq en priorité (gratuit, rapide), OpenAI en secours. Réponse JSON.
- * Clés lues dans l'environnement : GROQ_API_KEY ou OPENAI_API_KEY.
+ * lib/ai/chat.ts — Appels IA côté serveur (routes API Vercel).
+ *
+ * Plusieurs fournisseurs GRATUITS en cascade (même principe que FreeLLMAPI,
+ * mais intégré : aucun serveur exposé, clés uniquement dans les variables
+ * d'environnement). Si l'un est saturé (429), en panne (5xx) ou trop lent,
+ * on passe automatiquement au suivant.
+ *   GROQ_API_KEY       → Groq (rapide)
+ *   GEMINI_API_KEY     → Google Gemini (AI Studio, gratuit, voit les images)
+ *   OPENROUTER_API_KEY → OpenRouter (modèles « :free »)
+ *   MISTRAL_API_KEY    → Mistral (offre gratuite « Experiment »)
+ *   OPENAI_API_KEY     → OpenAI (payant, dernier recours)
  */
 
 export class AiNotConfiguredError extends Error {
   constructor() {
-    super("L'IA n'est pas encore configurée sur le serveur (clé GROQ_API_KEY manquante).");
+    super("L'IA n'est pas encore configurée sur le serveur (aucune clé IA).");
   }
 }
 
+type Provider = { name: string; url: string; key: string; model: string; vision?: string; json: boolean };
 type ChatOptions = { system: string; user: string; maxTokens?: number; temperature?: number };
+type Part = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
-function provider() {
-  if (process.env.GROQ_API_KEY) {
-    return {
-      url: 'https://api.groq.com/openai/v1/chat/completions',
-      key: process.env.GROQ_API_KEY,
-      model: process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b'
-    };
-  }
-  if (process.env.OPENAI_API_KEY) {
-    return {
-      url: 'https://api.openai.com/v1/chat/completions',
-      key: process.env.OPENAI_API_KEY,
-      model: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini'
-    };
-  }
-  return null;
+function providers(): Provider[] {
+  const list: Provider[] = [];
+  const env = process.env;
+  if (env.GROQ_API_KEY) list.push({ name: 'groq', url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_API_KEY, model: env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b', vision: env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b', json: true });
+  if (env.GEMINI_API_KEY) list.push({ name: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: env.GEMINI_API_KEY, model: env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash', vision: env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash', json: true });
+  if (env.OPENROUTER_API_KEY) list.push({ name: 'openrouter', url: 'https://openrouter.ai/api/v1/chat/completions', key: env.OPENROUTER_API_KEY, model: env.OPENROUTER_CHAT_MODEL || 'openrouter/free', vision: env.OPENROUTER_VISION_MODEL, json: false });
+  if (env.MISTRAL_API_KEY) list.push({ name: 'mistral', url: 'https://api.mistral.ai/v1/chat/completions', key: env.MISTRAL_API_KEY, model: env.MISTRAL_CHAT_MODEL || 'mistral-small-latest', vision: env.MISTRAL_VISION_MODEL || 'mistral-small-latest', json: true });
+  if (env.OPENAI_API_KEY) list.push({ name: 'openai', url: 'https://api.openai.com/v1/chat/completions', key: env.OPENAI_API_KEY, model: env.OPENAI_CHAT_MODEL || 'gpt-4o-mini', vision: env.OPENAI_CHAT_MODEL || 'gpt-4o-mini', json: true });
+  return list;
 }
 
 export function aiConfigured(): boolean {
-  return provider() !== null;
+  return providers().length > 0;
 }
 
 /** Extrait le premier objet JSON d'une réponse (tolère du texte autour). */
 export function parseJsonObject(text: string): unknown {
+  const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
   try {
-    return JSON.parse(text);
+    return JSON.parse(clean);
   } catch {
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start >= 0 && end > start) return JSON.parse(text.slice(start, end + 1));
+    const start = clean.indexOf('{');
+    const end = clean.lastIndexOf('}');
+    if (start >= 0 && end > start) return JSON.parse(clean.slice(start, end + 1));
     throw new Error("Réponse de l'IA illisible");
   }
 }
 
-export async function chatJson({ system, user, maxTokens = 1500, temperature = 0.7 }: ChatOptions): Promise<unknown> {
-  const p = provider();
-  if (!p) throw new AiNotConfiguredError();
+async function call(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean): Promise<string> {
   const res = await fetch(p.url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${p.key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: p.model,
+      model,
       temperature,
       max_tokens: maxTokens,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user }
-      ]
+      ...(json && p.json ? { response_format: { type: 'json_object' } } : {}),
+      messages
     }),
-    signal: AbortSignal.timeout(45_000)
+    signal: AbortSignal.timeout(40_000)
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
-    throw new Error(`IA indisponible (HTTP ${res.status}) ${detail.slice(0, 160)}`);
+    const err = new Error(`${p.name} HTTP ${res.status} ${detail.slice(0, 120)}`) as Error & { retry?: boolean };
+    // 429 (quota), 5xx (panne), 404/400 sur un modèle retiré : on essaie le suivant.
+    err.retry = res.status === 429 || res.status >= 500 || res.status === 404 || res.status === 400 || res.status === 413;
+    throw err;
   }
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const content = data.choices?.[0]?.message?.content ?? '';
+  if (!content.trim()) throw Object.assign(new Error(`${p.name} : réponse vide`), { retry: true });
+  return content;
+}
+
+/** Essaie chaque fournisseur dans l'ordre jusqu'à obtenir une réponse. */
+async function cascade(run: (p: Provider) => Promise<string>, filter: (p: Provider) => boolean = () => true): Promise<string> {
+  const list = providers().filter(filter);
+  if (!list.length) throw new AiNotConfiguredError();
+  let last: unknown = null;
+  for (const p of list) {
+    try {
+      return await run(p);
+    } catch (err) {
+      last = err;
+      // Quelle que soit l'erreur (quota, panne, clé invalide…), on passe au suivant.
+      console.warn(`[ia] ${p.name} indisponible : ${(err as Error).message}`);
+    }
+  }
+  throw new Error(`Toutes les IA sont momentanément saturées. Réessayez dans une minute. (${(last as Error)?.message ?? ''})`);
+}
+
+export async function chatJson({ system, user, maxTokens = 1500, temperature = 0.7 }: ChatOptions): Promise<unknown> {
+  const content = await cascade((p) =>
+    call(p, p.model, [{ role: 'system', content: system }, { role: 'user', content: user }], maxTokens, temperature, true)
+  );
   return parseJsonObject(content);
+}
+
+/**
+ * Vision : l'IA regarde une ou plusieurs images (data URL JPEG/PNG) et répond
+ * en texte. Utilisé par le Montage IA pour « voir » la vidéo avant de monter.
+ */
+export async function describeImages(images: string[], instruction: string, maxTokens = 700): Promise<string> {
+  return cascade(
+    (p) => call(p, p.vision!, [{ role: 'user', content: [{ type: 'text', text: instruction }, ...images.slice(0, 3).map((url) => ({ type: 'image_url' as const, image_url: { url } }))] }], maxTokens, 0.3, false),
+    (p) => Boolean(p.vision)
+  );
 }

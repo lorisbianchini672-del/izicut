@@ -681,6 +681,27 @@ async function chatJsonRemote(system, user) {
       const payload = await res.json();
       return payload.choices?.[0]?.message?.content ?? '{}';
     }
+    if ((res.status === 429 || res.status >= 500) && process.env.GEMINI_API_KEY) {
+      // Groq saturé : on bascule tout de suite sur Gemini (gratuit) au lieu d'attendre.
+      const alt = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.GEMINI_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: process.env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash',
+          temperature: 0.3,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+        }),
+      }).catch(() => null);
+      if (alt?.ok) {
+        const payload = await alt.json();
+        const content = payload.choices?.[0]?.message?.content;
+        if (content) { console.log('[worker] analyse via Gemini (Groq saturé)'); return content; }
+      }
+    }
     if (res.status === 429 || res.status >= 500) {
       const retryAfter = Number(res.headers.get('retry-after'));
       await sleep((Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 20 * (attempt + 1)) * 1000);
@@ -772,7 +793,7 @@ export async function runAnalyze(supabase, job, project, ctx) {
     const windows = fullText.length <= ai.windowChars ? [words] : splitWordsByChars(words, ai.windowChars);
     console.log(`[worker] analyse ${ai.name} (${ai.analyzeModel}) — ${windows.length} fenêtre(s)`);
     for (let i = 0; i < windows.length; i++) {
-      if (i > 0 && ai.name === 'groq') await sleep(61_000); // respecte ~8k jetons/min
+      if (i > 0 && ai.name === 'groq' && !process.env.GEMINI_API_KEY) await sleep(61_000); // respecte ~8k jetons/min (inutile si Gemini prend le relais)
       const text = buildTimedTranscript(windows[i], { maxChars: ai.windowChars });
       const userPrompt = `Durée totale de la vidéo : ${durationSeconds} s. Extrait ${i + 1}/${windows.length}.\nTranscription :\n${text}`;
       const raw = await chatJsonRemote(analyzeSystemPrompt(maxClips), userPrompt);

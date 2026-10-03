@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { AiNotConfiguredError, chatJson } from '@/lib/ai/chat';
+import { AiNotConfiguredError, chatJson, describeImages } from '@/lib/ai/chat';
 import { LayerSchema, LayersSchema, type Layer } from '@/lib/overlay/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -20,7 +20,11 @@ const BodySchema = z.object({
   beats: z.array(z.number().min(0).max(3600)).max(400).optional(),
   style: z.string().max(20).nullable().optional(),
   energy: z.number().min(0).max(1).optional(),
-  motion: z.object({ peaks: z.array(z.number()).max(20), calm: z.array(z.number()).max(20) }).optional()
+  motion: z.object({ peaks: z.array(z.number()).max(20), calm: z.array(z.number()).max(20) }).optional(),
+  /** Planche 3×3 d'images de la vidéo (data URL JPEG) — l'IA la regarde une fois. */
+  sheet: z.object({ image: z.string().max(900_000).startsWith('data:image/'), times: z.array(z.number()).max(9) }).optional(),
+  /** Description déjà obtenue (évite de refaire l'appel vision). */
+  vision: z.string().max(3000).optional()
 });
 
 const RECIPES = ['velocity', 'hype', 'cinematic', 'beatzoom', 'smooth', 'product'] as const;
@@ -28,11 +32,12 @@ const RECIPES = ['velocity', 'hype', 'cinematic', 'beatzoom', 'smooth', 'product
 const SYSTEM = `Tu es un monteur vidéo expert (style CapCut / clips TikTok). Tu modifies la vidéo du client avec des CALQUES : certains transforment la VIDÉO ELLE-MÊME (vitesse, coupes, arrêts sur image, effets d'image, zooms, filtres), d'autres s'AJOUTENT par-dessus (textes, emojis, formes, intro, carte de fin, barre, flash).
 
 RÈGLE N°1 : fais EXACTEMENT ce que le client demande, rien de plus. N'ajoute JAMAIS de texte, d'emoji, d'intro, de carte de fin ou de barre de progression s'il ne l'a pas demandé (ou s'il demande un « montage complet »). S'il demande de modifier sa vidéo (ralenti, accéléré, rythme, effet, couper, style clip, danse…), utilise UNIQUEMENT les calques qui transforment la vidéo.
+RÈGLE N°3 : RÉFLÉCHIS comme un monteur pro avant de répondre : regarde ce que montre la vidéo (description fournie), où sont les moments les plus animés, les temps forts de la musique ; choisis un style cohérent avec le contenu (danse → velocity/hype, paysage/produit → cinematic/product, discussion → beatzoom doux + textes clés), puis ajoute des retouches précises (arrêt sur image sur le geste le plus fort, ralenti sur le moment spectaculaire…).
 RÈGLE N°2 : les temps sont ceux de la vidéo d'origine (en secondes). Les "temps forts" fournis sont les beats de la musique : cale les effets dessus pour un résultat pro.
 Tu as DEUX façons de répondre (UNIQUEMENT en JSON) :
 
 A) Demande de STYLE / montage global (« fais un montage », « style danse », « rends-la stylée / pro / cinéma », « plus énergique », « plus doux », « autre version »…) :
-{"message": "phrase en français", "recipe": "velocity|hype|cinematic|beatzoom|smooth|product", "energy": 0-1, "layers": [calques AJOUTÉS par-dessus SEULEMENT si demandés : textes, emojis…], "dropOverlays": true si le client veut retirer textes/emojis}
+{"message": "phrase en français qui explique tes choix (style, pourquoi, retouches)", "recipe": "velocity|hype|cinematic|beatzoom|smooth|product", "energy": 0-1, "layers": [retouches précises EN PLUS du style : arrêt sur image, ralenti ciblé, effet sur un moment précis… + textes/emojis SEULEMENT si demandés], "dropOverlays": true si le client veut retirer textes/emojis}
    velocity = danse (accélérés/ralentis sur les temps forts, zooms, traînées) ; hype = glitch/flash/secousses ; cinematic = film, ralentis, étalonnage ; beatzoom = zooms alternés au rythme ; smooth = vlog doux ; product = pub produit premium.
    Un moteur professionnel génère alors un montage DENSE calé sur la musique et les mouvements de la vidéo. C'est la meilleure option pour la qualité : utilise-la dès que la demande est globale.
 
@@ -136,7 +141,15 @@ export async function POST(request: Request) {
   }
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Demande invalide' }, { status: 400 });
-  const { prompt, duration, layers, words, beats, style, energy, motion } = parsed.data;
+  const { prompt, duration, layers, words, beats, style, energy, motion, sheet } = parsed.data;
+  let vision = parsed.data.vision ?? '';
+  if (!vision && sheet) {
+    vision = await describeImages(
+      [sheet.image],
+      `Voici une planche de ${sheet.times.length} images tirées d'une vidéo verticale, numérotées dans l'ordre de lecture (gauche → droite, haut → bas), prises aux secondes : ${sheet.times.join(', ')}.
+Décris en français, de façon concise : 1) case par case (sujet, action, cadrage, intensité) ; 2) le type de vidéo (danse, sport, interview, produit, vlog, paysage…) et l'ambiance ; 3) les moments les plus spectaculaires ; 4) le style de montage le plus adapté et pourquoi.`
+    ).catch(() => '');
+  }
   const motionText = motion ? `Moments les plus animés (s) : ${motion.peaks.join(', ')}. Moments calmes : ${motion.calm.join(', ')}.` : '';
   const beatText = (beats ?? []).map((b) => b.toFixed(2)).join(', ').slice(0, 2500);
   const current = LayersSchema.safeParse(layers).success ? layers : [];
@@ -148,25 +161,26 @@ export async function POST(request: Request) {
   try {
     const raw = (await chatJson({
       system: SYSTEM,
-      user: `Style actuel : ${style ?? 'aucun'} (énergie ${energy ?? 0.7}). ${motionText}\nDurée de la vidéo : ${duration.toFixed(1)} s.\nTemps forts de la musique (s) : ${beatText || '(non détectés)'}\nTranscription (secondes mot) : ${transcript || '(pas de parole)'}\nCalques actuels : ${JSON.stringify(current)}\n\nDemande du client : ${prompt}`,
+      user: `${vision ? `Ce que montre la vidéo (vu par l'IA) : ${vision.slice(0, 2500)}\n` : ''}Style actuel : ${style ?? 'aucun'} (énergie ${energy ?? 0.7}). ${motionText}\nDurée de la vidéo : ${duration.toFixed(1)} s.\nTemps forts de la musique (s) : ${beatText || '(non détectés)'}\nTranscription (secondes mot) : ${transcript || '(pas de parole)'}\nCalques actuels : ${JSON.stringify(current)}\n\nDemande du client : ${prompt}`,
       maxTokens: 4000,
       temperature: 0.5
     })) as { message?: unknown; layers?: unknown; recipe?: unknown; energy?: unknown; dropOverlays?: unknown };
     const message = typeof raw?.message === 'string' ? raw.message.slice(0, 300) : 'C’est fait.';
     if (typeof raw?.recipe === 'string' && (RECIPES as readonly string[]).includes(raw.recipe)) {
-      const extra = Array.isArray(raw.layers) ? repair(raw.layers, duration).filter((l) => ['text', 'emoji', 'shape', 'intro', 'endcard', 'progress'].includes(l.type)) : [];
+      const extra = Array.isArray(raw.layers) ? repair(raw.layers, duration) : [];
       return NextResponse.json({
         message,
         recipe: raw.recipe,
         energy: typeof raw.energy === 'number' ? Math.min(1, Math.max(0, raw.energy)) : energy ?? 0.7,
         layers: extra,
-        dropOverlays: raw.dropOverlays === true
+        dropOverlays: raw.dropOverlays === true,
+        vision
       });
     }
     const list = Array.isArray(raw?.layers) ? raw.layers : null;
     if (!list) return NextResponse.json({ error: "L'IA n'a pas compris, reformulez votre demande." }, { status: 502 });
     const result = repair(list, duration);
-    return NextResponse.json({ layers: result, message });
+    return NextResponse.json({ layers: result, message, vision });
   } catch (err) {
     if (err instanceof AiNotConfiguredError) return NextResponse.json({ error: err.message }, { status: 503 });
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Erreur IA' }, { status: 502 });

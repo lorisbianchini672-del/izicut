@@ -100,6 +100,7 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
   const [style, setStyle] = useState<StyleId | null>(null);
   const [energy, setEnergy] = useState(0.7);
   const [variant, setVariant] = useState(0);
+  const visionRef = useRef('');
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [isPaid, setIsPaid] = useState(false);
@@ -144,6 +145,7 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
     setTitle(file.name.replace(/\.[^.]+$/, '').slice(0, 60) || 'Ma vidéo');
     setWords([]);
     setBeats([]);
+    visionRef.current = '';
     setVideoUrl(URL.createObjectURL(file));
     restore(`izicut-effects-local-${file.name}-${file.size}`);
     void file.arrayBuffer().then((buf) => detectBeats(buf)).then(setBeats);
@@ -375,10 +377,15 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
       const res = await fetch('/api/overlay/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: value, duration, layers, words: words.slice(0, 3000), beats: beats.slice(0, 400), style, energy, motion: summarizeMotion(analysis) })
+        body: JSON.stringify({
+          prompt: value, duration, layers, words: words.slice(0, 3000), beats: beats.slice(0, 400), style, energy,
+          motion: summarizeMotion(analysis),
+          ...(visionRef.current ? { vision: visionRef.current } : analysis?.sheet ? { sheet: analysis.sheet } : {})
+        })
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || (!Array.isArray(json.layers) && !json.recipe)) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
+      if (typeof json.vision === 'string' && json.vision) visionRef.current = json.vision;
       if (json.recipe && STYLES.some((st) => st.id === json.recipe)) {
         const level = typeof json.energy === 'number' ? json.energy : energy;
         setEnergy(level);

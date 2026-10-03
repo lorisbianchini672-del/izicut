@@ -9,6 +9,8 @@ export type VideoAnalysis = {
   step: number;
   motion: number[]; // 0 → 1, normalisé
   centers: { x: number; y: number }[];
+  /** Planche de 9 images (3×3) pour que l'IA « voie » la vidéo. */
+  sheet?: { image: string; times: number[] };
 };
 
 export async function analyzeVideo(url: string, duration: number, onProgress?: (p: number) => void): Promise<VideoAnalysis> {
@@ -34,6 +36,16 @@ export async function analyzeVideo(url: string, duration: number, onProgress?: (
   const motion: number[] = [];
   const centers: { x: number; y: number }[] = [];
   let prev: Float32Array | null = null;
+  // Planche contact 3×3 pour la vision de l'IA.
+  const sheetTimes = Array.from({ length: 9 }, (_, i) => Math.round(((i + 0.5) / 9) * duration * 10) / 10);
+  const sheet = document.createElement('canvas');
+  sheet.width = 540;
+  sheet.height = 960;
+  const sctx = sheet.getContext('2d')!;
+  sctx.fillStyle = '#000';
+  sctx.fillRect(0, 0, 540, 960);
+  let sheetOk = true;
+  let nextSheet = 0;
   for (let i = 0; i < samples; i++) {
     const t = Math.min(duration - 0.05, i * step);
     await new Promise<void>((resolve) => {
@@ -49,6 +61,27 @@ export async function analyzeVideo(url: string, duration: number, onProgress?: (
       ctx.drawImage(video, (W - vw) / 2, (H - vh) / 2, vw, vh);
     } catch {
       break;
+    }
+    while (nextSheet < 9 && t >= sheetTimes[nextSheet] - step / 2) {
+      const cw = 180;
+      const ch = 320;
+      const kk = Math.max(cw / (video.videoWidth || cw), ch / (video.videoHeight || ch));
+      const ww = (video.videoWidth || cw) * kk;
+      const hh = (video.videoHeight || ch) * kk;
+      const x = (nextSheet % 3) * cw;
+      const y = Math.floor(nextSheet / 3) * ch;
+      sctx.save();
+      sctx.beginPath();
+      sctx.rect(x, y, cw, ch);
+      sctx.clip();
+      sctx.drawImage(video, x + (cw - ww) / 2, y + (ch - hh) / 2, ww, hh);
+      sctx.restore();
+      sctx.fillStyle = 'rgba(0,0,0,0.6)';
+      sctx.fillRect(x, y, 46, 22);
+      sctx.fillStyle = '#fff';
+      sctx.font = 'bold 14px sans-serif';
+      sctx.fillText(`${nextSheet + 1}`, x + 6, y + 16);
+      nextSheet++;
     }
     let data: Uint8ClampedArray;
     try {
@@ -86,7 +119,13 @@ export async function analyzeVideo(url: string, duration: number, onProgress?: (
     for (let j = Math.max(0, i - 3); j <= Math.min(centers.length - 1, i + 3); j++) { x += centers[j].x; y += centers[j].y; n++; }
     return { x: Math.min(0.8, Math.max(0.2, x / n)), y: Math.min(0.75, Math.max(0.25, y / n)) };
   });
+  let sheetData: VideoAnalysis['sheet'];
+  try {
+    if (sheetOk && nextSheet > 0) sheetData = { image: sheet.toDataURL('image/jpeg', 0.72), times: sheetTimes.slice(0, nextSheet) };
+  } catch {
+    sheetOk = false;
+  }
   video.removeAttribute('src');
   video.load();
-  return { step, motion: norm, centers: smooth };
+  return { step, motion: norm, centers: smooth, sheet: sheetData };
 }
