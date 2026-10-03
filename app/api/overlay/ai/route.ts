@@ -39,7 +39,9 @@ Règles :
 - Zone sûre TikTok : texte entre y=0.12 et y=0.78, x entre 0.15 et 0.85 (le bas et la droite sont cachés par l'interface).
 - Évite que deux textes se superposent au même endroit en même temps.
 - Un « montage dynamique » = intro courte ou texte d'accroche, 3 à 6 zooms (punch sur les moments forts), quelques emojis, mots clés en texte, barre de progression, éventuellement un flash et une carte de fin.
-- Textes courts (2 à 6 mots), percutants, en français.`;
+- Textes courts (2 à 6 mots), percutants, en français. Un texte reste affiché 1.5 à 3 s, un emoji 1 à 2 s.
+- Pendant l'intro et la carte de fin, n'affiche AUCUN autre texte ni emoji.
+- Centre les textes (x = 0.5) sauf demande contraire ; place les emojis près du texte, sans le recouvrir.`;
 
 function repair(list: unknown[], duration: number): Layer[] {
   const out: Layer[] = [];
@@ -72,7 +74,23 @@ function repair(list: unknown[], duration: number): Layer[] {
     const parsed = LayerSchema.safeParse(l);
     if (parsed.success) out.push(parsed.data);
   });
-  return out.slice(0, 60);
+  // Lisibilité : durées minimales, et rien par-dessus l'intro / la carte de fin.
+  const intro = out.find((l) => l.type === 'intro');
+  const endcard = out.find((l) => l.type === 'endcard');
+  const fixed = out.map((l) => {
+    const minLen = l.type === 'text' ? 1.4 : l.type === 'emoji' ? 1 : l.type === 'zoom' ? 0.6 : 0;
+    let { start, end } = l;
+    if ((l.type === 'text' || l.type === 'emoji') && intro && start < intro.end && end > intro.start) {
+      const len = end - start;
+      start = intro.end + 0.05;
+      end = start + len;
+    }
+    if (end - start < minLen) end = start + minLen;
+    if ((l.type === 'text' || l.type === 'emoji') && endcard && end > endcard.start) end = Math.max(start + 0.3, endcard.start - 0.05);
+    end = Math.min(duration, end);
+    return { ...l, start: Math.min(start, Math.max(0, end - 0.1)), end } as Layer;
+  });
+  return fixed.filter((l) => l.end - l.start >= 0.1).slice(0, 60);
 }
 
 export async function POST(request: Request) {
