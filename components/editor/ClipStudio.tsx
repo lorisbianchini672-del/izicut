@@ -747,6 +747,11 @@ export function ClipStudio({ clipId }: { clipId: string }) {
         </Link>
         <p className="min-w-0 flex-1 truncate font-display text-sm font-semibold">{title}</p>
         {ready && !dirty ? (
+          <Link href={`/montage/${clipId}`} className="inline-flex items-center gap-1.5 rounded-xl border border-neon/40 px-3 py-2.5 text-sm font-semibold text-neon hover:bg-neon/10">
+            <Sparkles className="h-4 w-4" /> <span className="hidden sm:inline">Effets & IA</span>
+          </Link>
+        ) : null}
+        {ready && !dirty ? (
           <button type="button" onClick={download} className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-neon px-4 py-2.5 text-sm font-bold text-ink-950 hover:bg-fg">
             <Download className="h-4 w-4" /> Télécharger
           </button>

@@ -16,7 +16,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
 /** Routes exigeant une session ; les autres sont simplement traversées. */
-const PROTECTED_PREFIXES = ['/dashboard', '/project', '/editor', '/upload'];
+const PROTECTED_PREFIXES = ['/dashboard', '/project', '/editor', '/upload', '/montage'];
 
 /**
  * Démonstrations publiques : l'éditeur de démo est entièrement simulé

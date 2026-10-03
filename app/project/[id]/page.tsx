@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, use, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Download, Pencil, Play, Flame, Clock, Scissors, Plus, Sparkles, Copy, Check, X } from 'lucide-react';
+import { ArrowLeft, Download, Pencil, Play, Flame, Clock, Scissors, Plus, Sparkles, Copy, Check, X, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -353,6 +353,17 @@ function ClipCard({
             </Link>
           </Button>
         </div>
+        <Link
+          href={`/montage/${clip.id}`}
+          aria-disabled={!ready}
+          className={cn(
+            'flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-neon to-[#3de0ff] px-3 py-2 text-xs font-bold text-ink-950 transition hover:opacity-90',
+            !ready && 'pointer-events-none opacity-40'
+          )}
+        >
+          <Wand2 className="h-3.5 w-3.5" />
+          Montage IA · effets & motion
+        </Link>
         <button
           type="button"
           onClick={() => setShowSocial(true)}
