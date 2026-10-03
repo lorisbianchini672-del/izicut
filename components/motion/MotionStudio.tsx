@@ -6,6 +6,8 @@
  * navigateur (aucun serveur de rendu nécessaire).
  */
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { setPendingVideo } from '@/lib/overlay/beats';
 import { Montserrat } from 'next/font/google';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
@@ -47,7 +49,7 @@ const motionFont = Montserrat({ subsets: ['latin'], weight: ['800', '900'], disp
 const STORAGE_KEY = 'izicut-motion-project-v1';
 
 type Tab = 'ia' | 'medias' | 'scenes' | 'style';
-type Media = { name: string; url: string; duration: number; el: HTMLVideoElement };
+type Media = { name: string; url: string; duration: number; el: HTMLVideoElement; file: File };
 type ChatMessage = { role: 'user' | 'ai'; text: string };
 
 const NEW_IDEAS = [
@@ -79,6 +81,7 @@ function pickMime(withAudio = false): { mime: string; ext: string } {
 
 export function MotionStudio() {
   const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
   const [project, setProject] = useState<MotionProject>(TEMPLATES[0].project);
   const [assets, setAssets] = useState<MotionAssets>({});
   const [media, setMedia] = useState<Media[]>([]);
@@ -244,7 +247,7 @@ export function MotionStudio() {
     el.playsInline = true;
     el.preload = 'auto';
     el.onloadedmetadata = () => {
-      const item: Media = { name: file.name.replace(/\.[^.]+$/, '').slice(0, 40), url, duration: el.duration || 0, el };
+      const item: Media = { name: file.name.replace(/\.[^.]+$/, '').slice(0, 40), url, duration: el.duration || 0, el, file };
       const index = mediaRef.current.length;
       setMedia((list) => [...list, item]);
       // Première vidéo : on l'ajoute tout de suite au projet en plein écran.
@@ -542,6 +545,13 @@ export function MotionStudio() {
                       <button type="button" onClick={() => setProject((p) => (p.scenes.length >= 8 ? p : { ...p, scenes: [...p.scenes, { type: 'video', duration: Math.min(6, Math.max(2, m.duration)), media: i, from: 0, layout: 'frame', caption: 'Votre *produit*' }] }))} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Dans un cadre</button>
                       <button type="button" onClick={() => removeVideo(i)} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-red-300 hover:border-red-400/40">Retirer</button>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => { setPendingVideo(m.file); router.push('/montage/nouveau'); }}
+                      className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-neon to-[#3de0ff] px-2 py-1.5 text-xs font-bold text-ink-950"
+                    >
+                      <Wand2 className="h-3.5 w-3.5" /> Modifier directement cette vidéo (ralentis, effets, rythme…)
+                    </button>
                   </div>
                 ))}
                 {media.length ? (

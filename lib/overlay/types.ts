@@ -15,6 +15,8 @@ export const EMOJI_ANIMS = ['pop', 'bounce', 'float', 'spin', 'shake'] as const;
 export const SHAPES = ['arrow', 'circle', 'underline', 'box'] as const;
 export const FILTERS = ['bw', 'warm', 'cool', 'vibrant', 'vintage', 'cinema', 'dark'] as const;
 export const ZOOM_EASES = ['smooth', 'punch', 'shake'] as const;
+/** Effets appliqués à l'IMAGE de la vidéo elle-même (pas des ajouts). */
+export const VIDEO_FX = ['glitch', 'rgb', 'mirror', 'pulse', 'strobe', 'echo', 'invert', 'grain', 'vhs', 'spin', 'split', 'blur', 'zoomin', 'shake'] as const;
 
 export const LayerSchema = z.discriminatedUnion('type', [
   z.object({
@@ -48,7 +50,15 @@ export const LayerSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('intro'), title: z.string().trim().min(1).max(90), subtitle: z.string().trim().max(110).optional(), color: hex, backdrop: z.enum(['dark', 'blur', 'color']) }),
   z.object({ ...base, type: z.literal('endcard'), title: z.string().trim().min(1).max(80), button: z.string().trim().max(30).optional(), brand: z.string().trim().max(40).optional(), color: hex }),
   z.object({ ...base, type: z.literal('filter'), filter: z.enum(FILTERS), intensity: unit }),
-  z.object({ ...base, type: z.literal('flash'), color: hex })
+  z.object({ ...base, type: z.literal('flash'), color: hex }),
+  /** Vitesse de lecture sur un passage : ralenti (< 1) ou accéléré (> 1). */
+  z.object({ ...base, type: z.literal('speed'), rate: z.number().min(0.25).max(4) }),
+  /** Passage supprimé de la vidéo. */
+  z.object({ ...base, type: z.literal('cut') }),
+  /** Arrêt sur image : l'image de « start » reste figée « hold » secondes. */
+  z.object({ ...base, type: z.literal('freeze'), hold: z.number().min(0.2).max(5) }),
+  /** Effet visuel sur la vidéo ; « beat » = calé sur les temps forts de la musique. */
+  z.object({ ...base, type: z.literal('effect'), effect: z.enum(VIDEO_FX), intensity: unit, beat: z.boolean().optional() })
 ]);
 
 export type Layer = z.infer<typeof LayerSchema>;
@@ -64,7 +74,11 @@ export const LAYER_LABELS: Record<LayerType, string> = {
   intro: 'Titre d’intro',
   endcard: 'Carte de fin',
   filter: 'Filtre',
-  flash: 'Flash'
+  flash: 'Flash',
+  speed: 'Vitesse',
+  cut: 'Coupe',
+  freeze: 'Arrêt sur image',
+  effect: 'Effet vidéo'
 };
 
 export const LAYER_COLORS: Record<LayerType, string> = {
@@ -76,7 +90,11 @@ export const LAYER_COLORS: Record<LayerType, string> = {
   intro: '#c8ff3d',
   endcard: '#4ade80',
   filter: '#94a3b8',
-  flash: '#ffffff'
+  flash: '#ffffff',
+  speed: '#f472b6',
+  cut: '#ef4444',
+  freeze: '#60a5fa',
+  effect: '#e879f9'
 };
 
 export const ANIM_LABELS: Record<(typeof TEXT_ANIMS)[number], string> = {
@@ -95,6 +113,23 @@ export const BOX_LABELS: Record<(typeof TEXT_BOXES)[number], string> = {
   highlight: 'Surligné',
   outline: 'Néon'
 };
+export const FX_LABELS: Record<(typeof VIDEO_FX)[number], string> = {
+  glitch: 'Glitch',
+  rgb: 'Décalage RVB',
+  mirror: 'Miroir',
+  pulse: 'Pulsation (zoom au rythme)',
+  strobe: 'Stroboscope',
+  echo: 'Traînée (écho)',
+  invert: 'Négatif',
+  grain: 'Grain film',
+  vhs: 'VHS rétro',
+  spin: 'Rotation',
+  split: 'Écran divisé ×3',
+  blur: 'Flou',
+  zoomin: 'Zoom progressif',
+  shake: 'Tremblement'
+};
+
 export const FILTER_LABELS: Record<(typeof FILTERS)[number], string> = {
   bw: 'Noir & blanc',
   warm: 'Chaud',
@@ -139,6 +174,14 @@ export function defaultLayer(type: LayerType, t: number, duration: number): Laye
       return { id, type, start: 0, end: duration, filter: 'cinema', intensity: 0.7 };
     case 'flash':
       return { id, type, ...span(0.35), color: '#ffffff' };
+    case 'speed':
+      return { id, type, ...span(2), rate: 0.5 };
+    case 'cut':
+      return { id, type, ...span(1) };
+    case 'freeze':
+      return { id, type, ...span(0.2), hold: 1 };
+    case 'effect':
+      return { id, type, ...span(2), effect: 'glitch', intensity: 0.7, beat: true };
   }
 }
 

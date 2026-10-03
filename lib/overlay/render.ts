@@ -6,7 +6,16 @@ import { parseRich } from '@/lib/motion/render';
 import type { Layer } from './types';
 
 export type Box = { x: number; y: number; w: number; h: number };
-export type CompositeOptions = { fontFamily: string; watermark?: boolean; duration: number; boxes?: Map<string, Box> };
+export type CompositeOptions = {
+  fontFamily: string;
+  watermark?: boolean;
+  duration: number;
+  boxes?: Map<string, Box>;
+  /** Temps forts de la musique (secondes), pour les effets « au rythme ». */
+  beats?: number[];
+  /** Horloge murale (s) : anime le grain / glitch même pendant un arrêt sur image. */
+  clock?: number;
+};
 
 const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const easeOutCubic = (x: number) => 1 - Math.pow(1 - clamp(x), 3);
@@ -64,21 +73,180 @@ function zoomState(layers: Layer[], t: number, W: number, H: number) {
   return { scale, fx, fy, dx, dy };
 }
 
-function drawVideo(ctx: CanvasRenderingContext2D, video: HTMLVideoElement | null, W: number, H: number, layers: Layer[], t: number) {
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
-  if (!video || video.readyState < 2 || !video.videoWidth) return;
-  const z = zoomState(layers, t, W, H);
-  // « cover » : la vidéo remplit le cadre 9:16.
-  const k = Math.max(W / video.videoWidth, H / video.videoHeight);
+type Fx = Extract<Layer, { type: 'effect' }>;
+
+/** 0→1 : force de l'effet à l'instant t (pic sur chaque temps fort si « beat »). */
+function fxStrength(l: Fx, t: number, beats: number[] | undefined, clock: number): number {
+  const edge = Math.min(clamp((t - l.start) / 0.15), clamp((l.end - t) / 0.15));
+  if (l.beat) {
+    let last = -Infinity;
+    if (beats && beats.length) {
+      for (const b of beats) { if (b <= t) last = b; else break; }
+    } else {
+      last = Math.floor(t * 2) / 2; // 120 BPM par défaut
+    }
+    return l.intensity * Math.exp(-(t - last) * 7) * (edge > 0 ? 1 : 0);
+  }
+  return l.intensity * edge * (0.85 + 0.15 * Math.sin(clock * 9));
+}
+
+function activeFx(layers: Layer[], t: number): Fx[] {
+  return layers.filter((l): l is Fx => l.type === 'effect' && t >= l.start && t <= l.end);
+}
+
+const caches = new WeakMap<HTMLCanvasElement, { base: HTMLCanvasElement; tmp: HTMLCanvasElement; small: HTMLCanvasElement; noise: HTMLCanvasElement }>();
+function buffers(canvas: HTMLCanvasElement) {
+  let c = caches.get(canvas);
+  if (!c || c.base.width !== canvas.width || c.base.height !== canvas.height) {
+    const mk = (w: number, h: number) => { const e = document.createElement('canvas'); e.width = w; e.height = h; return e; };
+    const noise = mk(256, 256);
+    const nctx = noise.getContext('2d')!;
+    const img = nctx.createImageData(256, 256);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.random() * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+    nctx.putImageData(img, 0, 0);
+    c = { base: mk(canvas.width, canvas.height), tmp: mk(canvas.width, canvas.height), small: mk(Math.ceil(canvas.width / 10), Math.ceil(canvas.height / 10)), noise };
+    caches.set(canvas, c);
+  }
+  return c;
+}
+
+/** Image « cover » de la vidéo dans un rectangle. */
+function coverDraw(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, x: number, y: number, w: number, h: number) {
+  const k = Math.max(w / video.videoWidth, h / video.videoHeight);
   const vw = video.videoWidth * k;
   const vh = video.videoHeight * k;
   ctx.save();
-  ctx.translate(z.fx * W + z.dx, z.fy * H + z.dy);
-  ctx.scale(z.scale, z.scale);
-  ctx.translate(-z.fx * W, -z.fy * H);
-  ctx.drawImage(video, (W - vw) / 2, (H - vh) / 2, vw, vh);
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.drawImage(video, x + (w - vw) / 2, y + (h - vh) / 2, vw, vh);
   ctx.restore();
+}
+
+function drawVideo(ctx: CanvasRenderingContext2D, video: HTMLVideoElement | null, W: number, H: number, layers: Layer[], t: number, fx: Fx[], beats: number[] | undefined, clock: number) {
+  if (!video || video.readyState < 2 || !video.videoWidth) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    return;
+  }
+  const z = zoomState(layers, t, W, H);
+  let scale = z.scale;
+  let dx = z.dx;
+  let dy = z.dy;
+  let rot = 0;
+  for (const f of fx) {
+    const k = fxStrength(f, t, beats, clock);
+    if (f.effect === 'pulse') scale *= 1 + 0.14 * k;
+    if (f.effect === 'zoomin') scale *= 1 + 0.35 * f.intensity * clamp((t - f.start) / Math.max(0.1, f.end - f.start));
+    if (f.effect === 'shake') { const a = Math.min(W, H) * 0.03 * k; dx += Math.sin(clock * 71) * a; dy += Math.cos(clock * 53) * a; }
+    if (f.effect === 'spin') rot += f.beat ? Math.sin(clock * 20) * 0.08 * k : (t - f.start) * f.intensity * 2;
+  }
+  const echo = fx.find((f) => f.effect === 'echo');
+  ctx.save();
+  if (echo) ctx.globalAlpha = 1 - 0.8 * echo.intensity; // l'image précédente reste visible → traînée
+  else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
+  ctx.translate(z.fx * W + dx, z.fy * H + dy);
+  ctx.rotate(rot);
+  ctx.scale(scale, scale);
+  ctx.translate(-z.fx * W, -z.fy * H);
+  if (fx.some((f) => f.effect === 'split')) {
+    for (let i = 0; i < 3; i++) coverDraw(ctx, video, 0, (H / 3) * i, W, H / 3);
+  } else {
+    coverDraw(ctx, video, 0, 0, W, H);
+  }
+  ctx.restore();
+  if (fx.some((f) => f.effect === 'mirror')) {
+    // Moitié gauche reflétée à droite (effet kaléidoscope symétrique).
+    ctx.save();
+    ctx.translate(W, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(ctx.canvas, 0, 0, W / 2, H, 0, 0, W / 2, H);
+    ctx.restore();
+  }
+}
+
+/** Retouches de l'image : RVB, glitch, VHS, négatif, flou, grain. */
+function postFx(ctx: CanvasRenderingContext2D, bufs: ReturnType<typeof buffers>, W: number, H: number, fx: Fx[], t: number, beats: number[] | undefined, clock: number) {
+  for (const f of fx) {
+    const k = fxStrength(f, t, beats, clock);
+    if (k <= 0.01) continue;
+    if (f.effect === 'rgb' || f.effect === 'glitch' || f.effect === 'vhs') {
+      const d = (f.effect === 'vhs' ? 6 : 26) * k * (W / 1080) * (f.effect === 'glitch' ? 0.5 + Math.random() : 1);
+      const tctx = bufs.tmp.getContext('2d')!;
+      // Canal rouge décalé à droite, cyan à gauche (somme additive).
+      tctx.globalCompositeOperation = 'source-over';
+      tctx.drawImage(ctx.canvas, 0, 0);
+      tctx.globalCompositeOperation = 'multiply';
+      tctx.fillStyle = '#ff0000';
+      tctx.fillRect(0, 0, W, H);
+      const red = bufs.tmp;
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = '#00ffff';
+      ctx.fillRect(0, 0, W, H); // ne garde que vert + bleu
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.drawImage(red, d, 0);
+      ctx.restore();
+      if (f.effect === 'glitch' && k > 0.25) {
+        const slices = 3 + Math.floor(k * 6);
+        for (let i = 0; i < slices; i++) {
+          const y = Math.random() * H;
+          const h = (0.01 + Math.random() * 0.06) * H;
+          const off = (Math.random() - 0.5) * W * 0.12 * k;
+          ctx.drawImage(ctx.canvas, 0, y, W, h, off, y, W, h);
+        }
+      }
+      if (f.effect === 'vhs') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        for (let y = 0; y < H; y += 6) ctx.fillRect(0, y, W, 2);
+        ctx.globalCompositeOperation = 'soft-light';
+        ctx.fillStyle = 'rgba(255,120,60,0.35)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
+    }
+    if (f.effect === 'invert') {
+      ctx.save();
+      ctx.globalCompositeOperation = 'difference';
+      ctx.fillStyle = `rgba(255,255,255,${k})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+    if (f.effect === 'blur') {
+      const sctx = bufs.small.getContext('2d')!;
+      sctx.imageSmoothingQuality = 'high';
+      sctx.drawImage(ctx.canvas, 0, 0, bufs.small.width, bufs.small.height);
+      ctx.save();
+      ctx.globalAlpha = k;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bufs.small, 0, 0, W, H);
+      ctx.restore();
+    }
+    if (f.effect === 'grain' || f.effect === 'vhs') {
+      ctx.save();
+      ctx.globalAlpha = 0.12 + 0.25 * k;
+      ctx.globalCompositeOperation = 'overlay';
+      const pat = ctx.createPattern(bufs.noise, 'repeat');
+      if (pat) {
+        ctx.translate((clock * 997) % 256, (clock * 613) % 256);
+        ctx.fillStyle = pat;
+        ctx.fillRect(-256, -256, W + 512, H + 512);
+      }
+      ctx.restore();
+    }
+    if (f.effect === 'strobe') {
+      ctx.save();
+      ctx.globalAlpha = 0.75 * k;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+  }
 }
 
 /** Filtres couleur par modes de fusion (fonctionne sur tous les navigateurs). */
@@ -490,7 +658,19 @@ export function drawComposite(ctx: CanvasRenderingContext2D, video: HTMLVideoEle
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
   ctx.shadowBlur = 0;
-  drawVideo(ctx, video, W, H, layers, t);
+  const clock = opts.clock ?? t;
+  const fx = activeFx(layers, t);
+  // La vidéo est dessinée dans un tampon (permet la traînée « écho »
+  // sans que les textes laissent des traces), puis retouchée.
+  const bufs = buffers(ctx.canvas);
+  const bctx = bufs.base.getContext('2d')!;
+  bctx.save();
+  bctx.globalAlpha = 1;
+  bctx.globalCompositeOperation = 'source-over';
+  drawVideo(bctx, video, W, H, layers, t, fx, opts.beats, clock);
+  bctx.restore();
+  ctx.drawImage(bufs.base, 0, 0);
+  postFx(ctx, bufs, W, H, fx, t, opts.beats, clock);
   drawFilters(ctx, W, H, layers, t);
   opts.boxes?.clear();
   for (const l of layers) {

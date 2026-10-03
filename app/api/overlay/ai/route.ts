@@ -16,10 +16,14 @@ const BodySchema = z.object({
   prompt: z.string().trim().min(2).max(1200),
   duration: z.number().min(1).max(3600),
   layers: z.array(z.unknown()).max(60),
-  words: z.array(z.object({ word: z.string(), start: z.number(), end: z.number() })).max(4000).optional()
+  words: z.array(z.object({ word: z.string(), start: z.number(), end: z.number() })).max(4000).optional(),
+  beats: z.array(z.number().min(0).max(3600)).max(400).optional()
 });
 
-const SYSTEM = `Tu es un monteur vidéo expert en motion design pour TikTok / Reels (style CapCut). Tu modifies une vidéo 9:16 en ajoutant des CALQUES par-dessus.
+const SYSTEM = `Tu es un monteur vidéo expert (style CapCut / clips TikTok). Tu modifies la vidéo du client avec des CALQUES : certains transforment la VIDÉO ELLE-MÊME (vitesse, coupes, arrêts sur image, effets d'image, zooms, filtres), d'autres s'AJOUTENT par-dessus (textes, emojis, formes, intro, carte de fin, barre, flash).
+
+RÈGLE N°1 : fais EXACTEMENT ce que le client demande, rien de plus. N'ajoute JAMAIS de texte, d'emoji, d'intro, de carte de fin ou de barre de progression s'il ne l'a pas demandé (ou s'il demande un « montage complet »). S'il demande de modifier sa vidéo (ralenti, accéléré, rythme, effet, couper, style clip, danse…), utilise UNIQUEMENT les calques qui transforment la vidéo.
+RÈGLE N°2 : les temps sont ceux de la vidéo d'origine (en secondes). Les "temps forts" fournis sont les beats de la musique : cale les effets dessus pour un résultat pro.
 Réponds UNIQUEMENT par un JSON : {"message": "phrase courte en français qui résume ce que tu as fait", "layers": [ ...liste COMPLÈTE des calques... ]}
 
 Types de calques (tous ont "id" texte unique, "start" et "end" en secondes, 0 <= start < end <= durée) :
@@ -32,12 +36,20 @@ Types de calques (tous ont "id" texte unique, "start" et "end" en secondes, 0 <=
 - {"type":"endcard","title":"max 80","button":"optionnel max 30","brand":"optionnel","color":"#RRGGBB"}  (carte de fin, 2 à 3 s, finit à la durée totale)
 - {"type":"filter","filter":"bw|warm|cool|vibrant|vintage|cinema|dark","intensity":0-1}
 - {"type":"flash","color":"#RRGGBB"}  (flash de transition très court, 0.2 à 0.4 s)
+Calques qui TRANSFORMENT la vidéo :
+- {"type":"speed","rate":0.25-4}  (ralenti < 1, accéléré > 1, sur le passage start→end)
+- {"type":"cut"}  (supprime le passage start→end)
+- {"type":"freeze","hold":0.2-5}  (arrêt sur image : l'image à "start" reste figée "hold" secondes ; end = start + 0.2)
+- {"type":"effect","effect":"glitch|rgb|mirror|pulse|strobe|echo|invert|grain|vhs|spin|split|blur|zoomin|shake","intensity":0-1,"beat":true|false}
+   pulse = zoom qui « tape » au rythme ; strobe = flashs blancs ; echo = traînée de mouvement (top pour la danse) ; rgb = décalage de couleurs ; split = écran divisé en 3 ; zoomin = zoom progressif ; beat:true = l'effet frappe sur chaque temps fort.
 
 Règles :
 - Garde les calques existants sauf si on te demande de les changer ou de les supprimer. Conserve leurs "id".
 - Utilise la transcription horodatée pour placer textes, emojis et zooms au BON moment (sur les mots importants).
 - Zone sûre TikTok : texte entre y=0.12 et y=0.78, x entre 0.15 et 0.85 (le bas et la droite sont cachés par l'interface).
 - Évite que deux textes se superposent au même endroit en même temps.
+- « Clip de danse / synchro musique » = pulse ou shake au rythme (beat:true) sur les passages énergiques, echo sur les mouvements, 1 ou 2 ralentis courts (0.5) sur les meilleurs gestes, glitch ou rgb sur quelques temps forts, éventuellement un filtre — SANS texte.
+- « Retire les textes » = supprime tous les calques text/emoji/intro/endcard.
 - Un « montage dynamique » = intro courte ou texte d'accroche, 3 à 6 zooms (punch sur les moments forts), quelques emojis, mots clés en texte, barre de progression, éventuellement un flash et une carte de fin.
 - Textes courts (2 à 6 mots), percutants, en français. Un texte reste affiché 1.5 à 3 s, un emoji 1 à 2 s.
 - Pendant l'intro et la carte de fin, n'affiche AUCUN autre texte ni emoji.
@@ -70,6 +82,9 @@ function repair(list: unknown[], duration: number): Layer[] {
     }
     if (l.type === 'emoji') { l.size = Math.min(500, Math.max(40, Number(l.size) || 160)); if (!l.anim) l.anim = 'pop'; }
     if (l.type === 'zoom') { l.scale = Math.min(2.2, Math.max(1.05, Number(l.scale) || 1.3)); if (!l.ease) l.ease = 'smooth'; if (!('x' in l)) l.x = 0.5; if (!('y' in l)) l.y = 0.4; }
+    if (l.type === 'speed') l.rate = Math.min(4, Math.max(0.25, Number(l.rate) || 0.5));
+    if (l.type === 'freeze') { l.hold = Math.min(5, Math.max(0.2, Number(l.hold) || 1)); l.end = Math.min(duration, Number(l.start) + 0.2); }
+    if (l.type === 'effect') { l.intensity = Math.min(1, Math.max(0.05, Number(l.intensity) || 0.7)); if (typeof l.beat !== 'boolean') delete l.beat; }
     if (l.type === 'shape') { l.w = Math.min(1, Math.max(0.03, Number(l.w) || 0.3)); l.h = Math.min(1, Math.max(0.01, Number(l.h) || 0.15)); l.rotation = Number(l.rotation) || 0; }
     const parsed = LayerSchema.safeParse(l);
     if (parsed.success) out.push(parsed.data);
@@ -108,7 +123,8 @@ export async function POST(request: Request) {
   }
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Demande invalide' }, { status: 400 });
-  const { prompt, duration, layers, words } = parsed.data;
+  const { prompt, duration, layers, words, beats } = parsed.data;
+  const beatText = (beats ?? []).map((b) => b.toFixed(2)).join(', ').slice(0, 2500);
   const current = LayersSchema.safeParse(layers).success ? layers : [];
   const transcript = (words ?? [])
     .map((w) => `${w.start.toFixed(1)} ${w.word}`)
@@ -118,7 +134,7 @@ export async function POST(request: Request) {
   try {
     const raw = (await chatJson({
       system: SYSTEM,
-      user: `Durée de la vidéo : ${duration.toFixed(1)} s.\nTranscription (secondes mot) : ${transcript || '(pas de parole)'}\nCalques actuels : ${JSON.stringify(current)}\n\nDemande du client : ${prompt}`,
+      user: `Durée de la vidéo : ${duration.toFixed(1)} s.\nTemps forts de la musique (s) : ${beatText || '(non détectés)'}\nTranscription (secondes mot) : ${transcript || '(pas de parole)'}\nCalques actuels : ${JSON.stringify(current)}\n\nDemande du client : ${prompt}`,
       maxTokens: 4000,
       temperature: 0.5
     })) as { message?: unknown; layers?: unknown };

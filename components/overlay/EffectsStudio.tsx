@@ -10,7 +10,8 @@
 import Link from 'next/link';
 import { Montserrat } from 'next/font/google';
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { ArrowLeft, Copy, Download, Layers, Pause, Play, Plus, Send, Sparkles, Trash2, Undo2, Wand2 } from 'lucide-react';
+import { ArrowLeft, Copy, Download, Film, Layers, Pause, Play, Plus, Send, Sparkles, Trash2, Undo2, Wand2 } from 'lucide-react';
+import { detectBeats, takePendingVideo } from '@/lib/overlay/beats';
 
 import { Button } from '@/components/ui/button';
 import { resolvePlanTier } from '@/lib/entitlements';
@@ -21,6 +22,8 @@ import {
   EMOJI_ANIMS,
   FILTERS,
   FILTER_LABELS,
+  FX_LABELS,
+  VIDEO_FX,
   LAYER_COLORS,
   LAYER_LABELS,
   LayersSchema,
@@ -45,17 +48,19 @@ type Panel = 'ia' | 'ajouter' | 'calque';
 type Msg = { role: 'user' | 'ai'; text: string };
 
 const AI_IDEAS = [
+  'Synchronise des effets sur la musique',
+  'Style clip de danse, sans texte',
+  'Ralenti sur le meilleur moment',
+  'Glitch et flash sur les temps forts',
+  'Accélère les passages lents',
+  'Look film vintage',
   'Fais un montage dynamique complet',
-  'Ajoute un titre d’intro accrocheur',
-  'Mets des emojis aux bons moments',
-  'Ajoute des zooms punch sur les moments forts',
-  'Écris les mots clés en gros à l’écran',
-  'Ajoute une carte de fin « Abonne-toi »',
-  'Mets un filtre cinéma'
+  'Retire tous les textes'
 ];
 const EMOJIS = ['🔥', '😂', '😱', '💯', '👀', '❤️', '🚀', '💰', '👇', '✅', '❌', '⚡', '🎯', '🤯', '👏', '✨'];
 const COLORS = ['#ffffff', '#c8ff3d', '#ffd400', '#ff3b6b', '#3de0ff', '#a855f7', '#ff8a00', '#000000'];
-const ADD_TYPES: LayerType[] = ['text', 'emoji', 'zoom', 'shape', 'intro', 'endcard', 'progress', 'filter', 'flash'];
+const VIDEO_TYPES: LayerType[] = ['effect', 'speed', 'cut', 'freeze', 'zoom', 'filter'];
+const ADD_TYPES: LayerType[] = ['text', 'emoji', 'shape', 'intro', 'endcard', 'progress', 'flash'];
 
 function readWords(value: unknown): Word[] {
   const list = Array.isArray(value) ? value : Array.isArray((value as { words?: unknown })?.words) ? (value as { words: unknown[] }).words : [];
@@ -73,9 +78,10 @@ function pickMime(): { mime: string; ext: string } {
   return { mime: '', ext: 'webm' };
 }
 
-export function EffectsStudio({ clipId }: { clipId: string }) {
+export function EffectsStudio({ clipId }: { clipId: string | null }) {
   const supabase = useMemo(() => createClient(), []);
-  const storageKey = `izicut-effects-${clipId}`;
+  const [localFile, setLocalFile] = useState<File | null>(null);
+  const storageKey = clipId ? `izicut-effects-${clipId}` : `izicut-effects-local-${localFile?.name ?? ''}-${localFile?.size ?? 0}`;
   const [loadError, setLoadError] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [title, setTitle] = useState('Mon clip');
@@ -93,6 +99,7 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
   const [aiBusy, setAiBusy] = useState(false);
   const [exporting, setExporting] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [beats, setBeats] = useState<number[]>([]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -102,13 +109,50 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
   const audioRef = useRef<{ ctx: AudioContext; dest: MediaStreamAudioDestinationNode } | null>(null);
   const exportingRef = useRef(false);
   const hydrated = useRef(false);
+  const beatsRef = useRef<number[]>([]);
+  const freezeRef = useRef<{ id: string; until: number } | null>(null);
+  const prevTimeRef = useRef(0);
   layersRef.current = layers;
+  beatsRef.current = beats;
 
-  // ---------- Chargement du clip ----------
+  // ---------- Chargement : clip IziCut ou fichier de l'appareil ----------
+  const restore = useCallback((key: string) => {
+    try {
+      const saved = window.localStorage.getItem(key);
+      const parsed = saved ? LayersSchema.safeParse(JSON.parse(saved)) : null;
+      setLayersState(parsed?.success ? parsed.data : []);
+    } catch {
+      setLayersState([]);
+    }
+    hydrated.current = true;
+  }, []);
+
+  const openLocal = useCallback((file: File | null | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith('video/') && !/\.(mov|mp4|webm|m4v|mkv)$/i.test(file.name)) { setNotice('Choisissez une vidéo (MP4, MOV, WebM).'); return; }
+    hydrated.current = false;
+    setLocalFile(file);
+    setTitle(file.name.replace(/\.[^.]+$/, '').slice(0, 60) || 'Ma vidéo');
+    setWords([]);
+    setBeats([]);
+    setVideoUrl(URL.createObjectURL(file));
+    restore(`izicut-effects-local-${file.name}-${file.size}`);
+    void file.arrayBuffer().then((buf) => detectBeats(buf)).then(setBeats);
+  }, [restore]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const { data: auth } = await supabase.auth.getUser();
+      if (auth.user) {
+        const { data: profile } = await supabase.from('profiles').select('plan, subscription_status').eq('id', auth.user.id).maybeSingle();
+        if (!cancelled) setIsPaid(resolvePlanTier(profile?.plan, profile?.subscription_status) !== 'free');
+      }
+      if (!clipId) {
+        const pending = takePendingVideo();
+        if (pending && !cancelled) openLocal(pending);
+        return;
+      }
       if (!auth.user) throw new Error('Connectez-vous pour modifier ce clip.');
       const { data: clip } = await supabase
         .from('clips')
@@ -119,27 +163,20 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
       if (!clip.rendered_storage_path) throw new Error('Ce clip est encore en cours de montage. Revenez dans un instant.');
       const { data: signed } = await supabase.storage.from('clips').createSignedUrl(clip.rendered_storage_path, 3600);
       if (!signed?.signedUrl) throw new Error('Vidéo indisponible.');
-      const { data: profile } = await supabase.from('profiles').select('plan, subscription_status').eq('id', auth.user.id).maybeSingle();
       if (cancelled) return;
-      setIsPaid(resolvePlanTier(profile?.plan, profile?.subscription_status) !== 'free');
       setTitle(String(clip.title || 'Mon clip'));
       setWords(readWords(clip.transcript_json));
       setVideoUrl(signed.signedUrl);
-      try {
-        const saved = window.localStorage.getItem(storageKey);
-        const parsed = saved ? LayersSchema.safeParse(JSON.parse(saved)) : null;
-        if (parsed?.success) setLayersState(parsed.data);
-      } catch {
-        /* rien de sauvegardé */
-      }
-      hydrated.current = true;
+      restore(`izicut-effects-${clipId}`);
+      // Temps forts de la musique (pour les effets « au rythme »).
+      void fetch(signed.signedUrl).then((r) => r.arrayBuffer()).then((buf) => detectBeats(buf)).then((b) => { if (!cancelled) setBeats(b); }).catch(() => undefined);
     })().catch((err: unknown) => {
       if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Chargement impossible.');
     });
     return () => {
       cancelled = true;
     };
-  }, [clipId, storageKey, supabase]);
+  }, [clipId, openLocal, restore, supabase]);
 
   useEffect(() => {
     if (!hydrated.current) return; // ne pas écraser la sauvegarde avant de l'avoir lue
@@ -168,6 +205,34 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
   const patchLayer = (id: string, patch: Partial<Layer>, record = false) =>
     setLayers((prev) => prev.map((l) => (l.id === id ? clampLayer({ ...l, ...patch } as Layer, duration || 9999) : l)), record);
 
+  /**
+   * Pilote de lecture : vitesse (ralenti / accéléré), coupes et arrêts sur
+   * image modifient la VRAIE lecture de la vidéo, en direct et à l'export.
+   */
+  const drive = useCallback((video: HTMLVideoElement, now: number) => {
+    const t = video.currentTime;
+    const list = layersRef.current;
+    const prev = prevTimeRef.current;
+    prevTimeRef.current = t;
+    const fr = freezeRef.current;
+    if (fr) {
+      if (now >= fr.until) { freezeRef.current = null; void video.play().catch(() => undefined); }
+      return;
+    }
+    if (video.paused) return;
+    const cut = list.find((l) => l.type === 'cut' && t >= l.start && t < l.end - 0.02);
+    if (cut) { video.currentTime = Math.min(cut.end, video.duration || cut.end); return; }
+    const freeze = list.find((l) => l.type === 'freeze' && prev < l.start && t >= l.start && t - l.start < 0.5);
+    if (freeze && freeze.type === 'freeze') {
+      video.pause();
+      freezeRef.current = { id: freeze.id, until: now + freeze.hold * 1000 };
+      return;
+    }
+    const speed = list.find((l) => l.type === 'speed' && t >= l.start && t < l.end);
+    const rate = speed && speed.type === 'speed' ? speed.rate : 1;
+    if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
+  }, []);
+
   // ---------- Boucle d'aperçu ----------
   useEffect(() => {
     let raf = 0;
@@ -177,8 +242,9 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
       const ctx = canvas?.getContext('2d');
       const video = videoRef.current;
       if (ctx && !exportingRef.current) {
+        if (video) drive(video, now);
         const t = video?.currentTime ?? 0;
-        drawComposite(ctx, video ?? null, layersRef.current, t, { fontFamily: font.style.fontFamily, watermark: !isPaid, duration: duration || 1, boxes: boxes.current });
+        drawComposite(ctx, video ?? null, layersRef.current, t, { fontFamily: font.style.fontFamily, watermark: !isPaid, duration: duration || 1, boxes: boxes.current, beats: beatsRef.current, clock: now / 1000 });
         // Contour du calque sélectionné.
         if (selected) {
           const b = boxes.current.get(selected);
@@ -197,18 +263,20 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [duration, isPaid, selected]);
+  }, [drive, duration, isPaid, selected]);
 
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) { if (v.ended || v.currentTime >= duration - 0.05) v.currentTime = 0; void v.play(); setPlaying(true); }
-    else { v.pause(); setPlaying(false); }
+    if (v.paused && !freezeRef.current) { if (v.ended || v.currentTime >= duration - 0.05) v.currentTime = 0; prevTimeRef.current = v.currentTime; void v.play(); setPlaying(true); }
+    else { freezeRef.current = null; v.pause(); setPlaying(false); }
   };
   const seek = (t: number) => {
     const v = videoRef.current;
     if (!v) return;
     v.currentTime = Math.max(0, Math.min(duration, t));
+    prevTimeRef.current = v.currentTime;
+    freezeRef.current = null;
     setTime(v.currentTime);
   };
 
@@ -271,7 +339,7 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
       const res = await fetch('/api/overlay/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: value, duration, layers, words: words.slice(0, 3000) })
+        body: JSON.stringify({ prompt: value, duration, layers, words: words.slice(0, 3000), beats: beats.slice(0, 400) })
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !Array.isArray(json.layers)) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
@@ -314,7 +382,9 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
     setExporting(0);
     setSelected(null);
     video.pause();
+    freezeRef.current = null;
     video.currentTime = 0;
+    prevTimeRef.current = 0;
     await new Promise((r) => { video.onseeked = () => r(null); });
     const stream = new MediaStream([
       ...canvas.captureStream(30).getVideoTracks(),
@@ -328,11 +398,12 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
     recorder.start(250);
     await video.play();
     await new Promise<void>((resolve) => {
-      const step = () => {
+      const step = (now: number) => {
+        drive(video, now);
         const t = video.currentTime;
-        drawComposite(ctx, video, layersRef.current, t, { fontFamily: font.style.fontFamily, watermark: !isPaid, duration });
+        drawComposite(ctx, video, layersRef.current, t, { fontFamily: font.style.fontFamily, watermark: !isPaid, duration, beats: beatsRef.current, clock: now / 1000 });
         setExporting(Math.min(99, Math.round((t / duration) * 100)));
-        if (video.ended || t >= duration - 0.02) { resolve(); return; }
+        if (!freezeRef.current && (video.ended || t >= duration - 0.02)) { resolve(); return; }
         requestAnimationFrame(step);
       };
       requestAnimationFrame(step);
@@ -340,6 +411,7 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
     recorder.stop();
     await stopped;
     video.pause();
+    video.playbackRate = 1;
     const blob = new Blob(chunks, { type: mime || 'video/webm' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -356,6 +428,23 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
   };
 
   const sel = layers.find((l) => l.id === selected) ?? null;
+
+  if (!clipId && !videoUrl && !loadError) {
+    return (
+      <div className="mx-auto max-w-xl px-4 pb-16 pt-28">
+        <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neon"><Sparkles className="h-3.5 w-3.5" /> Montage IA</p>
+        <h1 className="mb-2 text-3xl font-semibold text-fg">Modifier ma vidéo</h1>
+        <p className="mb-6 text-sm text-fg-muted">Ralentis, accélérés, coupes, effets calés sur la musique, glitch, filtres, textes… À la main ou en dictant à l’IA. Votre vidéo reste sur votre appareil.</p>
+        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-neon/40 bg-neon/[0.03] p-10 text-center hover:bg-neon/[0.06]">
+          <Film className="h-8 w-8 text-neon" />
+          <span className="font-semibold text-fg">Choisir une vidéo</span>
+          <span className="text-xs text-fg-muted">MP4, MOV, WebM — idéalement moins de 3 minutes</span>
+          <input type="file" accept="video/*,.mov" className="sr-only" onChange={(e) => openLocal(e.target.files?.[0])} />
+        </label>
+        {notice ? <p className="mt-3 text-sm text-red-300">{notice}</p> : null}
+      </div>
+    );
+  }
 
   if (loadError) {
     return (
@@ -422,6 +511,7 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
 
           {/* Timeline */}
           <Timeline
+            beats={beats}
             duration={duration}
             time={time}
             layers={layers}
@@ -447,7 +537,7 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
           <div className="flex-1 overflow-y-auto p-4">
             {panel === 'ia' ? (
               <div className="flex h-full flex-col gap-3">
-                <p className="text-sm text-fg-muted">Dites à l’IA ce que vous voulez : elle ajoute ou modifie les effets sur votre vidéo. Vous pouvez ensuite tout retoucher à la main.</p>
+                <p className="text-sm text-fg-muted">Dites exactement ce que vous voulez : ralenti, accéléré, coupe, effets au rythme de la musique, filtre, texte… L’IA fait ce que vous demandez, rien de plus. Vous pouvez ensuite tout retoucher à la main.</p>
                 <div className="flex-1 space-y-2">
                   {msgs.map((m, i) => (
                     <div key={i} className={cn('max-w-[90%] rounded-2xl px-3 py-2 text-sm', m.role === 'user' ? 'ml-auto bg-neon text-ink-950' : 'bg-white/[0.06] text-fg')}>{m.text}</div>
@@ -475,13 +565,35 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
 
             {panel === 'ajouter' ? (
               <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-2">
-                  {ADD_TYPES.map((type) => (
-                    <button key={type} type="button" onClick={() => addLayer(type)} className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.02] px-2 py-3 text-xs font-semibold text-fg hover:border-neon/40">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: LAYER_COLORS[type] }} />
-                      {LAYER_LABELS[type]}
-                    </button>
-                  ))}
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold text-fg-muted">Modifier la vidéo elle-même</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {VIDEO_TYPES.map((type) => (
+                      <button key={type} type="button" onClick={() => addLayer(type)} className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.02] px-2 py-3 text-xs font-semibold text-fg hover:border-neon/40">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: LAYER_COLORS[type] }} />
+                        {LAYER_LABELS[type]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold text-fg-muted">Effets vidéo rapides {beats.length ? `· ${beats.length} temps forts détectés` : ''}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {VIDEO_FX.map((fx) => (
+                      <button key={fx} type="button" onClick={() => addLayer('effect', { effect: fx, beat: ['pulse', 'strobe', 'glitch', 'rgb', 'shake'].includes(fx) } as Partial<Layer>)} className="cursor-pointer rounded-full border border-white/10 px-2.5 py-1 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">{FX_LABELS[fx]}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold text-fg-muted">Ajouter par-dessus</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {ADD_TYPES.map((type) => (
+                      <button key={type} type="button" onClick={() => addLayer(type)} className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.02] px-2 py-3 text-xs font-semibold text-fg hover:border-neon/40">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: LAYER_COLORS[type] }} />
+                        {LAYER_LABELS[type]}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <p className="mb-1.5 text-xs font-semibold text-fg-muted">Emojis rapides</p>
@@ -491,7 +603,7 @@ export function EffectsStudio({ clipId }: { clipId: string }) {
                     ))}
                   </div>
                 </div>
-                <p className="text-xs text-fg-subtle">Le calque est ajouté à l’endroit où se trouve la tête de lecture. Ajustez sa durée en tirant ses bords dans la timeline.</p>
+                <p className="text-xs text-fg-subtle">L’effet est placé à la tête de lecture. Ajustez sa durée en tirant ses bords dans la timeline.</p>
               </div>
             ) : null}
 
@@ -543,12 +655,17 @@ function layerTitle(l: Layer): string {
     case 'endcard': return `Fin · ${l.title.replace(/\*/g, '')}`;
     case 'filter': return `Filtre ${FILTER_LABELS[l.filter]}`;
     case 'zoom': return `Zoom ×${l.scale.toFixed(1)}`;
+    case 'speed': return l.rate < 1 ? `Ralenti ×${l.rate}` : `Accéléré ×${l.rate}`;
+    case 'cut': return 'Coupé';
+    case 'freeze': return `Arrêt ${l.hold}s`;
+    case 'effect': return `${FX_LABELS[l.effect]}${l.beat ? ' ♪' : ''}`;
     default: return LAYER_LABELS[l.type];
   }
 }
 
 // ---------- Timeline (déplacer / redimensionner les calques) ----------
 function Timeline(props: {
+  beats: number[];
   duration: number;
   time: number;
   layers: Layer[];
@@ -605,6 +722,9 @@ function Timeline(props: {
       <div ref={areaRef} className="relative" onPointerMove={move} onPointerUp={end}>
         {/* Règle */}
         <div className="relative h-6 cursor-pointer rounded-md bg-white/[0.04]" onPointerDown={seekFrom}>
+          {props.beats.map((b) => (
+            <span key={`b${b}`} className="pointer-events-none absolute bottom-0 h-2 w-px bg-neon/70" style={{ left: `${(b / d) * 100}%` }} />
+          ))}
           {Array.from({ length: Math.floor(d) + 1 }, (_, i) => (
             <span key={i} className="absolute top-0 h-full border-l border-white/10 pl-0.5 text-[9px] text-fg-subtle" style={{ left: `${(i / d) * 100}%` }}>{i % 2 === 0 ? `${i}s` : ''}</span>
           ))}
@@ -771,6 +891,33 @@ function Inspector({ layer, duration, onChange, onDelete, onDuplicate }: { layer
       ) : null}
 
       {layer.type === 'flash' ? <Row label="Couleur"><ColorRow value={layer.color} onChange={(v) => set({ color: v })} /></Row> : null}
+
+      {layer.type === 'speed' ? (
+        <>
+          <Row label="Vitesse">
+            <div className="flex flex-wrap gap-1.5">
+              {[0.25, 0.5, 0.75, 1.5, 2, 3].map((r) => (
+                <button key={r} type="button" onClick={() => set({ rate: r })} className={cn('cursor-pointer rounded-lg border px-2.5 py-1 text-xs', layer.rate === r ? 'border-neon bg-neon/15 text-neon' : 'border-white/10 text-fg-muted')}>
+                  {r < 1 ? `Ralenti ×${r}` : `×${r}`}
+                </button>
+              ))}
+            </div>
+          </Row>
+          <Row label="Réglage fin"><Slider value={layer.rate} min={0.25} max={4} step={0.05} onChange={(v) => set({ rate: v })} suffix="×" /></Row>
+        </>
+      ) : null}
+
+      {layer.type === 'cut' ? <p className="text-sm text-fg-muted">Ce passage est retiré de la vidéo. Tirez les bords dans la timeline pour choisir ce qui est coupé.</p> : null}
+
+      {layer.type === 'freeze' ? <Row label="Durée de l’arrêt sur image"><Slider value={layer.hold} min={0.2} max={5} step={0.1} onChange={(v) => set({ hold: v })} suffix="s" /></Row> : null}
+
+      {layer.type === 'effect' ? (
+        <>
+          <Row label="Effet"><Chips options={VIDEO_FX} value={layer.effect} labels={FX_LABELS} onChange={(v) => set({ effect: v })} /></Row>
+          <Row label="Intensité"><Slider value={layer.intensity} min={0.05} max={1} step={0.05} onChange={(v) => set({ intensity: v })} /></Row>
+          <label className="flex items-center gap-2 text-sm text-fg-muted"><input type="checkbox" checked={layer.beat ?? false} onChange={(e) => set({ beat: e.target.checked })} className="accent-[var(--color-neon)]" /> Au rythme de la musique (sur chaque temps fort)</label>
+        </>
+      ) : null}
     </div>
   );
 }
