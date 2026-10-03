@@ -211,7 +211,7 @@ export default function UploadPage() {
                     {SUPPORTED_VIDEO_EXTENSIONS.map((extension) => extension.toUpperCase()).join(
                       ', '
                     )}{' '}
-                    — jusqu’à {Math.round(MAX_UPLOAD_BYTES / 1024 ** 3)} Go
+                    — jusqu’à {Math.round(MAX_UPLOAD_BYTES / 1024 ** 2)} Mo
                   </p>
                   <input
                     ref={fileRef}
