@@ -16,6 +16,8 @@
 
 import Link from 'next/link';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Montserrat } from 'next/font/google';
+
 import {
   ArrowLeft,
   Check,
@@ -51,6 +53,9 @@ import { cn } from '@/lib/utils';
 import type { ClipStatus, TranscriptWord } from '@/types';
 
 type Row = Record<string, unknown>;
+// Même police que le rendu final (Montserrat Black / ExtraBold).
+const captionFont = Montserrat({ subsets: ['latin'], weight: ['800', '900'], display: 'swap' });
+
 type Tool = 'style' | 'couleur' | 'texte' | 'format' | 'titre' | 'couper' | null;
 
 const PRO_COLORS = ['#FFD400', '#22D3EE', '#4ADE80', '#FF3B6B', '#A855F7', '#FF8A00', '#FFFFFF'];
@@ -125,17 +130,17 @@ function CaptionPreview({
   return (
     <div
       className="pointer-events-none absolute inset-x-0 flex justify-center px-[6%]"
-      style={{ top: `${settings.position * 100}%`, transform: 'translateY(-50%)' }}
+      style={{ top: `${Math.min(0.8, Math.max(0.14, settings.position)) * 100}%`, transform: 'translateY(-50%)' }}
     >
       <p
         className="text-center leading-[1.15]"
         style={{
           fontSize: size,
-          fontWeight: tpl === 'minimal' ? 700 : 900,
+          fontWeight: tpl === 'clean' || tpl === 'minimal' ? 800 : 900,
           textTransform: upper ? 'uppercase' : 'none',
           color: settings.text_color,
           textShadow: stroke,
-          fontFamily: 'var(--font-geist), system-ui, sans-serif'
+          fontFamily: `${captionFont.style.fontFamily}, system-ui, sans-serif`
         }}
       >
         {items.map((w) => {

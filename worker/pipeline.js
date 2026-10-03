@@ -935,7 +935,7 @@ export async function runRender(supabase, job, project, ctx) {
     const args = await ffmpegRenderArgs({
       cutPath, workdir, outputPath, settings,
       words: finalWords, duration: finalDuration, hookTitle, signature,
-      width: RENDER_WIDTH, height: RENDER_HEIGHT, crf: entitlements.crf,
+      width: RENDER_WIDTH, height: RENDER_HEIGHT, crf: entitlements.crf, ffmpegBin: config.ffmpeg,
     });
     await updateProgress(30);
     await run(config.ffmpeg, args, { timeoutMs: 15 * 60 * 1000 });

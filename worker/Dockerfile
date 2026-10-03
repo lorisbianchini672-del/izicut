@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
       fonts-dejavu-core \
+      fonts-montserrat \
       fonts-liberation \
       libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
       libgbm1 libasound2 libpangocairo-1.0-0 libxcomposite1 \
