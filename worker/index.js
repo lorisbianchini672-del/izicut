@@ -21,7 +21,7 @@ import './load-env.js'; // doit rester le premier import (voir load-env.js)
 import { friendlyError } from './friendly-error.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { createSupabase, getRemotionBundle, processJob } from './pipeline.js';
+import { cleanupRawUploads, createSupabase, getRemotionBundle, processJob } from './pipeline.js';
 
 const WORKER_NAME =
   process.env.WORKER_NAME ?? `worker-${process.pid}`;
@@ -115,6 +115,8 @@ async function main() {
   if (!ONCE) {
     await requeueStale(supabase, { atStartup: true });
     setInterval(() => void requeueStale(supabase), 5 * 60 * 1000).unref();
+    void cleanupRawUploads(supabase);
+    setInterval(() => void cleanupRawUploads(supabase), 6 * 60 * 60 * 1000).unref();
   }
 
   let idleLoops = 0;

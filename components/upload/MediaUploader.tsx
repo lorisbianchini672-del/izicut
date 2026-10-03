@@ -38,7 +38,7 @@ export type MediaUploaderProps = {
 
 type UploadState =
   | { phase: 'idle' }
-  | { phase: 'uploading'; fileLabel: string }
+  | { phase: 'uploading'; fileLabel: string; percent?: number }
   | { phase: 'processing'; projectId: string }
   | { phase: 'error'; message: string; canRetry: boolean };
 
@@ -49,6 +49,23 @@ type PipelinePayload = {
   source_url?: string;
   duration_seconds?: number;
 };
+
+/** Taille d'un morceau : sous la limite de 50 Mo par fichier de Supabase (offre gratuite). */
+const CHUNK_BYTES = 45 * 1024 * 1024;
+
+/** Messages Supabase Storage → français compréhensible. */
+function explainStorageError(message: string): string {
+  if (/maximum allowed size|exceeded|too large|413/i.test(message)) {
+    return 'Fichier trop volumineux pour le moment. Exportez la vidéo en 720p ou coupez-la en deux, puis réessayez.';
+  }
+  if (/quota|storage limit|insufficient/i.test(message)) {
+    return 'Stockage temporairement plein. Réessayez dans quelques heures ou contactez-nous.';
+  }
+  if (/jwt|auth|unauthori|row-level|policy/i.test(message)) {
+    return 'Session expirée : reconnectez-vous puis réessayez.';
+  }
+  return `L’envoi a échoué (${message}). Vérifiez votre connexion et réessayez.`;
+}
 
 /** Clé Storage sûre : ni espace ni accent (le chemin est signé tel quel). */
 function sanitizeFileName(name: string): string {
@@ -138,15 +155,53 @@ export function MediaUploader(props: MediaUploaderProps) {
     });
 
     try {
-      const { error: uploadError } = await supabase.storage
-        .from(STORAGE_BUCKETS.rawVideos)
-        .upload(objectPath, file, { upsert: false, cacheControl: '3600' });
+      const bucket = supabase.storage.from(STORAGE_BUCKETS.rawVideos);
+      const label = `${file.name} · ${formatFileSize(file.size)}`;
+      let storagePath = objectPath;
 
-      if (uploadError) throw new Error(uploadError.message);
+      if (file.size <= CHUNK_BYTES) {
+        const { error: uploadError } = await bucket.upload(objectPath, file, { upsert: false, cacheControl: '3600' });
+        if (uploadError) throw new Error(explainStorageError(uploadError.message));
+      } else {
+        // L'offre gratuite de Supabase refuse tout fichier de plus de 50 Mo :
+        // on envoie la vidéo en morceaux de 45 Mo (3 en parallèle), puis un
+        // petit « manifeste » que le moteur lit pour recoller les morceaux.
+        const count = Math.ceil(file.size / CHUNK_BYTES);
+        const parts = Array.from({ length: count }, (_, i) => `${objectPath}.part${String(i).padStart(3, '0')}`);
+        let done = 0;
+        let next = 0;
+        const worker = async () => {
+          while (next < count) {
+            const i = next++;
+            const blob = file.slice(i * CHUNK_BYTES, Math.min(file.size, (i + 1) * CHUNK_BYTES));
+            let lastError = '';
+            for (let attempt = 0; attempt < 3; attempt++) {
+              // upsert:false : la politique Storage n'autorise que l'ajout. Un
+              // « déjà existant » après une coupure veut dire que c'est passé.
+              const { error } = await bucket.upload(parts[i], blob, { upsert: false, contentType: 'application/octet-stream' });
+              if (!error || /exists|duplicate/i.test(error.message)) { lastError = ''; break; }
+              lastError = error.message;
+            }
+            if (lastError) throw new Error(explainStorageError(lastError));
+            done++;
+            setUploadState({ phase: 'uploading', fileLabel: label, percent: Math.round((done / count) * 100) });
+          }
+        };
+        setUploadState({ phase: 'uploading', fileLabel: label, percent: 0 });
+        await Promise.all([worker(), worker(), worker()]);
+        storagePath = `${objectPath}.manifest.json`;
+        const manifest = JSON.stringify({ name: file.name, size: file.size, parts });
+        const { error: manifestError } = await bucket.upload(
+          storagePath,
+          new Blob([manifest], { type: 'application/json' }),
+          { upsert: false, contentType: 'application/json' }
+        );
+        if (manifestError) throw new Error(explainStorageError(manifestError.message));
+      }
 
       await dispatchProject({
         source_type: 'upload_gallery',
-        storage_path: objectPath,
+        storage_path: storagePath,
         duration_seconds: estimateDurationFromSize(file.size)
       });
     } catch (err) {
@@ -224,12 +279,21 @@ export function MediaUploader(props: MediaUploaderProps) {
           <div className="flex items-center justify-between gap-2 text-sm">
             <span className="truncate font-medium">{uploadState.fileLabel}</span>
             <span className="shrink-0 text-muted-foreground">
-              {mode === 'file' ? 'Envoi…' : 'Préparation…'}
+              {mode === 'file'
+                ? uploadState.percent != null ? `Envoi… ${uploadState.percent} %` : 'Envoi…'
+                : 'Préparation…'}
             </span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
-            <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
+            {uploadState.percent != null ? (
+              <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${Math.max(4, uploadState.percent)}%` }} />
+            ) : (
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
+            )}
           </div>
+          {mode === 'file' ? (
+            <p className="text-xs text-muted-foreground">Gardez cette page ouverte pendant l’envoi.</p>
+          ) : null}
           <Button size="sm" variant="outline" onClick={handleCancel}>
             Annuler
           </Button>

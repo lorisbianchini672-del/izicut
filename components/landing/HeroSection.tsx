@@ -232,7 +232,7 @@ export function HeroSection() {
                 <p className="text-lg font-semibold mb-1">
                   {isDragging ? 'Déposez votre vidéo ici !' : 'Glissez votre vidéo ou cliquez pour parcourir'}
                 </p>
-                <p className="text-sm text-muted-foreground">MP4, MOV, WebM, MKV — jusqu'à 10 Go</p>
+                <p className="text-sm text-muted-foreground">MP4, MOV, WebM, MKV — jusqu'à 800 Mo</p>
               </div>
             )}
           </motion.div>

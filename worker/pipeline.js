@@ -240,6 +240,72 @@ async function reportYoutubeStatus(supabase, err) {
   if (blocked) console.error('[worker] ⚠️ YouTube bloque le serveur : cookies à renouveler');
 }
 
+/** URL signée (1 h) d'un objet du bucket privé `raw-videos`. */
+async function signedRaw(supabase, objectPath) {
+  const { data, error } = await supabase.storage.from('raw-videos').createSignedUrl(objectPath, 3600);
+  if (error || !data) throw new Error(`URL signée impossible : ${error?.message ?? 'inconnue'}`);
+  return data.signedUrl;
+}
+
+/** Téléchargement EN FLUX vers le disque (jamais toute la vidéo en mémoire : 1 Go de RAM). */
+async function streamToFile(url, dest, append = false) {
+  const { createWriteStream } = await import('node:fs');
+  const { Readable } = await import('node:stream');
+  const { pipeline } = await import('node:stream/promises');
+  const res = await fetch(url);
+  if (!res.ok || !res.body) throw new Error(`Téléchargement source : HTTP ${res.status}`);
+  await pipeline(Readable.fromWeb(res.body), createWriteStream(dest, { flags: append ? 'a' : 'w' }));
+}
+
+/**
+ * Source importée par le client. Au-delà de 45 Mo, le navigateur l'envoie en
+ * morceaux (limite de 50 Mo par fichier de Supabase gratuit) + un manifeste
+ * `<chemin>.manifest.json` qui liste les morceaux, recollés ici dans l'ordre.
+ */
+async function downloadUploadedSource(supabase, storagePath, dest) {
+  if (!storagePath.endsWith('.manifest.json')) {
+    await streamToFile(await signedRaw(supabase, storagePath), dest);
+    return;
+  }
+  const res = await fetch(await signedRaw(supabase, storagePath));
+  if (!res.ok) throw new Error(`Manifeste introuvable : HTTP ${res.status}`);
+  const manifest = await res.json();
+  const parts = Array.isArray(manifest?.parts) ? manifest.parts : [];
+  if (!parts.length) throw new Error('Manifeste vide : réimportez la vidéo.');
+  const prefix = storagePath.split('/')[0] + '/';
+  for (let i = 0; i < parts.length; i++) {
+    if (typeof parts[i] !== 'string' || !parts[i].startsWith(prefix)) throw new Error('Manifeste invalide');
+    await streamToFile(await signedRaw(supabase, parts[i]), dest, i > 0);
+  }
+  console.log(`[worker] source recollée (${parts.length} morceaux)`);
+}
+
+/**
+ * Ménage du stockage gratuit (1 Go au total) : les vidéos importées sont
+ * supprimées 3 jours après l'envoi (les clips rendus, eux, restent).
+ */
+export async function cleanupRawUploads(supabase, maxAgeMs = 3 * 24 * 60 * 60 * 1000) {
+  try {
+    const bucket = supabase.storage.from('raw-videos');
+    const { data: folders } = await bucket.list('', { limit: 1000 });
+    let removed = 0;
+    for (const folder of folders ?? []) {
+      if (folder.id) continue; // fichier à la racine, pas un dossier utilisateur
+      const { data: files } = await bucket.list(folder.name, { limit: 1000 });
+      const old = (files ?? [])
+        .filter((f) => f.id && f.created_at && Date.now() - new Date(f.created_at).getTime() > maxAgeMs)
+        .map((f) => `${folder.name}/${f.name}`);
+      for (let i = 0; i < old.length; i += 100) {
+        const { error } = await bucket.remove(old.slice(i, i + 100));
+        if (!error) removed += old.slice(i, i + 100).length;
+      }
+    }
+    if (removed) console.log(`[worker] ménage stockage : ${removed} fichier(s) importé(s) supprimé(s)`);
+  } catch (err) {
+    console.warn(`[worker] ménage stockage impossible : ${err?.message ?? err}`);
+  }
+}
+
 export async function runIngest(supabase, job, project, options = {}) {
   // audioOnly : l'analyse n'a besoin que du son → téléchargement 10 à 30×
   // plus léger qu'une vidéo 1080p. section : le rendu d'un clip ne
@@ -309,15 +375,7 @@ export async function runIngest(supabase, job, project, options = {}) {
       console.log(`[worker] téléchargé en ${Math.round((Date.now() - t0) / 1000)} s`);
     } else if (project.storage_path) {
       // Bucket privé : URL signée courte (1 h), jamais d'objet public.
-      const { data, error } = await supabase.storage
-        .from('raw-videos')
-        .createSignedUrl(project.storage_path, 3600);
-      if (error || !data) {
-        throw new Error(`URL signée impossible : ${error?.message ?? 'inconnue'}`);
-      }
-      const res = await fetch(data.signedUrl);
-      if (!res.ok) throw new Error(`Téléchargement source : HTTP ${res.status}`);
-      await writeFile(sourcePath, Buffer.from(await res.arrayBuffer()));
+      await downloadUploadedSource(supabase, project.storage_path, sourcePath);
     } else {
       throw new Error('Projet sans source_url ni storage_path');
     }
@@ -1031,10 +1089,20 @@ export async function processJob(job) {
     // « racine » : chaque étape met le projet au statut suivant.
     if (job.kind === 'ingest') {
       ctx = { ...ctx, ...(await runIngest(supabase, job, project, { audioOnly: true })) };
+      // Fichier importé : déjà téléchargé en entier → gardé en cache pour
+      // les rendus des clips (pas de second téléchargement).
+      if (project.source_type !== 'external_url' && ctx.sourcePath) {
+        await storeSourceInCache(project.id, ctx.sourcePath).catch(() => undefined);
+      }
       ctx.words = (await runTranscribe(supabase, job, project, ctx)).words;
       await runAnalyze(supabase, job, project, ctx);
     } else if (job.kind === 'transcribe') {
       ctx = { ...ctx, ...(await runIngest(supabase, job, project, { audioOnly: true })) };
+      // Fichier importé : déjà téléchargé en entier → gardé en cache pour
+      // les rendus des clips (pas de second téléchargement).
+      if (project.source_type !== 'external_url' && ctx.sourcePath) {
+        await storeSourceInCache(project.id, ctx.sourcePath).catch(() => undefined);
+      }
       ctx.words = (await runTranscribe(supabase, job, project, ctx)).words;
     } else if (job.kind === 'analyze') {
       ctx = { ...ctx, ...(await runIngest(supabase, job, project, { audioOnly: true, withAudio: false })) };
@@ -1057,7 +1125,8 @@ export async function processJob(job) {
         const { data: c } = await supabase.from('clips').select('start_time, end_time').eq('id', job.clip_id).single();
         const section = c ? { start: Math.max(0, Number(c.start_time) - 4), end: Number(c.end_time) + 4 } : null;
         ctx = { ...ctx, ...(await runIngest(supabase, job, project, { withAudio: false, section })) };
-      } else if (project.source_type === 'external_url') {
+      } else {
+        // Source YouTube OU fichier importé : une seule récupération par projet.
         const cached = await cachedSource(project.id);
         if (cached) {
           console.log('[worker] source en cache, aucun téléchargement');
@@ -1066,8 +1135,6 @@ export async function processJob(job) {
           ctx = { ...ctx, ...(await runIngest(supabase, job, project, { withAudio: false })) };
           ctx.sourcePath = await storeSourceInCache(project.id, ctx.sourcePath);
         }
-      } else {
-        ctx = { ...ctx, ...(await runIngest(supabase, job, project, { withAudio: false })) };
       }
       return await runRender(supabase, job, project, ctx);
     }

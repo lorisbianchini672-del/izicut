@@ -103,7 +103,7 @@ export function HeroGenerator(props: HeroFormApi) {
             <span className="font-semibold text-primary">Cliquez pour parcourir</span>
             {' ou glissez-déposez'}
           </p>
-          <p className="text-xs text-muted-foreground">MP4, MOV, WebM, MKV — jusqu’à 10 Go</p>
+          <p className="text-xs text-muted-foreground">MP4, MOV, WebM, MKV — jusqu’à 800 Mo</p>
           <input
             ref={inputRef}
             type="file"

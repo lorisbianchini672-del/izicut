@@ -92,7 +92,7 @@ export default function UploadPage() {
             Importez votre <span className="izi-neon-text">vidéo</span>
           </h1>
           <p className="text-muted-foreground">
-            Fichier local jusqu’à 10 Go · YouTube · Twitch VOD
+            Fichier local jusqu’à 800 Mo · YouTube · Twitch VOD
           </p>
         </motion.div>
 

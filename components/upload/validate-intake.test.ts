@@ -34,7 +34,7 @@ test('validateVideoUrl refuse le vide et les plateformes inconnues', () => {
   assert.match(validateVideoUrl('https://www.twitch.tv/chaine-en-direct') ?? '', /YouTube/);
 });
 
-test('validateVideoFile accepte les formats annoncés jusqu’à 10 Go', () => {
+test('validateVideoFile accepte les formats annoncés jusqu’à 800 Mo', () => {
   for (const name of ['video.mp4', 'VIDEO.MOV', 'clip.webm', 'film.mkv']) {
     assert.equal(
       validateVideoFile({ name, size: MAX_UPLOAD_BYTES }),
@@ -48,7 +48,7 @@ test('validateVideoFile refuse extension, poids ou fichier vide', () => {
   assert.match(validateVideoFile({ name: 'video.avi', size: 100 }) ?? '', /MP4/);
   assert.match(
     validateVideoFile({ name: 'video.mp4', size: MAX_UPLOAD_BYTES + 1 }) ?? '',
-    /10 Go/
+    /800 Mo/
   );
   assert.match(validateVideoFile({ name: 'video.mp4', size: 0 }) ?? '', /vide/);
 });

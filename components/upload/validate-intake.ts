@@ -16,8 +16,11 @@ const TWITCH_PATTERN = /^(https?:\/\/)?(www\.)?twitch\.tv\/videos\//i;
 
 export const SUPPORTED_VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'mkv'];
 
-/** Plafond annoncé sur la page d'accueil : 10 Go, comme la concurrence. */
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
+/**
+ * Plafond actuel : 800 Mo (stockage Supabase gratuit = 1 Go au total, fichiers
+ * envoyés en morceaux de 45 Mo car l'offre gratuite refuse tout fichier > 50 Mo).
+ */
+export const MAX_UPLOAD_BYTES = 800 * 1024 * 1024;
 
 export type VideoFileDescriptor = { name: string; size: number };
 
@@ -43,7 +46,7 @@ export function validateVideoFile(file: VideoFileDescriptor): string | null {
     return 'Format non pris en charge : utilisez MP4, MOV, WebM ou MKV.';
   }
   if (file.size > MAX_UPLOAD_BYTES) {
-    return 'Fichier trop volumineux : 10 Go maximum.';
+    return 'Fichier trop volumineux : 800 Mo maximum pour le moment. Astuce : exportez la vidéo en 720p ou coupez-la en deux.';
   }
   if (file.size === 0) {
     return 'Ce fichier semble vide : vérifiez-le puis réessayez.';

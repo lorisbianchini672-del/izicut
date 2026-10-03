@@ -278,7 +278,7 @@ export function ClipStudio({ clipId }: { clipId: string }) {
       // Vidéo d'aperçu : fichier importé (source complète) ou aperçu brut
       // généré par le moteur pour les liens YouTube (± 3 s autour du clip).
       let v: { url: string; offset: number; length: number } | null = null;
-      if (typeof project?.storage_path === 'string') {
+      if (typeof project?.storage_path === 'string' && !project.storage_path.endsWith('.manifest.json')) {
         const { data } = await supabase.storage.from('raw-videos').createSignedUrl(project.storage_path, 3600);
         if (data?.signedUrl) v = { url: data.signedUrl, offset: 0, length: num(project.duration_seconds, e + 30) };
       }
