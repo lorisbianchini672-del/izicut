@@ -102,7 +102,13 @@ let cookiesPathPromise = null;
 /** Arguments yt-dlp supplémentaires (cookies / proxy), calculés une fois. */
 async function ytdlpAuthArgs() {
   const args = [];
-  if (config.ytdlpProxy) args.push('--proxy', config.ytdlpProxy);
+  if (config.ytdlpProxy) {
+    // Proxy résidentiel : YouTube voit une adresse de particulier, les
+    // cookies deviennent inutiles (et un compte qui change d'IP sans cesse
+    // paraît suspect). On ne les ajoute que si on le demande explicitement.
+    args.push('--proxy', config.ytdlpProxy);
+    if (process.env.YTDLP_PROXY_WITH_COOKIES !== '1') return args;
+  }
   if (config.ytdlpCookiesFile) {
     args.push('--cookies', config.ytdlpCookiesFile);
   } else if (config.ytdlpCookiesB64) {
@@ -250,7 +256,7 @@ export async function runIngest(supabase, job, project, options = {}) {
       // yt-dlp : uniquement des contenus dont l'utilisateur détient
       // les droits (condition des CGU YouTube — risque juridique réel).
       const formatArgs = audioOnly
-        ? ['-f', 'ba/b', '-o', sourcePath]
+        ? ['-f', config.ytdlpProxy ? 'ba[abr<=80]/wa/ba/b' : 'ba/b', '-o', sourcePath]
         : [
             // 1080p suffit pour un rendu 1080×1920. H.264 en priorité : l'AV1
             // coûte très cher en mémoire à décoder (processus tué sinon).
@@ -1045,7 +1051,13 @@ export async function processJob(job) {
       // gardée en cache 6 h sur le serveur. Les clips suivants du même
       // projet ne refont aucune requête à YouTube (qui bloque les serveurs
       // trop bavards).
-      if (project.source_type === 'external_url') {
+      if (project.source_type === 'external_url' && config.ytdlpProxy) {
+        // Via proxy (facturé au Go) : on ne télécharge QUE l'extrait du clip
+        // (+ 4 s de marge pour l'aperçu), jamais la vidéo entière.
+        const { data: c } = await supabase.from('clips').select('start_time, end_time').eq('id', job.clip_id).single();
+        const section = c ? { start: Math.max(0, Number(c.start_time) - 4), end: Number(c.end_time) + 4 } : null;
+        ctx = { ...ctx, ...(await runIngest(supabase, job, project, { withAudio: false, section })) };
+      } else if (project.source_type === 'external_url') {
         const cached = await cachedSource(project.id);
         if (cached) {
           console.log('[worker] source en cache, aucun téléchargement');
