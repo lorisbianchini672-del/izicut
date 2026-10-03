@@ -68,6 +68,10 @@ async function tryClaimAndRun(supabase) {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[worker] ✖ job ${id} : ${message}`);
+      if (err && err.permanent) {
+        // Échec définitif tout de suite : pas de nouvelles tentatives inutiles.
+        await supabase.from('render_jobs').update({ attempts: job.max_attempts ?? 99 }).eq('id', id).then(() => undefined, () => undefined);
+      }
       const { error: failError } = await supabase.rpc('fail_render_job', {
         p_job_id: id,
         p_error: friendlyError(message),

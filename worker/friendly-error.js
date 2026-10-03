@@ -17,14 +17,16 @@ const RULES = [
     "Ce lien n'est pas pris en charge. Collez un lien YouTube, Twitch (VOD) ou importez le fichier."],
   [/too long|durée maximale|duration/i,
     "La vidéo dépasse la durée maximale autorisée par votre offre."],
-  [/no speech|transcri|whisper|aucune parole/i,
-    "Nous n'avons pas pu détecter de parole dans cette vidéo : les clips IA ont besoin d'une voix."],
+  [/no speech|aucune parole/i,
+    "Aucune parole détectée dans cette vidéo (musique seule, animation ou son coupé). IziCut découpe les vidéos où quelqu'un parle : interviews, podcasts, vlogs, formations… Pour une vidéo animée sans voix, utilisez plutôt le Studio Motion."],
+  [/aucun clip retourné|aucun moment fort/i,
+    "L'IA n'a trouvé aucun passage assez percutant dans cette vidéo. Essayez une vidéo plus longue où l'on parle davantage (au moins 2 à 3 minutes de parole)."],
   [/ENOSPC|no space/i,
     "Nos serveurs sont momentanément saturés. Réessayez dans quelques minutes."],
 ];
 
 const FALLBACK =
-  "Le traitement de la vidéo a échoué. Vos minutes ont été recréditées automatiquement ; vous pouvez réessayer.";
+  "Un problème technique a interrompu le traitement. Réessayez dans quelques minutes ; si cela se reproduit, contactez-nous.";
 
 export function friendlyError(message) {
   const text = String(message ?? '');

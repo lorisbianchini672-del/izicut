@@ -306,6 +306,20 @@ export async function cleanupRawUploads(supabase, maxAgeMs = 3 * 24 * 60 * 60 * 
   }
 }
 
+/** Erreur définitive : inutile de réessayer (même résultat à chaque fois). */
+export class PermanentError extends Error {
+  constructor(message) { super(message); this.permanent = true; }
+}
+
+/**
+ * Sans parole (musique seule, animation, vidéo muette), l'IA n'a rien à
+ * analyser : on le dit clairement au client au lieu d'un échec générique.
+ */
+function assertSpeech(words) {
+  const count = Array.isArray(words) ? words.filter((w) => String(w?.word ?? '').trim()).length : 0;
+  if (count < 15) throw new PermanentError(`Aucune parole détectée (no speech) : ${count} mot(s) transcrit(s)`);
+}
+
 export async function runIngest(supabase, job, project, options = {}) {
   // audioOnly : l'analyse n'a besoin que du son → téléchargement 10 à 30×
   // plus léger qu'une vidéo 1080p. section : le rendu d'un clip ne
@@ -691,7 +705,7 @@ export async function runAnalyze(supabase, job, project, ctx) {
   // Validation + rognage défensif des bornes : on ne fait JAMAIS
   // confiance aux nombres renvoyés par un LLM.
   const candidates = Array.isArray(parsed.clips) ? parsed.clips : [];
-  if (candidates.length === 0) throw new Error('Aucun clip retourné par le modèle');
+  if (candidates.length === 0) throw new PermanentError('Aucun clip retourné par le modèle (aucun moment fort)');
 
   // Réglages de départ selon l'offre : un abonné reçoit directement un
   // montage poussé (silences coupés, zooms, titre d'accroche, audio).
@@ -1095,6 +1109,7 @@ export async function processJob(job) {
         await storeSourceInCache(project.id, ctx.sourcePath).catch(() => undefined);
       }
       ctx.words = (await runTranscribe(supabase, job, project, ctx)).words;
+      assertSpeech(ctx.words);
       await runAnalyze(supabase, job, project, ctx);
     } else if (job.kind === 'transcribe') {
       ctx = { ...ctx, ...(await runIngest(supabase, job, project, { audioOnly: true })) };
