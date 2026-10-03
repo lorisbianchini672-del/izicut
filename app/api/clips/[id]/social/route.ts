@@ -34,7 +34,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     .maybeSingle();
   if (!clip) return NextResponse.json({ error: 'Clip introuvable' }, { status: 404 });
 
-  const words = Array.isArray(clip.transcript_json) ? (clip.transcript_json as { word?: string }[]) : [];
+  const tj = clip.transcript_json as unknown;
+  const words = (Array.isArray(tj) ? tj : Array.isArray((tj as { words?: unknown })?.words) ? (tj as { words: unknown[] }).words : []) as { word?: string }[];
   const transcript = words.map((w) => w.word ?? '').join(' ').slice(0, 3500);
 
   try {

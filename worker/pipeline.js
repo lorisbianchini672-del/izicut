@@ -311,13 +311,88 @@ export class PermanentError extends Error {
   constructor(message) { super(message); this.permanent = true; }
 }
 
-/**
- * Sans parole (musique seule, animation, vidéo muette), l'IA n'a rien à
- * analyser : on le dit clairement au client au lieu d'un échec générique.
- */
-function assertSpeech(words) {
+/** Assez de parole pour une analyse IA de la transcription ? */
+function hasSpeech(words) {
   const count = Array.isArray(words) ? words.filter((w) => String(w?.word ?? '').trim()).length : 0;
-  if (count < 15) throw new PermanentError(`Aucune parole détectée (no speech) : ${count} mot(s) transcrit(s)`);
+  return count >= 25;
+}
+
+/**
+ * Moments forts SANS parole : on mesure l'énergie du son (WAV 16 kHz mono,
+ * lu en flux) par fenêtres d'une demi-seconde, puis on garde les passages
+ * les plus intenses et les plus dynamiques (montée de musique, action,
+ * public qui réagit…). Fonctionne pour tout type de vidéo.
+ */
+export async function findAudioHighlights(wavPath, durationSeconds) {
+  const { createReadStream } = await import('node:fs');
+  const WINDOW = 8000; // 0,5 s à 16 kHz
+  const energies = [];
+  let acc = 0;
+  let n = 0;
+  let header = true;
+  let leftover = null;
+  await new Promise((resolve, reject) => {
+    const stream = createReadStream(wavPath, { highWaterMark: 1 << 16 });
+    stream.on('data', (chunk) => {
+      let buf = leftover ? Buffer.concat([leftover, chunk]) : chunk;
+      leftover = null;
+      if (header) {
+        const dataIdx = buf.indexOf('data');
+        if (dataIdx < 0 || buf.length < dataIdx + 8) { leftover = buf; return; }
+        buf = buf.subarray(dataIdx + 8);
+        header = false;
+      }
+      const usable = buf.length - (buf.length % 2);
+      for (let i = 0; i < usable; i += 2) {
+        const v = buf.readInt16LE(i) / 32768;
+        acc += v * v;
+        if (++n === WINDOW) { energies.push(Math.sqrt(acc / n)); acc = 0; n = 0; }
+      }
+      if (usable < buf.length) leftover = buf.subarray(usable);
+    });
+    stream.on('end', resolve);
+    stream.on('error', reject);
+  });
+  if (n > 0) energies.push(Math.sqrt(acc / n));
+
+  const duration = Math.max(1, durationSeconds || energies.length / 2);
+  // Vidéo courte : un seul clip, la vidéo entière.
+  if (duration <= 20) {
+    return [{ start_time: 0, end_time: duration, virality_score: 70, title: 'Votre vidéo en 9:16', hook_text: '', summary: 'Vidéo complète recadrée en 9:16.' }];
+  }
+  const clipLen = Math.round(Math.min(30, Math.max(15, duration * 0.25)));
+  const win = clipLen * 2; // en demi-secondes
+  const db = energies.map((e) => 20 * Math.log10(Math.max(e, 1e-5)));
+  const silent = db.every((v) => v < -55);
+  const scored = [];
+  for (let i = 0; i + win <= db.length; i += 2) {
+    const seg = db.slice(i, i + win);
+    const mean = seg.reduce((a, b) => a + b, 0) / seg.length;
+    const dyn = seg.slice(1).reduce((a, b, k) => a + Math.abs(b - seg[k]), 0) / (seg.length - 1);
+    // Bonus aux passages loin du tout début (souvent un générique).
+    const score = silent ? -Math.abs(i / 2 + clipLen / 2 - duration / 2) : mean + 1.5 * dyn;
+    scored.push({ start: i / 2, score });
+  }
+  if (scored.length === 0) scored.push({ start: 0, score: 0 });
+  scored.sort((a, b) => b.score - a.score);
+  const count = Math.max(1, Math.min(5, Math.floor(duration / (clipLen * 2))));
+  const picked = [];
+  for (const c of scored) {
+    if (picked.length >= count) break;
+    if (picked.every((p) => Math.abs(p.start - c.start) >= clipLen)) picked.push(c);
+  }
+  const best = picked[0]?.score ?? 0;
+  const worst = picked[picked.length - 1]?.score ?? 0;
+  return picked
+    .sort((a, b) => b.score - a.score)
+    .map((c, i) => ({
+      start_time: c.start,
+      end_time: Math.min(duration, c.start + clipLen),
+      virality_score: Math.round(85 - (best === worst ? i * 4 : ((best - c.score) / (best - worst)) * 20)),
+      title: `Moment fort n°${i + 1}`,
+      hook_text: '',
+      summary: 'Passage choisi pour son intensité (son et rythme).',
+    }));
 }
 
 export async function runIngest(supabase, job, project, options = {}) {
@@ -410,11 +485,21 @@ export async function runIngest(supabase, job, project, options = {}) {
       // 25 Mo de Whisper jusqu'à ~13 min par tranche). On ne la lance que
       // si la suite en a besoin : inutile de décoder 40 min d'audio pour
       // un simple rendu de clip.
-      await run(config.ffmpeg, [
-        '-y', '-i', sourcePath,
-        '-ac', '1', '-ar', '16000', '-vn',
-        path.join(workdir, 'audio.wav'),
-      ], { timeoutMs: 15 * 60 * 1000 });
+      try {
+        await run(config.ffmpeg, [
+          '-y', '-i', sourcePath,
+          '-ac', '1', '-ar', '16000', '-vn',
+          path.join(workdir, 'audio.wav'),
+        ], { timeoutMs: 15 * 60 * 1000 });
+      } catch (err) {
+        // Vidéo sans piste audio (animation muette…) : on fabrique un
+        // silence de la même durée, le mode « moments visuels » prendra le relais.
+        console.warn(`[worker] pas de piste audio exploitable (${String(err?.message ?? err).slice(0, 120)}) → silence`);
+        await run(config.ffmpeg, [
+          '-y', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', String(durationSeconds),
+          path.join(workdir, 'audio.wav'),
+        ], { timeoutMs: 5 * 60 * 1000 });
+      }
       await updateProgress(45);
 
       await supabase
@@ -668,7 +753,11 @@ export async function runAnalyze(supabase, job, project, ctx) {
   // longue (la fin reste visible, au lieu d'être tronquée).
   // Modèle local : contexte plus court (16k jetons) → transcription plus compacte.
   let candidatesRaw = [];
-  if (local) {
+  const visual = Array.isArray(ctx.visualCandidates) && ctx.visualCandidates.length > 0;
+  if (visual) {
+    candidatesRaw = ctx.visualCandidates;
+    console.log(`[worker] ${candidatesRaw.length} moment(s) fort(s) choisi(s) d'après le son`);
+  } else if (local) {
     // Modèle local : contexte plus court (16k jetons) → transcription compacte.
     const transcriptText = buildTimedTranscript(words, { maxChars: 24000 });
     const userPrompt = `Durée totale : ${durationSeconds} s.\nTranscription :\n${transcriptText}`;
@@ -704,7 +793,16 @@ export async function runAnalyze(supabase, job, project, ctx) {
 
   // Validation + rognage défensif des bornes : on ne fait JAMAIS
   // confiance aux nombres renvoyés par un LLM.
-  const candidates = Array.isArray(parsed.clips) ? parsed.clips : [];
+  let candidates = Array.isArray(parsed.clips) ? parsed.clips : [];
+  if (candidates.length === 0 && !visual && ctx.workdir) {
+    // L'IA n'a rien trouvé dans la parole : on se rabat sur l'énergie du son.
+    const fallback = await findAudioHighlights(path.join(ctx.workdir, 'audio.wav'), durationSeconds).catch(() => []);
+    if (fallback.length) {
+      console.log('[worker] aucun clip IA → moments forts d\'après le son');
+      ctx.visualCandidates = fallback;
+      return runAnalyze(supabase, job, project, ctx);
+    }
+  }
   if (candidates.length === 0) throw new PermanentError('Aucun clip retourné par le modèle (aucun moment fort)');
 
   // Réglages de départ selon l'offre : un abonné reçoit directement un
@@ -716,11 +814,13 @@ export async function runAnalyze(supabase, job, project, ctx) {
   const kept = [];
   for (const c of candidates) {
     if (kept.length >= maxClips) break;
-    const bounds = snapClipBounds(words, Number(c.start_time), Number(c.end_time), {
-      duration: durationSeconds,
-      minSeconds: 15,
-      maxSeconds: 90,
-    });
+    const bounds = visual
+      ? { start: Number(c.start_time), end: Number(c.end_time) }
+      : snapClipBounds(words, Number(c.start_time), Number(c.end_time), {
+          duration: durationSeconds,
+          minSeconds: 15,
+          maxSeconds: 90,
+        });
     const overlaps = kept.some(({ bounds: other }) => {
       const inter = Math.min(other.end, bounds.end) - Math.max(other.start, bounds.start);
       return inter > 0.5 * Math.min(other.end - other.start, bounds.end - bounds.start);
@@ -892,7 +992,8 @@ export async function runRender(supabase, job, project, ctx) {
   let selectExpr = null;
   let finalWords = clipWords;
   let finalDuration = clipDuration;
-  if (settings.remove_silences) {
+  // Sans parole (musique, action…), couper les « silences » viderait le clip.
+  if (settings.remove_silences && clipWords.length >= 10) {
     const keep = computeKeepSegments(clipWords, clipDuration);
     selectExpr = buildSelectExpression(keep, clipDuration);
     if (selectExpr) {
@@ -1109,7 +1210,12 @@ export async function processJob(job) {
         await storeSourceInCache(project.id, ctx.sourcePath).catch(() => undefined);
       }
       ctx.words = (await runTranscribe(supabase, job, project, ctx)).words;
-      assertSpeech(ctx.words);
+      if (!hasSpeech(ctx.words)) {
+        // Peu ou pas de parole (musique, sport, animation, vlog sans voix) :
+        // on choisit les moments forts d'après l'énergie du son.
+        console.log('[worker] peu de parole → mode « moments visuels » (énergie audio)');
+        ctx.visualCandidates = await findAudioHighlights(path.join(ctx.workdir, 'audio.wav'), ctx.durationSeconds);
+      }
       await runAnalyze(supabase, job, project, ctx);
     } else if (job.kind === 'transcribe') {
       ctx = { ...ctx, ...(await runIngest(supabase, job, project, { audioOnly: true })) };
