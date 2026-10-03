@@ -14,6 +14,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
+import { StepGuide } from '@/components/guide/StepGuide';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, Youtube, Link2, Zap } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -95,6 +96,12 @@ export default function UploadPage() {
             Fichier local jusqu’à 800 Mo · YouTube · Twitch VOD
           </p>
         </motion.div>
+
+        <StepGuide
+          current={1}
+          className="mb-6"
+          detail={<>Choisissez un fichier ou collez un lien, puis cliquez sur <b className="text-fg">« Lancer l’analyse IA »</b>.</>}
+        />
 
         <motion.div
           className="glass rounded-3xl p-6 sm:p-8"

@@ -15,6 +15,7 @@ import {
 } from '@/lib/data/projects';
 import { formatDuration, projectStatusTone } from '@/lib/format';
 import { CLIP_STATUS_LABELS, PROJECT_STATUS_LABELS } from '@/types';
+import { StepGuide, estimateRemainingSeconds, formatRemaining } from '@/components/guide/StepGuide';
 
 /**
  * Page projet, version « simple » : une grille de clips façon galerie.
@@ -125,13 +126,17 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                 </>
               ) : (
                 <>
+                  <StepGuide current={2} className="mb-6 text-left" />
                   <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-neon/20 border-t-neon" />
                   <p className="mb-1 font-display text-lg font-semibold text-fg">
                     {PROJECT_STATUS_LABELS[project.status]}…
                   </p>
+                  <p className="mb-3 text-2xl font-bold text-neon">
+                    {formatRemaining(estimateRemainingSeconds(project.durationSeconds, project.createdAt))}
+                  </p>
                   <p className="mx-auto max-w-md text-sm text-muted-foreground">
-                    L’IA regarde votre vidéo et choisit les meilleurs moments. Comptez quelques
-                    minutes ; cette page se met à jour toute seule.
+                    L’IA écoute votre vidéo et choisit les meilleurs moments. Vous n’avez rien à faire :
+                    cette page se met à jour toute seule, vous pouvez même la fermer et revenir plus tard.
                   </p>
                   <ol className="mx-auto mt-6 flex w-full max-w-sm justify-between text-[11px] text-fg-subtle">
                     {(['processing_audio', 'transcribing', 'analyzing', 'completed'] as const).map((step) => {
@@ -140,7 +145,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                       return (
                         <li key={step} className={cn('flex flex-col items-center gap-1.5', done && 'text-neon')}>
                           <span className={cn('h-2 w-2 rounded-full', done ? 'bg-neon shadow-[0_0_10px_rgb(200_255_61/0.8)]' : 'bg-white/15')} />
-                          {step === 'processing_audio' ? 'Vidéo' : step === 'transcribing' ? 'Texte' : step === 'analyzing' ? 'Moments' : 'Clips'}
+                          {step === 'processing_audio' ? 'Vidéo' : step === 'transcribing' ? 'Paroles' : step === 'analyzing' ? 'Moments forts' : 'Montage'}
                         </li>
                       );
                     })}
@@ -185,11 +190,19 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           </Button>
         </div>
 
-        <div className="rounded-2xl border border-neon/20 bg-neon/[0.04] px-4 py-3 text-sm text-fg-muted">
-          <span className="font-semibold text-neon">Comment ça marche :</span> regardez vos clips,
-          cliquez sur <b className="text-fg">Télécharger</b> pour les publier tels quels, ou sur{' '}
-          <b className="text-fg">Modifier</b> pour changer le style, le texte ou la coupe.
-        </div>
+        <StepGuide
+          current={readyCount > 0 ? 3 : 2}
+          detail={
+            readyCount > 0 ? (
+              <>
+                Cliquez sur <b className="text-fg">Télécharger</b> pour publier un clip tel quel, ou sur{' '}
+                <b className="text-fg">Modifier</b> pour changer le style, le texte ou la coupe.
+              </>
+            ) : (
+              <>Montage de vos clips en cours : ils apparaissent ici un par un, sans recharger la page.</>
+            )
+          }
+        />
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {clips.map((clip, index) => (
