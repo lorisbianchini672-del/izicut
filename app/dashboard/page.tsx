@@ -153,12 +153,17 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <Button variant="gradient" className="glow-primary h-11 px-6 font-bold" asChild>
-            <Link href="/upload">
-              <Plus className="w-4 h-4 mr-2" />
-              Nouveau projet vidéo
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="h-11 rounded-xl border-neon/40 px-5 font-semibold text-neon" asChild>
+              <Link href="/studio">Studio Motion · nouveau</Link>
+            </Button>
+            <Button variant="gradient" className="glow-primary h-11 px-6 font-bold" asChild>
+              <Link href="/upload">
+                <Plus className="w-4 h-4 mr-2" />
+                Nouveau projet vidéo
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <YoutubeStatusBanner />

@@ -11,6 +11,7 @@ const LINKS = [
   ['Studio', '/#studio'],
   ['Tarifs', '/#pricing'],
   ['FAQ', '/#faq'],
+  ['Studio Motion', '/studio'],
   ['Guide 9:16', '/guide-9-16'],
 ] as const;
 
@@ -18,6 +19,7 @@ const LINKS = [
 const APP_LINKS = [
   ['Mes projets', '/dashboard'],
   ['Tarifs', '/#pricing'],
+  ['Studio Motion', '/studio'],
   ['Guide 9:16', '/guide-9-16'],
 ] as const;
 
