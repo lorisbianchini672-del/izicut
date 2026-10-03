@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
       fonts-dejavu-core \
-      fonts-montserrat \
+      fontconfig \
       fonts-liberation \
       libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
       libgbm1 libasound2 libpangocairo-1.0-0 libxcomposite1 \
@@ -48,6 +48,11 @@ RUN npm install --omit=dev
 RUN node -e "require('@remotion/renderer').ensureBrowser().then(() => console.log('Chrome Headless Shell prêt'))"
 
 COPY worker ./worker
+# Police des sous-titres (Montserrat, licence OFL) : installée pour libass.
+RUN mkdir -p /usr/share/fonts/truetype/montserrat \
+    && cp worker/fonts/*.ttf /usr/share/fonts/truetype/montserrat/ \
+    && chmod 644 /usr/share/fonts/truetype/montserrat/*.ttf \
+    && fc-cache -f
 # Droits par offre : module PUR partagé avec Next.js, importé par
 # worker/pipeline.js (../lib/entitlements.ts). Sans lui, le worker ne
 # démarre pas.
