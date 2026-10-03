@@ -8,27 +8,27 @@ import { Card, CardContent } from '@/components/ui/card';
 const faqs = [
   {
     question: "Comment IziCut détecte-t-il les moments forts ?",
-    answer: "Notre pipeline utilise GPT-4o-mini pour analyser la transcription mot-à-mot de votre vidéo. L'IA évalue chaque segment sur 6 critères : accroche, émotion, structure narrative, call-to-action, momentum et pertinence. Les segments avec le score le plus élevé sont extraits automatiquement.",
+    answer: "Notre IA analyse la transcription mot à mot de votre vidéo et évalue chaque segment sur 6 critères : accroche, émotion, structure narrative, call-to-action, momentum et pertinence. Les segments avec le score le plus élevé sont extraits automatiquement.",
   },
   {
     question: "Puis-je modifier les sous-titres générés ?",
-    answer: "Oui ! Notre éditeur vous permet de corriger n'importe quel mot mal retranscrit. La correction est immédiatement prise en compte dans le rendu Remotion, sans refaire toute la transcription.",
+    answer: "Oui ! Notre éditeur vous permet de corriger n'importe quel mot mal retranscrit. La correction est prise en compte au prochain export, sans refaire toute la transcription.",
   },
   {
     question: "Quels formats de vidéo sont supportés ?",
-    answer: "MP4, MOV, WebM, MKV, M4V — et les liens YouTube, Twitch. Pour les vidéos externes, nous téléchargeons automatiquement l'audio pour la transcription.",
+    answer: "Fichiers MP4, MOV, WebM, MKV et M4V jusqu'à 800 Mo (environ 10 à 15 min en 1080p, 25 à 30 min en 720p, 1 h en 480p), ainsi que les liens YouTube et Twitch. Si votre vidéo est plus lourde, exportez-la en 720p ou coupez-la en plusieurs parties.",
   },
   {
     question: "Combien de temps dure le traitement ?",
-    answer: "Notre queue est optimisée pour un débit rapide : transcription Whisper (~1x), analyse IA (~30s), rendu Remotion (~1 min/30s de clip). Un clip de 45 secondes est généralement prêt en 2-3 minutes.",
+    answer: "Notre queue est optimisée pour un débit rapide : transcription en quelques dizaines de secondes, analyse IA en environ une minute, puis montage de chaque clip. Pour une vidéo de 20 minutes, les premiers clips sont généralement prêts en 3 à 5 minutes.",
   },
   {
     question: "Quel est le coût en crédits pour un clip ?",
-    answer: "Chaque clip consomme sa durée en secondes plus une marge de 20 secondes pour le rendu. Un clip de 45 secondes coûte donc 65 secondes de crédits. Vos crédits sont débités atomiquement en SQL pour éviter toute double dépense.",
+    answer: "Les crédits sont comptés en minutes de vidéo source : une vidéo de 20 minutes consomme environ 20 minutes de crédits, quel que soit le nombre de clips trouvés. Si le traitement échoue, vos minutes sont recréditées automatiquement.",
   },
   {
     question: "Puis-je exporter au format TikTok, Reels et Shorts ?",
-    answer: "Absolument. Tous nos clips sont rendus en 1080x1920 (9:16) — le format natif pour TikTok, Instagram Reels et YouTube Shorts. Exportez en MP4 haute qualité ou téléchargez les sous-titres en SRT.",
+    answer: "Absolument. Tous nos clips sont rendus en 1080x1920 (9:16) — le format natif pour TikTok, Instagram Reels et YouTube Shorts. Téléchargez-les en MP4 haute qualité, prêts à publier.",
   },
 ];
 

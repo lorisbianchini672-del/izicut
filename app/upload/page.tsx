@@ -234,6 +234,27 @@ export default function UploadPage() {
                   </p>
                 ) : null}
 
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
+                  <p className="mb-2 font-semibold text-foreground">
+                    Taille maximale : {Math.round(MAX_UPLOAD_BYTES / 1024 ** 2)} Mo par fichier
+                  </p>
+                  <ul className="grid grid-cols-3 gap-2 text-center">
+                    <li className="rounded-lg bg-background/60 px-2 py-1.5">
+                      <span className="block font-semibold text-foreground">1080p</span>≈ 10 à 15 min
+                    </li>
+                    <li className="rounded-lg bg-background/60 px-2 py-1.5">
+                      <span className="block font-semibold text-foreground">720p</span>≈ 25 à 30 min
+                    </li>
+                    <li className="rounded-lg bg-background/60 px-2 py-1.5">
+                      <span className="block font-semibold text-foreground">480p</span>≈ 1 h
+                    </li>
+                  </ul>
+                  <p className="mt-2">
+                    Vidéo trop lourde ? Exportez-la en 720p (largement suffisant pour TikTok) ou
+                    coupez-la en plusieurs parties.
+                  </p>
+                </div>
+
                 <MediaUploader mode="file" />
               </motion.div>
             )}

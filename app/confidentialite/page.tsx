@@ -98,6 +98,10 @@ export default function ConfidentialitePage() {
         </p>
         <ul>
           <li>
+            Les vidéos sources importées sont supprimées automatiquement 3 jours après l’envoi ;
+            les clips rendus restent disponibles dans votre compte.
+          </li>
+          <li>
             L’audio est extrait temporairement pour la transcription puis supprimé après le rendu.
           </li>
           <li>
