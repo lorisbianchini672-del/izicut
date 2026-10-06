@@ -10,28 +10,43 @@ const duration = z.number().min(1.5).max(8);
 /** Les mots entre *astérisques* sont mis en couleur d'accent. */
 const txt = (max: number) => z.string().trim().min(1).max(max);
 
+/** Effets sonores disponibles (générés dans le navigateur). */
+export const SFX = ['whoosh', 'pop', 'click', 'impact', 'riser', 'chime', 'fizz', 'bubble', 'swipe', 'glitch'] as const;
+export type Sfx = (typeof SFX)[number];
+/** Textures de fond « signature » de la marque. */
+export const MOTIFS = ['particles', 'bubbles', 'grain', 'waves', 'confetti', 'sparkles', 'lines', 'none'] as const;
+export type Motif = (typeof MOTIFS)[number];
+/** Transitions entre scènes. */
+export const TRANSITIONS = ['flash', 'slide', 'zoom', 'wipe', 'glitch'] as const;
+export type Transition = (typeof TRANSITIONS)[number];
+/** Ambiances musicales générées. */
+export const MUSIC = ['pop', 'electro', 'chill', 'epic', 'acoustic', 'hiphop', 'none'] as const;
+export type Music = (typeof MUSIC)[number];
+
 /** Nombre maximum de scènes dans une vidéo. */
 export const MAX_SCENES = 12;
 /** Nombre maximum de photos importées. */
 export const MAX_PHOTOS = 12;
 
 export const SceneSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('title'), duration, title: txt(90), subtitle: z.string().trim().max(120).optional() }),
-  z.object({ type: z.literal('bullets'), duration, title: txt(60), items: z.array(txt(60)).min(1).max(4) }),
+  z.object({ type: z.literal('title'), duration, sfx: z.enum(SFX).optional(), title: txt(90), subtitle: z.string().trim().max(120).optional() }),
+  z.object({ type: z.literal('bullets'), duration, sfx: z.enum(SFX).optional(), title: txt(60), items: z.array(txt(60)).min(1).max(4) }),
   z.object({
     type: z.literal('stat'),
     duration,
+    sfx: z.enum(SFX).optional(),
     value: z.number().min(-1e9).max(1e9),
     prefix: z.string().max(4).optional(),
     suffix: z.string().max(6).optional(),
     label: txt(70)
   }),
-  z.object({ type: z.literal('screenshot'), duration, caption: txt(80) }),
-  z.object({ type: z.literal('quote'), duration, text: txt(160), author: z.string().trim().max(50).optional() }),
-  z.object({ type: z.literal('cta'), duration, title: txt(70), button: txt(30) }),
+  z.object({ type: z.literal('screenshot'), duration, sfx: z.enum(SFX).optional(), caption: txt(80) }),
+  z.object({ type: z.literal('quote'), duration, sfx: z.enum(SFX).optional(), text: txt(160), author: z.string().trim().max(50).optional() }),
+  z.object({ type: z.literal('cta'), duration, sfx: z.enum(SFX).optional(), title: txt(70), button: txt(30) }),
   z.object({
     type: z.literal('video'),
     duration: z.number().min(1.5).max(15),
+    sfx: z.enum(SFX).optional(),
     /** Index de la vidéo importée par le client (0, 1 ou 2). */
     media: z.number().int().min(0).max(2),
     /** Seconde de départ dans la vidéo importée. */
@@ -42,6 +57,7 @@ export const SceneSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('photo'),
     duration,
+    sfx: z.enum(SFX).optional(),
     /** Index de la photo importée par le client (0 à 11). */
     photo: z.number().int().min(0).max(11),
     caption: z.string().trim().max(80).optional(),
@@ -57,12 +73,47 @@ export const MotionProjectSchema = z.object({
     primary: hex,
     accent: hex,
     text: hex,
-    style: z.enum(['neon', 'clean', 'bold'])
+    style: z.enum(['neon', 'clean', 'bold']),
+    motif: z.enum(MOTIFS).optional()
   }),
+  transition: z.enum(TRANSITIONS).optional(),
+  sound: z
+    .object({
+      music: z.enum(MUSIC),
+      bpm: z.number().min(60).max(170),
+      /** Volume de la musique (0 à 1). */
+      volume: z.number().min(0).max(1).optional()
+    })
+    .optional(),
   scenes: z.array(SceneSchema).min(1).max(MAX_SCENES)
 });
 
 export type Scene = z.infer<typeof SceneSchema>;
+
+/** Le concept créatif rédigé par l'IA (direction artistique, son, storyboard). */
+export const ConceptSchema = z.object({
+  brand_name: z.string().max(80),
+  creative_concept: z.string().max(700),
+  art_direction: z.object({
+    visual_theme: z.string().max(500),
+    color_palette: z.array(z.string().max(40)).max(6),
+    music_style: z.string().max(200),
+    brand_signature_sfx: z.array(z.string().max(80)).max(5)
+  }),
+  signatures: z.array(z.string().max(160)).max(3).optional(),
+  scenes: z
+    .array(
+      z.object({
+        timeframe: z.string().max(20),
+        idea: z.string().max(300).optional(),
+        visual_motion_description: z.string().max(500),
+        text_on_screen: z.string().max(160),
+        sound_design: z.string().max(300)
+      })
+    )
+    .max(4)
+});
+export type Concept = z.infer<typeof ConceptSchema>;
 export type SceneType = Scene['type'];
 export type MotionProject = z.infer<typeof MotionProjectSchema>;
 
@@ -70,6 +121,15 @@ export const FORMAT_SIZE: Record<MotionProject['format'], { width: number; heigh
   '9:16': { width: 1080, height: 1920 },
   '16:9': { width: 1920, height: 1080 },
   '1:1': { width: 1080, height: 1080 }
+};
+
+export const MOTIF_LABELS: Record<Motif, string> = {
+  particles: 'Particules', bubbles: 'Bulles', grain: 'Grain / farine', waves: 'Vagues', confetti: 'Confettis', sparkles: 'Paillettes', lines: 'Vitesse', none: 'Aucune'
+};
+export const TRANSITION_LABELS: Record<Transition, string> = { flash: 'Flash', slide: 'Glissé', zoom: 'Zoom', wipe: 'Volet', glitch: 'Glitch' };
+export const MUSIC_LABELS: Record<Music, string> = { pop: 'Pop', electro: 'Électro', chill: 'Chill / lo-fi', epic: 'Épique', acoustic: 'Acoustique', hiphop: 'Hip-hop', none: 'Sans musique' };
+export const SFX_LABELS: Record<Sfx, string> = {
+  whoosh: 'Whoosh', pop: 'Pop', click: 'Clic', impact: 'Impact', riser: 'Montée', chime: 'Carillon', fizz: 'Pétillant', bubble: 'Bulles', swipe: 'Swipe', glitch: 'Glitch'
 };
 
 export const SCENE_LABELS: Record<SceneType, string> = {

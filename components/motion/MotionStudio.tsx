@@ -27,7 +27,10 @@ import {
   Wand2,
   Film,
   Building2,
-  Images
+  Images,
+  Volume2,
+  VolumeX,
+  Clapperboard
 } from 'lucide-react';
 
 import { BrandPanel, EMPTY_BRAND, loadBrand, saveBrand } from '@/components/motion/BrandPanel';
@@ -35,10 +38,21 @@ import { Button } from '@/components/ui/button';
 import type { BrandProfile } from '@/lib/brand/types';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { drawFrame, locate, type MotionAssets } from '@/lib/motion/render';
+import { SoundPlayer, renderSoundtrack } from '@/lib/motion/sound';
 import {
   FORMAT_SIZE,
   MAX_PHOTOS,
   MAX_SCENES,
+  MOTIFS,
+  MOTIF_LABELS,
+  MUSIC,
+  MUSIC_LABELS,
+  SFX,
+  SFX_LABELS,
+  TRANSITIONS,
+  TRANSITION_LABELS,
+  type Concept,
+  type Sfx,
   SCENE_LABELS,
   TEMPLATES,
   THEME_PRESETS,
@@ -53,6 +67,7 @@ import { cn } from '@/lib/utils';
 
 const motionFont = Montserrat({ subsets: ['latin'], weight: ['800', '900'], display: 'swap' });
 const STORAGE_KEY = 'izicut-motion-project-v1';
+const CONCEPT_KEY = 'izicut-motion-concept-v1';
 
 type Tab = 'ia' | 'marque' | 'medias' | 'scenes' | 'style';
 type Media = { name: string; url: string; duration: number; el: HTMLVideoElement; file: File };
@@ -153,6 +168,12 @@ export function MotionStudio() {
   const [aiBusy, setAiBusy] = useState(false);
   const [exporting, setExporting] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [concept, setConcept] = useState<Concept | null>(null);
+  const [soundOn, setSoundOn] = useState(false);
+  const soundOnRef = useRef(false);
+  soundOnRef.current = soundOn;
+  const playerRef = useRef<SoundPlayer | null>(null);
+  if (!playerRef.current && typeof window !== 'undefined') playerRef.current = new SoundPlayer();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timeRef = useRef(0);
@@ -176,6 +197,12 @@ export function MotionStudio() {
     if (saved?.scenes?.length) setProject(saved);
     setBrand(loadBrand());
     brandLoaded.current = true;
+    try {
+      const c = window.localStorage.getItem(CONCEPT_KEY);
+      if (c) setConcept(JSON.parse(c) as Concept);
+    } catch {
+      /* rien */
+    }
     supabase.auth.getUser().then(async ({ data }) => {
       setLoggedIn(Boolean(data.user));
       if (!data.user) return;
@@ -195,6 +222,16 @@ export function MotionStudio() {
   useEffect(() => {
     if (brandLoaded.current) saveBrand(brand);
   }, [brand]);
+
+  // Bande-son (musique + effets) recalculée quand le projet change.
+  useEffect(() => {
+    let alive = true;
+    const id = window.setTimeout(() => {
+      renderSoundtrack(project).then((buf) => { if (alive) playerRef.current?.setBuffer(buf); });
+    }, 250);
+    return () => { alive = false; window.clearTimeout(id); };
+  }, [project]);
+  useEffect(() => () => playerRef.current?.stop(), []);
 
   useEffect(() => {
     const family = motionFont.style.fontFamily;
@@ -254,6 +291,7 @@ export function MotionStudio() {
           timeRef.current = (timeRef.current + dt) % total;
         }
         syncMedia(timeRef.current, playingRef.current);
+        playerRef.current?.sync(timeRef.current, playingRef.current, soundOnRef.current);
         draw(timeRef.current);
         if (now - lastUi > 100) { lastUi = now; setTime(timeRef.current); }
       }
@@ -373,7 +411,7 @@ export function MotionStudio() {
     });
   };
 
-  const askAi = async (text: string) => {
+  const askAi = async (text: string, opts: { fresh?: boolean } = {}) => {
     const value = text.trim();
     if (!value || aiBusy) return;
     if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour utiliser l’IA du Studio.'); return; }
@@ -387,7 +425,7 @@ export function MotionStudio() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: value,
-          project: messages.length || project !== TEMPLATES[0].project ? project : undefined,
+          project: !opts.fresh && (messages.length || project !== TEMPLATES[0].project) ? project : undefined,
           media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 })),
           photos: photos.map((ph, i) => ({ index: i, name: ph.name })),
           ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
@@ -398,7 +436,16 @@ export function MotionStudio() {
       if (typeof json.photoNotes === 'string' && json.photoNotes) photoNotesRef.current = { key: photoKey, notes: json.photoNotes };
       if (!res.ok || !json.project) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
       replaceProject(json.project as MotionProject);
-      setMessages((m) => [...m, { role: 'ai', text: `C’est fait : ${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s. Demandez-moi une autre modification si besoin.` }]);
+      if (json.concept) {
+        setConcept(json.concept as Concept);
+        try { window.localStorage.setItem(CONCEPT_KEY, JSON.stringify(json.concept)); } catch { /* rien */ }
+      }
+      setMessages((m) => [...m, {
+        role: 'ai',
+        text: json.concept
+          ? `Concept : ${(json.concept as Concept).creative_concept}\n\n${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s, avec musique et effets sonores (activez le son 🔊 sous l’aperçu). Demandez-moi n’importe quelle modification.`
+          : `C’est fait : ${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s. Demandez-moi une autre modification si besoin.`
+      }]);
     } catch (err) {
       setMessages((m) => [...m, { role: 'ai', text: err instanceof Error ? err.message : 'Erreur de l’IA.' }]);
     } finally {
@@ -413,13 +460,16 @@ export function MotionStudio() {
       setNotice('Votre navigateur ne permet pas l’export vidéo. Utilisez Chrome, Edge ou Safari récent sur ordinateur.');
       return;
     }
-    const { mime, ext } = pickMime(mediaRef.current.length > 0);
+    const soundtrack = await renderSoundtrack(projectRef.current);
+    const { mime, ext } = pickMime(mediaRef.current.length > 0 || Boolean(soundtrack));
     exportingRef.current = true;
     setExporting(0);
     setPlaying(false);
-    // Son des vidéos importées dans l'export.
+    playerRef.current?.stop();
+    // Son des vidéos importées + bande-son (musique, effets) dans l'export.
     let audioTracks: MediaStreamTrack[] = [];
-    if (mediaRef.current.length) {
+    let soundSrc: AudioBufferSourceNode | null = null;
+    if (mediaRef.current.length || soundtrack) {
       try {
         if (!audioRef.current) {
           const ac = new AudioContext();
@@ -434,6 +484,12 @@ export function MotionStudio() {
           a.wired.add(m.el);
         }
         await a.ctx.resume();
+        if (soundtrack) {
+          soundSrc = a.ctx.createBufferSource();
+          soundSrc.buffer = soundtrack;
+          soundSrc.connect(a.dest);
+          soundSrc.connect(a.ctx.destination);
+        }
         audioTracks = a.dest.stream.getAudioTracks();
       } catch {
         audioTracks = [];
@@ -447,6 +503,7 @@ export function MotionStudio() {
     const total = totalDuration(projectRef.current);
     draw(0);
     recorder.start(250);
+    soundSrc?.start();
     const t0 = performance.now();
     await new Promise<void>((resolve) => {
       const step = (now: number) => {
@@ -461,6 +518,7 @@ export function MotionStudio() {
     });
     recorder.stop();
     await done;
+    try { soundSrc?.stop(); } catch { /* fini */ }
     mediaRef.current.forEach((m) => m.el.pause());
     stream.getVideoTracks().forEach((tr) => tr.stop());
     const blob = new Blob(chunks, { type: mime || 'video/webm' });
@@ -554,6 +612,15 @@ export function MotionStudio() {
                 ))}
                 <span className="pointer-events-none absolute inset-y-0 w-0.5 bg-white" style={{ left: `${(time / duration) * 100}%` }} />
               </div>
+              <button
+                type="button"
+                onClick={() => { void playerRef.current?.unlock(); setSoundOn((v) => !v); }}
+                className={cn('grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-full border transition', soundOn ? 'border-neon/50 text-neon' : 'border-white/10 text-fg-muted hover:text-fg')}
+                aria-label={soundOn ? 'Couper le son' : 'Activer le son'}
+                title={soundOn ? 'Couper le son' : 'Écouter la musique et les effets'}
+              >
+                {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </button>
               <span className="w-16 shrink-0 text-right font-code text-xs text-fg-muted">{time.toFixed(1)} / {duration.toFixed(0)} s</span>
             </div>
           </div>
@@ -583,19 +650,20 @@ export function MotionStudio() {
                     <Lock className="mr-1 inline h-3.5 w-3.5" /> <Link href="/login?next=/studio" className="font-semibold text-neon underline">Connectez-vous</Link> (gratuit) pour que l’IA crée et modifie vos vidéos. Vous pouvez déjà tester les modèles et tout modifier à la main.
                   </p>
                 ) : null}
+                {concept ? <ConceptCard concept={concept} /> : null}
                 <div className="flex-1 space-y-2">
                   {messages.length === 0 ? (
                     <div className="space-y-2">
                       <p className="text-sm text-fg-muted">Décrivez la vidéo que vous voulez, ou partez d’une idée :</p>
                       {NEW_IDEAS.map((idea) => (
-                        <button key={idea} type="button" onClick={() => askAi(idea)} className="block w-full cursor-pointer rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-left text-sm text-fg transition hover:border-neon/40">
+                        <button key={idea} type="button" onClick={() => askAi(idea, { fresh: true })} className="block w-full cursor-pointer rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-left text-sm text-fg transition hover:border-neon/40">
                           {idea}
                         </button>
                       ))}
                     </div>
                   ) : (
                     messages.map((m, i) => (
-                      <div key={i} className={cn('max-w-[90%] rounded-2xl px-3 py-2 text-sm', m.role === 'user' ? 'ml-auto bg-neon text-ink-950' : 'bg-white/[0.06] text-fg')}>
+                      <div key={i} className={cn('max-w-[90%] whitespace-pre-line rounded-2xl px-3 py-2 text-sm', m.role === 'user' ? 'ml-auto bg-neon text-ink-950' : 'bg-white/[0.06] text-fg')}>
                         {m.text}
                       </div>
                     ))
@@ -639,7 +707,7 @@ export function MotionStudio() {
                   const light = parseInt(pal.background.slice(1, 3), 16) * 0.299 + parseInt(pal.background.slice(3, 5), 16) * 0.587 + parseInt(pal.background.slice(5, 7), 16) * 0.114 > 160;
                   return { ...p, theme: { ...p.theme, primary: pal.primary, accent: pal.accent, background: pal.background, text: light ? '#101225' : '#ffffff' } };
                 })}
-                onCreateAd={(idea) => { setTab('ia'); void askAi(`Crée cette pub pour ma marque : ${idea}`); }}
+                onCreateAd={(idea) => { setTab('ia'); void askAi(`Crée cette pub pour ma marque : ${idea}`, { fresh: true }); }}
               />
             ) : null}
 
@@ -697,7 +765,7 @@ export function MotionStudio() {
                   </div>
                 ))}
                 {media.length || photos.length ? (
-                  <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => { setTab('ia'); void askAi('Crée une pub professionnelle à partir de mes photos et vidéos : accroche forte, mes images en vedette avec des textes animés, mes points forts, et un appel à l’action'); }}>
+                  <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => { setTab('ia'); void askAi('Crée une pub professionnelle à partir de mes photos et vidéos : accroche forte, mes images en vedette avec des textes animés, mes points forts, et un appel à l’action', { fresh: true }); }}>
                     <Sparkles className="h-4 w-4" /> Créer une pub avec mes médias (IA)
                   </Button>
                 ) : null}
@@ -725,6 +793,13 @@ export function MotionStudio() {
                       </div>
                     </div>
                     <SceneFields scene={scene} media={media} photos={photos} onChange={(patch) => updateScene(i, patch)} />
+                    <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
+                      Son d’entrée
+                      <select value={scene.sfx ?? ''} onChange={(e) => updateScene(i, { sfx: (e.target.value || undefined) as Sfx | undefined })} className="flex-1 cursor-pointer rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-fg outline-none">
+                        <option value="">Automatique</option>
+                        {SFX.map((x) => <option key={x} value={x}>{SFX_LABELS[x]}</option>)}
+                      </select>
+                    </label>
                     <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
                       Durée
                       <input type="range" min={1.5} max={scene.type === 'video' ? 15 : 8} step={0.5} value={scene.duration} onChange={(e) => updateScene(i, { duration: Number(e.target.value) })} className="flex-1 accent-[var(--color-neon)]" />
@@ -788,6 +863,41 @@ export function MotionStudio() {
                     ))}
                   </div>
                 </Field>
+                <Field label="Texture signature">
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {MOTIFS.map((m) => (
+                      <Choice key={m} active={(project.theme.motif ?? 'particles') === m} onClick={() => setProject((p) => ({ ...p, theme: { ...p.theme, motif: m } }))}>{MOTIF_LABELS[m]}</Choice>
+                    ))}
+                  </div>
+                </Field>
+                <Field label="Transitions">
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {TRANSITIONS.map((tr) => (
+                      <Choice key={tr} active={(project.transition ?? 'flash') === tr} onClick={() => setProject((p) => ({ ...p, transition: tr }))}>{TRANSITION_LABELS[tr]}</Choice>
+                    ))}
+                  </div>
+                </Field>
+                <Field label="Musique (générée, libre de droits)">
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {MUSIC.map((mu) => (
+                      <Choice key={mu} active={(project.sound?.music ?? 'none') === mu} onClick={() => { void playerRef.current?.unlock(); setSoundOn(mu !== 'none'); setProject((p) => ({ ...p, sound: mu === 'none' && !p.sound ? undefined : { bpm: p.sound?.bpm ?? 110, volume: p.sound?.volume, music: mu } })); }}>{MUSIC_LABELS[mu]}</Choice>
+                    ))}
+                  </div>
+                  {project.sound ? (
+                    <div className="mt-2 space-y-1.5">
+                      <label className="flex items-center gap-2 text-xs text-fg-muted">
+                        Tempo
+                        <input type="range" min={60} max={170} step={1} value={project.sound.bpm} onChange={(e) => setProject((p) => (p.sound ? { ...p, sound: { ...p.sound, bpm: Number(e.target.value) } } : p))} className="flex-1 accent-[var(--color-neon)]" />
+                        <span className="w-14 text-right font-code">{project.sound.bpm} bpm</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-fg-muted">
+                        Volume
+                        <input type="range" min={0} max={1} step={0.05} value={project.sound.volume ?? 0.6} onChange={(e) => setProject((p) => (p.sound ? { ...p, sound: { ...p.sound, volume: Number(e.target.value) } } : p))} className="flex-1 accent-[var(--color-neon)]" />
+                        <span className="w-14 text-right font-code">{Math.round((project.sound.volume ?? 0.6) * 100)} %</span>
+                      </label>
+                    </div>
+                  ) : null}
+                </Field>
                 <Field label="Nom de la marque">
                   <input value={project.brand} maxLength={40} onChange={(e) => setProject((p) => ({ ...p, brand: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-fg outline-none focus:border-neon/50" />
                 </Field>
@@ -800,11 +910,53 @@ export function MotionStudio() {
               Offre Free : petite mention « Réalisé avec IziCut ». <Link href="/#pricing" className="text-neon underline">Passer en Pro</Link> pour la retirer.
             </p>
           ) : null}
-          <button type="button" onClick={() => { replaceProject(TEMPLATES[0].project); setMessages([]); setAssets({}); setPhotos([]); }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
+          <button type="button" onClick={() => { replaceProject(TEMPLATES[0].project); setMessages([]); setAssets({}); setPhotos([]); setConcept(null); try { window.localStorage.removeItem(CONCEPT_KEY); } catch { /* rien */ } }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
             <RotateCcw className="h-3 w-3" /> Repartir de zéro
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ConceptCard({ concept }: { concept: Concept }) {
+  const [open, setOpen] = useState(false);
+  const ad = concept.art_direction;
+  return (
+    <div className="rounded-xl border border-neon/30 bg-neon/[0.05] p-3 text-sm">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full cursor-pointer items-center justify-between gap-2 text-left">
+        <span className="flex items-center gap-1.5 font-semibold text-fg"><Clapperboard className="h-4 w-4 text-neon" /> Direction artistique</span>
+        <span className="text-xs text-fg-muted">{open ? 'Masquer' : 'Voir'}</span>
+      </button>
+      <p className="mt-1.5 text-xs text-fg-muted">{concept.creative_concept}</p>
+      {open ? (
+        <div className="mt-3 space-y-2.5 text-xs">
+          <p><span className="font-semibold text-fg">Univers visuel : </span><span className="text-fg-muted">{ad.visual_theme}</span></p>
+          {concept.signatures?.length ? (
+            <div>
+              <p className="font-semibold text-fg">Signatures de marque</p>
+              <ul className="mt-0.5 space-y-0.5 text-fg-muted">{concept.signatures.map((x) => <li key={x}>• {x}</li>)}</ul>
+            </div>
+          ) : null}
+          <p><span className="font-semibold text-fg">Musique : </span><span className="text-fg-muted">{ad.music_style}</span></p>
+          {ad.brand_signature_sfx.length ? <p><span className="font-semibold text-fg">Sons signature : </span><span className="text-fg-muted">{ad.brand_signature_sfx.join(' · ')}</span></p> : null}
+          {ad.color_palette.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {ad.color_palette.map((col) => <span key={col} className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-fg-muted">{col}</span>)}
+            </div>
+          ) : null}
+          <div className="space-y-1.5 border-t border-white/10 pt-2">
+            {concept.scenes.map((sc) => (
+              <div key={sc.timeframe}>
+                <p className="font-code text-[10px] font-semibold text-neon">{sc.timeframe}</p>
+                <p className="text-fg">{sc.text_on_screen}</p>
+                <p className="text-fg-muted">{sc.visual_motion_description}</p>
+                <p className="text-fg-subtle">♪ {sc.sound_design}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

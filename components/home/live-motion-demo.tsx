@@ -8,22 +8,34 @@
 import { Montserrat } from 'next/font/google';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Volume2, VolumeX } from 'lucide-react';
 
 import { drawFrame } from '@/lib/motion/render';
+import { SoundPlayer, renderSoundtrack } from '@/lib/motion/sound';
 import { FORMAT_SIZE, THEME_PRESETS, totalDuration, type MotionProject } from '@/lib/motion/types';
 import { cn } from '@/lib/utils';
 
 const font = Montserrat({ subsets: ['latin'], weight: ['800', '900'], display: 'swap' });
 const STUDIO_KEY = 'izicut-motion-project-v1';
 
-type Sector = { id: string; label: string; name: string; scenes: (n: string) => MotionProject['scenes'] };
+type Sector = {
+  id: string;
+  label: string;
+  name: string;
+  motif: NonNullable<MotionProject['theme']['motif']>;
+  transition: NonNullable<MotionProject['transition']>;
+  sound: NonNullable<MotionProject['sound']>;
+  scenes: (n: string) => MotionProject['scenes'];
+};
 
 const SECTORS: Sector[] = [
   {
     id: 'boulangerie',
     label: 'Boulangerie',
     name: 'Maison Dupain',
+    motif: 'grain',
+    transition: 'slide',
+    sound: { music: 'acoustic', bpm: 100 },
     scenes: (n) => [
       { type: 'title', duration: 2.6, title: 'Le vrai pain, *chaque matin*', subtitle: n },
       { type: 'bullets', duration: 3.6, title: 'Fait *maison*', items: ['Levain naturel', 'Viennoiseries du jour', 'Sandwichs le midi'] },
@@ -35,6 +47,9 @@ const SECTORS: Sector[] = [
     id: 'association',
     label: 'Association',
     name: 'Les Amis du Quartier',
+    motif: 'confetti',
+    transition: 'flash',
+    sound: { music: 'pop', bpm: 118 },
     scenes: (n) => [
       { type: 'title', duration: 2.6, title: 'Ensemble, on va *plus loin*', subtitle: n },
       { type: 'stat', duration: 2.8, value: 250, suffix: '+', label: 'bénévoles engagés' },
@@ -46,6 +61,9 @@ const SECTORS: Sector[] = [
     id: 'coiffure',
     label: 'Salon de coiffure',
     name: 'Studio Lumière',
+    motif: 'sparkles',
+    transition: 'wipe',
+    sound: { music: 'chill', bpm: 88 },
     scenes: (n) => [
       { type: 'title', duration: 2.6, title: 'Votre style, *sublimé*', subtitle: n },
       { type: 'quote', duration: 3.4, text: 'Je ressors à chaque fois avec *le sourire*.', author: 'Une cliente fidèle' },
@@ -57,6 +75,9 @@ const SECTORS: Sector[] = [
     id: 'restaurant',
     label: 'Restaurant',
     name: 'La Table d’Ici',
+    motif: 'waves',
+    transition: 'zoom',
+    sound: { music: 'hiphop', bpm: 92 },
     scenes: (n) => [
       { type: 'title', duration: 2.6, title: 'Une cuisine *de saison*', subtitle: n },
       { type: 'bullets', duration: 3.6, title: 'Au menu', items: ['Produits locaux', 'Plat du jour à 14 €', 'Terrasse ensoleillée'] },
@@ -81,13 +102,20 @@ export function LiveMotionDemo() {
   const [themeIndex, setThemeIndex] = useState(0);
   const [style, setStyle] = useState<MotionProject['theme']['style']>('neon');
   const [progress, setProgress] = useState(0);
+  const [soundOn, setSoundOn] = useState(false);
+  const soundOnRef = useRef(false);
+  soundOnRef.current = soundOn;
+  const playerRef = useRef<SoundPlayer | null>(null);
+  if (!playerRef.current && typeof window !== 'undefined') playerRef.current = new SoundPlayer();
 
   const brandName = name.trim() || sector.name;
   const project: MotionProject = useMemo(
     () => ({
       format: '9:16',
       brand: brandName.slice(0, 40),
-      theme: { ...THEME_PRESETS[themeIndex].theme, style },
+      theme: { ...THEME_PRESETS[themeIndex].theme, style, motif: sector.motif },
+      transition: sector.transition,
+      sound: sector.sound,
       scenes: sector.scenes(brandName.slice(0, 30))
     }),
     [brandName, sector, themeIndex, style]
@@ -98,6 +126,12 @@ export function LiveMotionDemo() {
 
   // Chaque changement relance l'animation depuis le début : on voit l'effet.
   useEffect(() => { timeRef.current = 0; }, [sector, themeIndex, style]);
+  useEffect(() => {
+    let alive = true;
+    renderSoundtrack(project).then((buf) => { if (alive) playerRef.current?.setBuffer(buf); });
+    return () => { alive = false; };
+  }, [project]);
+  useEffect(() => () => playerRef.current?.stop(), []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -113,11 +147,13 @@ export function LiveMotionDemo() {
     const loop = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
+      if (!visible) playerRef.current?.stop();
       if (visible) {
         const total = totalDuration(projectRef.current);
         if (!reduce) timeRef.current = (timeRef.current + dt) % total;
         else timeRef.current = 1.6;
         drawFrame(ctx, projectRef.current, timeRef.current, {}, { fontFamily: font.style.fontFamily });
+        playerRef.current?.sync(timeRef.current, !reduce, soundOnRef.current);
         if (now - lastUi > 120) { lastUi = now; setProgress(timeRef.current / total); }
       }
       raf = requestAnimationFrame(loop);
@@ -140,6 +176,15 @@ export function LiveMotionDemo() {
         <div className="rounded-[2.2rem] border border-white/15 bg-black p-2 shadow-[0_40px_90px_-30px_rgb(0_0_0/0.95),0_0_0_1px_rgb(255_255_255/0.04)]">
           <div className="relative overflow-hidden rounded-[1.7rem]" style={{ aspectRatio: `${width} / ${height}` }}>
             <canvas ref={canvasRef} width={width} height={height} className="block h-full w-full" aria-label={`Pub animée pour ${brandName}`} />
+            <button
+              type="button"
+              onClick={() => { void playerRef.current?.unlock(); setSoundOn((v) => !v); }}
+              className="absolute bottom-3 right-3 grid h-9 w-9 cursor-pointer place-items-center rounded-full bg-black/60 text-white backdrop-blur transition hover:bg-black/80"
+              aria-label={soundOn ? 'Couper le son' : 'Écouter la musique et les effets'}
+              title={soundOn ? 'Couper le son' : 'Écouter la musique et les effets'}
+            >
+              {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+            </button>
             <div className="absolute inset-x-3 top-2.5 h-[3px] overflow-hidden rounded-full bg-white/20">
               <div className="h-full bg-white" style={{ width: `${progress * 100}%` }} />
             </div>

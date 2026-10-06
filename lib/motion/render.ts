@@ -180,8 +180,9 @@ function background(c: Ctx, t: number) {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
   }
+  const motif = theme.motif ?? 'particles';
   // Grille en perspective qui défile (styles néon / bold).
-  if (theme.style !== 'clean') {
+  if (theme.style !== 'clean' && (motif === 'particles' || motif === 'lines')) {
     ctx.save();
     ctx.strokeStyle = rgba(light ? '#000000' : '#ffffff', 0.05);
     ctx.lineWidth = Math.max(1, U * 0.0015);
@@ -191,23 +192,125 @@ function background(c: Ctx, t: number) {
     for (let y = -step + off; y < H + step; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
     ctx.restore();
   }
-  // Particules lumineuses qui montent.
-  ctx.save();
-  for (let i = 0; i < 28; i++) {
-    const speed = 0.02 + rand(i) * 0.05;
-    const x = rand(i + 50) * W + Math.sin(t * 0.6 + i) * U * 0.01;
-    const y = H - (((rand(i + 100) + t * speed) % 1) * (H + 40)) + 20;
-    const r = U * (0.0015 + rand(i + 7) * 0.0035);
-    ctx.fillStyle = rgba(i % 3 ? theme.primary : theme.accent, 0.25 + 0.35 * rand(i + 3));
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.restore();
+  drawMotif(c, motif, t, light);
   // Vignette.
   const v = ctx.createRadialGradient(W / 2, H / 2, U * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
   v.addColorStop(0, 'rgba(0,0,0,0)');
   v.addColorStop(1, light ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.45)');
   ctx.fillStyle = v;
   ctx.fillRect(0, 0, W, H);
+}
+
+/** Textures « signature » : chaque marque a son univers (bulles d'un soda, farine d'une boulangerie…). */
+function drawMotif(c: Ctx, motif: NonNullable<MotionProject['theme']['motif']>, t: number, light: boolean) {
+  const { ctx, W, H, U, theme } = c;
+  ctx.save();
+  switch (motif) {
+    case 'particles':
+      for (let i = 0; i < 28; i++) {
+        const speed = 0.02 + rand(i) * 0.05;
+        const x = rand(i + 50) * W + Math.sin(t * 0.6 + i) * U * 0.01;
+        const y = H - (((rand(i + 100) + t * speed) % 1) * (H + 40)) + 20;
+        const r = U * (0.0015 + rand(i + 7) * 0.0035);
+        ctx.fillStyle = rgba(i % 3 ? theme.primary : theme.accent, 0.25 + 0.35 * rand(i + 3));
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    case 'bubbles':
+      // Bulles qui montent en ondulant (boissons, bain, lessive…).
+      for (let i = 0; i < 34; i++) {
+        const r = U * (0.006 + rand(i + 9) * 0.03);
+        const speed = 0.05 + (1 - r / (U * 0.036)) * 0.09;
+        const x = rand(i + 21) * W + Math.sin(t * 2 + i * 1.7) * r * 0.8;
+        const y = H + r - (((rand(i + 77) + t * speed) % 1) * (H + r * 4));
+        ctx.globalAlpha = 0.18 + 0.3 * rand(i + 4);
+        ctx.strokeStyle = i % 4 ? (light ? theme.primary : '#ffffff') : theme.accent;
+        ctx.lineWidth = Math.max(1, r * 0.12);
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.beginPath(); ctx.arc(x - r * 0.35, y - r * 0.35, r * 0.18, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    case 'grain': {
+      // Grain / farine / papier : poussière douce qui flotte + fin grain qui scintille.
+      const frame = Math.floor(t * 12);
+      ctx.fillStyle = light ? 'rgba(60,40,20,0.10)' : 'rgba(255,255,255,0.07)';
+      for (let i = 0; i < 260; i++) {
+        const x = rand(i * 3 + frame) * W;
+        const y = rand(i * 7 + frame * 2) * H;
+        ctx.fillRect(x, y, U * 0.0025, U * 0.0025);
+      }
+      for (let i = 0; i < 40; i++) {
+        const x = (rand(i + 300) * W + t * U * 0.01 * (rand(i) - 0.5) * 4 + W) % W;
+        const y = (rand(i + 400) * H - t * U * 0.008 * (0.5 + rand(i + 1)) + H * 2) % H;
+        ctx.fillStyle = rgba(light ? theme.primary : '#ffffff', 0.12 + 0.2 * rand(i + 5));
+        ctx.beginPath(); ctx.arc(x, y, U * (0.002 + rand(i + 6) * 0.004), 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'waves':
+      // Rubans ondulants (eau, mode, bien-être, tech fluide).
+      for (let k = 0; k < 4; k++) {
+        ctx.beginPath();
+        const baseY = H * (0.62 + k * 0.1);
+        const amp = U * (0.03 + k * 0.012);
+        for (let x = 0; x <= W; x += W / 60) {
+          const y = baseY + Math.sin(x / W * Math.PI * 2 * (1.2 + k * 0.3) + t * (1 + k * 0.35)) * amp;
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+        ctx.fillStyle = rgba(k % 2 ? theme.accent : theme.primary, light ? 0.08 : 0.1);
+        ctx.fill();
+      }
+      break;
+    case 'confetti':
+      // Confettis qui tombent en tournoyant (fête, association, promo).
+      for (let i = 0; i < 46; i++) {
+        const speed = 0.06 + rand(i + 2) * 0.08;
+        const x = rand(i + 60) * W + Math.sin(t * 1.5 + i) * U * 0.03;
+        const y = ((rand(i + 90) + t * speed) % 1) * (H + 60) - 30;
+        const rot = t * (2 + rand(i) * 4) + i;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rot);
+        ctx.scale(1, Math.abs(Math.cos(rot * 1.3)) + 0.15);
+        ctx.fillStyle = [theme.primary, theme.accent, theme.text][i % 3];
+        ctx.globalAlpha = 0.55;
+        ctx.fillRect(-U * 0.008, -U * 0.004, U * 0.016, U * 0.008);
+        ctx.restore();
+      }
+      break;
+    case 'sparkles':
+      // Éclats qui scintillent (beauté, bijoux, luxe, fêtes).
+      for (let i = 0; i < 26; i++) {
+        const x = rand(i + 500) * W;
+        const y = rand(i + 600) * H;
+        const tw = Math.max(0, Math.sin(t * (1.5 + rand(i) * 2) + i * 2.1));
+        const r = U * (0.008 + rand(i + 8) * 0.018) * tw;
+        if (r < 0.5) continue;
+        ctx.fillStyle = rgba(i % 2 ? theme.accent : (light ? theme.primary : '#ffffff'), 0.75 * tw);
+        ctx.beginPath();
+        ctx.moveTo(x, y - r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.quadraticCurveTo(x, y, x, y + r);
+        ctx.quadraticCurveTo(x, y, x - r, y); ctx.quadraticCurveTo(x, y, x, y - r);
+        ctx.fill();
+      }
+      break;
+    case 'lines':
+      // Lignes de vitesse (sport, auto, livraison, tech).
+      for (let i = 0; i < 22; i++) {
+        const len = U * (0.08 + rand(i) * 0.25);
+        const speed = 0.4 + rand(i + 3) * 0.8;
+        const y = rand(i + 700) * H;
+        const x = ((rand(i + 800) + t * speed) % 1) * (W + len * 2) - len;
+        ctx.strokeStyle = rgba(i % 3 ? theme.primary : theme.accent, 0.12 + 0.25 * rand(i + 2));
+        ctx.lineWidth = Math.max(1, U * (0.002 + rand(i + 4) * 0.004));
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len, y - len * 0.18); ctx.stroke();
+      }
+      break;
+    case 'none':
+      break;
+  }
+  ctx.restore();
 }
 
 // ---------- Scènes ----------
@@ -711,15 +814,24 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
   const scene = project.scenes[index];
   const d = scene.duration;
   const isLast = index === project.scenes.length - 1;
-  // Entrée / sortie de scène : fondu + glissement + léger zoom.
+  // Entrée / sortie de scène selon la transition choisie.
+  const tr = project.transition ?? 'flash';
   const enter = index === 0 ? 1 : easeOutCubic(lt / 0.5);
   const exit = isLast ? 0 : easeInCubic((lt - (d - TRANSITION)) / TRANSITION);
   ctx.save();
-  ctx.globalAlpha = clamp(enter) * (1 - exit);
+  ctx.globalAlpha = tr === 'slide' || tr === 'wipe' ? 1 : clamp(enter) * (1 - exit);
   ctx.translate(W / 2, H / 2);
-  const zoom = 1 + exit * 0.08 - (1 - enter) * 0.04;
-  ctx.scale(zoom, zoom);
-  ctx.translate(-W / 2, -H / 2 + (1 - enter) * c.U * 0.05 - exit * c.U * 0.06);
+  if (tr === 'zoom') {
+    const z = (1 + exit * 0.9) * (index === 0 ? 1 : 0.6 + 0.4 * clamp(enter));
+    ctx.scale(z, z);
+    ctx.translate(-W / 2, -H / 2);
+  } else if (tr === 'slide') {
+    ctx.translate(-W / 2 + (1 - clamp(enter)) * W - exit * W, -H / 2);
+  } else {
+    const zoom = 1 + exit * 0.08 - (1 - enter) * 0.04;
+    ctx.scale(zoom, zoom);
+    ctx.translate(-W / 2, -H / 2 + (1 - enter) * c.U * 0.05 - exit * c.U * 0.06);
+  }
   switch (scene.type) {
     case 'title': sceneTitle(c, scene, lt); break;
     case 'bullets': sceneBullets(c, scene, lt); break;
@@ -732,12 +844,40 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
   }
   ctx.restore();
 
-  // Éclair de transition entre deux scènes.
-  if (index > 0 && lt < 0.3) {
+  // Effet de coupe entre deux scènes.
+  if (tr === 'flash' && index > 0 && lt < 0.3) {
     ctx.save();
     ctx.globalAlpha = (1 - lt / 0.3) * 0.18;
     ctx.fillStyle = project.theme.primary;
     ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+  if (tr === 'wipe') {
+    // Volet de couleur qui balaie l'écran : il couvre la fin d'une scène et découvre la suivante.
+    const out = isLast ? 0 : clamp((lt - (d - 0.35)) / 0.35);
+    const inn = index === 0 ? 1 : clamp(lt / 0.35);
+    ctx.save();
+    ctx.fillStyle = project.theme.primary;
+    if (out > 0) ctx.fillRect(0, 0, W * easeInCubic(out), H);
+    if (inn < 1) ctx.fillRect(W * easeOutCubic(inn), 0, W * (1 - easeOutCubic(inn)), H);
+    ctx.fillStyle = project.theme.accent;
+    if (out > 0.2) ctx.fillRect(0, 0, W * easeInCubic(out - 0.2), H * 0.02);
+    ctx.restore();
+  }
+  if (tr === 'glitch' && ((index > 0 && lt < 0.25) || (!isLast && lt > d - 0.12))) {
+    // Tranches décalées + séparation RVB sur la coupe.
+    const k = index > 0 && lt < 0.25 ? 1 - lt / 0.25 : 1;
+    ctx.save();
+    for (let i = 0; i < 7; i++) {
+      const y = rand(i + Math.floor(t * 30)) * H;
+      const h = H * (0.02 + rand(i + 3) * 0.06);
+      const dx = (rand(i + 9 + Math.floor(t * 30)) - 0.5) * W * 0.12 * k;
+      ctx.drawImage(ctx.canvas, 0, y, W, h, dx, y, W, h);
+    }
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = 0.35 * k;
+    ctx.fillStyle = project.theme.accent;
+    ctx.fillRect(0, rand(Math.floor(t * 30)) * H, W, H * 0.015);
     ctx.restore();
   }
 
