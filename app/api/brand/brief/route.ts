@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   try {
     const raw = await chatJson({
       system: `Tu es directrice de communication pour les TPE, PME, commerçants, artisans, indépendants et associations en France. À partir des informations officielles (registre SIRENE) et de ce que le client dit, tu rédiges une fiche marque concrète, crédible et locale. Tu n'inventes pas de faits vérifiables (prix, récompenses, chiffres) : si tu n'en es pas sûre, formule de façon générale. Réponds UNIQUEMENT en JSON :
-{"pitch":"1 à 2 phrases","audience":"la cible","tone":"le ton conseillé","strengths":["3 à 5 points forts probables"],"slogans":["3 slogans courts"],"adIdeas":["3 idées de pubs vidéo courtes adaptées aux réseaux"],"palette":{"primary":"#RRGGBB","accent":"#RRGGBB","background":"#RRGGBB"}}`,
+{"pitch":"1 à 2 phrases","audience":"la cible","tone":"le ton conseillé","strengths":["3 à 5 points forts probables"],"slogans":["3 slogans courts"],"adIdeas":["3 idées de pubs vidéo pour les réseaux, UNE phrase de 120 caractères max chacune"],"palette":{"primary":"#RRGGBB","accent":"#RRGGBB","background":"#RRGGBB"}}`,
       user: `Registre officiel : ${company ? JSON.stringify(company) : '(non renseigné)'}\nCe que le client dit de son activité : ${notes || '(rien)'}`,
       maxTokens: 1200,
       temperature: 0.6
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       tone: str(o.tone, 120),
       strengths: list(o.strengths, 6, 120),
       slogans: list(o.slogans, 5, 90),
-      adIdeas: list(o.adIdeas, 5, 160),
+      adIdeas: list(o.adIdeas, 5, 220),
       palette: pal ? { primary: str(pal.primary, 7), accent: str(pal.accent, 7), background: str(pal.background, 7) } : undefined
     });
     if (!brief.success || !brief.data.pitch) return NextResponse.json({ error: "L'IA n'a pas réussi, réessayez." }, { status: 502 });

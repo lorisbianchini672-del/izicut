@@ -25,7 +25,7 @@ export const BrandBriefSchema = z.object({
   tone: z.string().max(120),
   strengths: z.array(z.string().max(120)).max(6),
   slogans: z.array(z.string().max(90)).max(5),
-  adIdeas: z.array(z.string().max(160)).max(5),
+  adIdeas: z.array(z.string().max(220)).max(5),
   palette: z.object({ primary: z.string(), accent: z.string(), background: z.string() }).optional()
 });
 export type BrandBrief = z.infer<typeof BrandBriefSchema>;
