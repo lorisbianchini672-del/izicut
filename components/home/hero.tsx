@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   motion,
   useMotionTemplate,
@@ -17,7 +17,18 @@ import { LiveMotionDemo } from './live-motion-demo';
 import { EASE, Magnetic, SplitWords } from './motion';
 
 export function Hero() {
-  const reduce = useReducedMotion();
+  const reduceMotion = useReducedMotion();
+  // Sur mobile (colonnes empilées), pas de parallaxe : le texte et la démo se chevaucheraient.
+  const [stacked, setStacked] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const update = () => setStacked(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  const reduce = reduceMotion;
+  const still = reduceMotion || stacked;
   const sectionRef = useRef<HTMLElement>(null);
 
   // Projecteur qui suit le curseur
@@ -29,10 +40,10 @@ export function Hero() {
 
   // Sortie de scène : l'aperçu monte, se redresse et recule
   const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start start', 'end start'] });
-  const previewY = useTransform(scrollYProgress, [0, 1], reduce ? [0, 0] : [0, -120]);
-  const previewScale = useTransform(scrollYProgress, [0, 1], reduce ? [1, 1] : [1, 0.92]);
-  const textY = useTransform(scrollYProgress, [0, 1], reduce ? [0, 0] : [0, 80]);
-  const textOpacity = useTransform(scrollYProgress, [0, 0.7], [1, reduce ? 1 : 0]);
+  const previewY = useTransform(scrollYProgress, [0, 1], still ? [0, 0] : [0, -120]);
+  const previewScale = useTransform(scrollYProgress, [0, 1], still ? [1, 1] : [1, 0.92]);
+  const textY = useTransform(scrollYProgress, [0, 1], still ? [0, 0] : [0, 80]);
+  const textOpacity = useTransform(scrollYProgress, [0, 0.7], [1, still ? 1 : 0]);
 
   const rise = (delay: number) =>
     reduce ? {} : { initial: { opacity: 0, y: 18, filter: 'blur(8px)' }, animate: { opacity: 1, y: 0, filter: 'blur(0px)' }, transition: { duration: 0.9, delay, ease: EASE } };
