@@ -33,13 +33,29 @@ export async function GET(request: Request) {
   const q = new URL(request.url).searchParams.get('q')?.trim() ?? '';
   if (q.length < 2) return NextResponse.json({ results: [] });
   try {
-    const res = await fetch(`https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(q.slice(0, 120))}&per_page=8&etat_administratif=A`, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(10_000),
-      next: { revalidate: 3600 }
-    });
+    const search = (text: string, per = 8) =>
+      fetch(`https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(text.slice(0, 120))}&per_page=${per}&etat_administratif=A`, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(10_000),
+        next: { revalidate: 3600 }
+      });
+    const res = await search(q);
     if (!res.ok) return NextResponse.json({ error: 'Registre des entreprises momentanément indisponible.' }, { status: 502 });
-    const data = (await res.json()) as { results?: Raw[] };
+    let data = (await res.json()) as { results?: Raw[] };
+    // « nom + ville » : si rien ne sort, on cherche le nom seul et on met en
+    // tête les structures de cette ville.
+    const words = q.split(/\s+/);
+    if (!data.results?.length && words.length >= 2) {
+      const city = words[words.length - 1].toLowerCase();
+      const res2 = await search(words.slice(0, -1).join(' '), 25);
+      if (res2.ok) {
+        const d2 = (await res2.json()) as { results?: Raw[] };
+        const norm = (v?: string) => (v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const inCity = (r: Raw) => norm(r.siege?.libelle_commune).includes(norm(city)) || (r.siege?.code_postal ?? '').startsWith(city);
+        const list = d2.results ?? [];
+        data = { results: [...list.filter(inCity), ...list.filter((r) => !inCity(r))].slice(0, 8) };
+      }
+    }
     const u = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
     const results: Company[] = (data.results ?? []).map((r) => ({
       siren: String(r.siren ?? '').slice(0, 12),
