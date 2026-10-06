@@ -444,7 +444,7 @@ export function MotionStudio() {
       setMessages((m) => [...m, {
         role: 'ai',
         text: json.concept
-          ? `Concept : ${(json.concept as Concept).creative_concept}\n\n${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s, avec musique et effets sonores (activez le son 🔊 sous l’aperçu). Demandez-moi n’importe quelle modification.`
+          ? `Votre pub est prête : ${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s, avec musique et effets sonores (activez le son sous l’aperçu). Le concept complet est dans « Direction artistique ». Demandez-moi n’importe quelle modification.`
           : `C’est fait : ${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s. Demandez-moi une autre modification si besoin.`
       }]);
     } catch (err) {

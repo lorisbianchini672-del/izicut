@@ -273,7 +273,13 @@ export async function POST(request: Request) {
       if (result.success) {
         const count = media?.length ?? 0;
         const photoCount = photos?.length ?? 0;
-        const scenes = result.data.scenes.filter((sc) => (sc.type !== 'video' || sc.media < count) && (sc.type !== 'photo' || sc.photo < photoCount));
+        let scenes = result.data.scenes.filter((sc) => (sc.type !== 'video' || sc.media < count) && (sc.type !== 'photo' || sc.photo < photoCount));
+        // Une pub créée doit tenir ses ~15 s : si l'IA a fait trop court, on étire le rythme.
+        const sum = scenes.reduce((n, sc) => n + sc.duration, 0);
+        if (!project && sum > 0 && sum < 13 && !/\b([1-9]|1[0-2]) ?(s|sec|secondes)\b/i.test(prompt)) {
+          const k = 15 / sum;
+          scenes = scenes.map((sc) => ({ ...sc, duration: Math.round(Math.min(sc.type === 'video' ? 15 : 8, sc.duration * k) * 10) / 10 }));
+        }
         if (scenes.length) return NextResponse.json({ project: { ...result.data, scenes }, concept, photoNotes: photoNotes || undefined });
       }
       lastError = (result.error?.issues ?? []).slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
