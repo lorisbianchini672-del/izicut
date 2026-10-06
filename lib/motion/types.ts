@@ -10,6 +10,11 @@ const duration = z.number().min(1.5).max(8);
 /** Les mots entre *astérisques* sont mis en couleur d'accent. */
 const txt = (max: number) => z.string().trim().min(1).max(max);
 
+/** Nombre maximum de scènes dans une vidéo. */
+export const MAX_SCENES = 12;
+/** Nombre maximum de photos importées. */
+export const MAX_PHOTOS = 12;
+
 export const SceneSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('title'), duration, title: txt(90), subtitle: z.string().trim().max(120).optional() }),
   z.object({ type: z.literal('bullets'), duration, title: txt(60), items: z.array(txt(60)).min(1).max(4) }),
@@ -33,6 +38,14 @@ export const SceneSchema = z.discriminatedUnion('type', [
     from: z.number().min(0).max(3600),
     caption: z.string().trim().max(80).optional(),
     layout: z.enum(['full', 'frame'])
+  }),
+  z.object({
+    type: z.literal('photo'),
+    duration,
+    /** Index de la photo importée par le client (0 à 11). */
+    photo: z.number().int().min(0).max(11),
+    caption: z.string().trim().max(80).optional(),
+    layout: z.enum(['full', 'frame'])
   })
 ]);
 
@@ -46,7 +59,7 @@ export const MotionProjectSchema = z.object({
     text: hex,
     style: z.enum(['neon', 'clean', 'bold'])
   }),
-  scenes: z.array(SceneSchema).min(1).max(8)
+  scenes: z.array(SceneSchema).min(1).max(MAX_SCENES)
 });
 
 export type Scene = z.infer<typeof SceneSchema>;
@@ -66,7 +79,8 @@ export const SCENE_LABELS: Record<SceneType, string> = {
   screenshot: 'Capture produit',
   quote: 'Citation',
   cta: 'Appel à l’action',
-  video: 'Votre vidéo'
+  video: 'Votre vidéo',
+  photo: 'Votre photo'
 };
 
 export const TRANSITION = 0.45;
@@ -91,6 +105,8 @@ export function defaultScene(type: SceneType): Scene {
       return { type, duration: 3, title: 'Essayez *gratuitement*', button: 'Commencer' };
     case 'video':
       return { type, duration: 4, media: 0, from: 0, caption: 'Découvrez *notre savoir-faire*', layout: 'full' };
+    case 'photo':
+      return { type, duration: 3, photo: 0, caption: 'Fait *avec passion*', layout: 'full' };
   }
 }
 

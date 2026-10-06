@@ -5,7 +5,13 @@
  */
 import { FORMAT_SIZE, TRANSITION, type MotionProject, type Scene } from './types';
 
-export type MotionAssets = { logo?: HTMLImageElement | null; screenshot?: HTMLImageElement | null; videos?: (HTMLVideoElement | null)[] };
+export type MotionAssets = {
+  logo?: HTMLImageElement | null;
+  screenshot?: HTMLImageElement | null;
+  videos?: (HTMLVideoElement | null)[];
+  /** Photos du client (produits, locaux, équipe…). */
+  photos?: (HTMLImageElement | null)[];
+};
 export type RenderOptions = { fontFamily: string; watermark?: boolean };
 
 // ---------- Courbes d'animation ----------
@@ -593,7 +599,75 @@ function sceneVideo(c: Ctx, s: Extract<Scene, { type: 'video' }>, lt: number) {
   ctx.restore();
 }
 
-function placeholder(c: Ctx, x: number, y: number, w: number, h: number) {
+/**
+ * Photo du client : en plein écran avec un vrai « Ken Burns » (zoom + panoramique
+ * dont le sens change d'une photo à l'autre), ou dans un cadre flottant.
+ */
+function scenePhoto(c: Ctx, s: Extract<Scene, { type: 'photo' }>, lt: number, sceneIndex: number) {
+  const { ctx, W, H, U } = c;
+  const img = c.assets.photos?.[s.photo] ?? null;
+  const ready = Boolean(img && img.complete && img.naturalWidth);
+  const p = clamp(lt / Math.max(1, s.duration));
+  if (s.layout === 'full') {
+    if (ready && img) {
+      const k = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+      const zoomIn = sceneIndex % 2 === 0;
+      const zoom = zoomIn ? 1.06 + 0.12 * easeInOut(p) : 1.18 - 0.12 * easeInOut(p);
+      const iw = img.naturalWidth * k * zoom;
+      const ih = img.naturalHeight * k * zoom;
+      const dir = sceneIndex % 4 < 2 ? 1 : -1;
+      const panX = (iw - W) / 2 * 0.6 * (p - 0.5) * dir;
+      const panY = (ih - H) / 2 * 0.4 * (0.5 - p);
+      ctx.drawImage(img, (W - iw) / 2 + panX, (H - ih) / 2 + panY, iw, ih);
+    } else {
+      placeholder(c, 0, 0, W, H, 'Ajoutez vos photos');
+    }
+    if (s.caption) {
+      const g = ctx.createLinearGradient(0, H * 0.55, 0, H);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,0.75)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, H * 0.55, W, H * 0.45);
+      kinetic(c, s.caption, W / 2, c.vertical ? H * 0.74 : H * 0.8, U * 0.075, W * 0.86, lt, { start: 0.2 });
+    }
+    return;
+  }
+  const capY = c.vertical ? H * 0.17 : H * 0.14;
+  if (s.caption) kinetic(c, s.caption, W / 2, capY, U * 0.075, W * 0.86, lt);
+  const ratio = ready && img ? img.naturalHeight / img.naturalWidth : 1;
+  const maxW = c.vertical ? W * 0.8 : W * 0.55;
+  const maxH = c.vertical ? H * 0.58 : H * 0.62;
+  let fw = maxW;
+  let fh = fw * ratio;
+  if (fh > maxH) { fh = maxH; fw = fh / ratio; }
+  const enter = easeOutBack(progress(lt, 0.05, 0.8));
+  ctx.save();
+  ctx.globalAlpha *= clamp(progress(lt, 0.05, 0.4));
+  ctx.translate(W / 2, (c.vertical ? H * 0.58 : H * 0.6) + Math.sin(lt * 1.4) * U * 0.008);
+  ctx.rotate((sceneIndex % 2 ? 1 : -1) * (0.035 + (1 - enter) * 0.12));
+  ctx.scale(0.85 + enter * 0.15, 0.85 + enter * 0.15);
+  // Bord blanc façon tirage photo + ombre.
+  const pad = U * 0.018;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = U * 0.06;
+  ctx.shadowOffsetY = U * 0.02;
+  ctx.fillStyle = '#ffffff';
+  roundRect(ctx, -fw / 2 - pad, -fh / 2 - pad, fw + pad * 2, fh + pad * 2, U * 0.02);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  roundRect(ctx, -fw / 2, -fh / 2, fw, fh, U * 0.012);
+  ctx.clip();
+  if (ready && img) {
+    const z = 1.02 + 0.06 * p;
+    ctx.drawImage(img, (-fw * z) / 2, (-fh * z) / 2, fw * z, fh * z);
+  } else placeholder(c, -fw / 2, -fh / 2, fw, fh, 'Ajoutez vos photos');
+  ctx.restore();
+  ctx.restore();
+}
+
+function placeholder(c: Ctx, x: number, y: number, w: number, h: number, label = 'Ajoutez votre vidéo') {
   const { ctx, U } = c;
   ctx.save();
   ctx.fillStyle = 'rgba(255,255,255,0.06)';
@@ -606,7 +680,7 @@ function placeholder(c: Ctx, x: number, y: number, w: number, h: number) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = rgba(c.theme.text, 0.8);
-  ctx.fillText('Ajoutez votre vidéo', x + w / 2, y + h / 2 - U * 0.03);
+  ctx.fillText(label, x + w / 2, y + h / 2 - U * 0.03);
   setFont(c, 800, U * 0.028);
   ctx.fillStyle = rgba(c.theme.text, 0.55);
   ctx.fillText('onglet « Médias »', x + w / 2, y + h / 2 + U * 0.03);
@@ -654,6 +728,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
     case 'quote': sceneQuote(c, scene, lt); break;
     case 'cta': sceneCta(c, scene, lt); break;
     case 'video': sceneVideo(c, scene, lt); break;
+    case 'photo': scenePhoto(c, scene, lt, index); break;
   }
   ctx.restore();
 

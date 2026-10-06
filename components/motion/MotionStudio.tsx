@@ -25,14 +25,20 @@ import {
   Sparkles,
   Trash2,
   Wand2,
-  Film
+  Film,
+  Building2,
+  Images
 } from 'lucide-react';
 
+import { BrandPanel, EMPTY_BRAND, loadBrand, saveBrand } from '@/components/motion/BrandPanel';
 import { Button } from '@/components/ui/button';
+import type { BrandProfile } from '@/lib/brand/types';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { drawFrame, locate, type MotionAssets } from '@/lib/motion/render';
 import {
   FORMAT_SIZE,
+  MAX_PHOTOS,
+  MAX_SCENES,
   SCENE_LABELS,
   TEMPLATES,
   THEME_PRESETS,
@@ -48,8 +54,9 @@ import { cn } from '@/lib/utils';
 const motionFont = Montserrat({ subsets: ['latin'], weight: ['800', '900'], display: 'swap' });
 const STORAGE_KEY = 'izicut-motion-project-v1';
 
-type Tab = 'ia' | 'medias' | 'scenes' | 'style';
+type Tab = 'ia' | 'marque' | 'medias' | 'scenes' | 'style';
 type Media = { name: string; url: string; duration: number; el: HTMLVideoElement; file: File };
+type Photo = { name: string; url: string; img: HTMLImageElement };
 type ChatMessage = { role: 'user' | 'ai'; text: string };
 
 const NEW_IDEAS = [
@@ -79,12 +86,60 @@ function pickMime(withAudio = false): { mime: string; ext: string } {
   return { mime: '', ext: 'webm' };
 }
 
+/**
+ * Planche contact numérotée (3 × 2) des photos du client, pour que l'IA
+ * « voie » ce que montre chaque photo et choisisse la bonne au bon moment.
+ */
+function photoSheets(photos: Photo[]): string[] {
+  const sheets: string[] = [];
+  for (let start = 0; start < photos.length; start += 6) {
+    const group = photos.slice(start, start + 6);
+    const cw = 300;
+    const ch = 300;
+    const canvas = document.createElement('canvas');
+    canvas.width = cw * 3;
+    canvas.height = ch * Math.ceil(group.length / 3);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    group.forEach((ph, k) => {
+      const x = (k % 3) * cw;
+      const y = Math.floor(k / 3) * ch;
+      const img = ph.img;
+      const sc = Math.max(cw / img.naturalWidth, ch / img.naturalHeight);
+      const w = img.naturalWidth * sc;
+      const h = img.naturalHeight * sc;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, cw, ch);
+      ctx.clip();
+      ctx.drawImage(img, x + (cw - w) / 2, y + (ch - h) / 2, w, h);
+      ctx.restore();
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.fillRect(x + 6, y + 6, 54, 40);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(start + k), x + 16, y + 27);
+    });
+    sheets.push(canvas.toDataURL('image/jpeg', 0.72));
+  }
+  return sheets;
+}
+
 export function MotionStudio() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const [project, setProject] = useState<MotionProject>(TEMPLATES[0].project);
   const [assets, setAssets] = useState<MotionAssets>({});
   const [media, setMedia] = useState<Media[]>([]);
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const photosRef = useRef<Photo[]>([]);
+  /** Description des photos par l'IA (vision), gardée tant que les photos ne changent pas. */
+  const photoNotesRef = useRef<{ key: string; notes: string } | null>(null);
+  const [brand, setBrand] = useState<BrandProfile>(EMPTY_BRAND);
+  const brandLoaded = useRef(false);
   const mediaRef = useRef<Media[]>([]);
   const audioRef = useRef<{ ctx: AudioContext; dest: MediaStreamAudioDestinationNode; wired: Set<HTMLVideoElement> } | null>(null);
   const [tab, setTab] = useState<Tab>('ia');
@@ -106,8 +161,9 @@ export function MotionStudio() {
   const assetsRef = useRef(assets);
   const exportingRef = useRef(false);
   projectRef.current = project;
-  assetsRef.current = { ...assets, videos: media.map((m) => m.el) };
+  assetsRef.current = { ...assets, videos: media.map((m) => m.el), photos: photos.map((ph) => ph.img) };
   mediaRef.current = media;
+  photosRef.current = photos;
   playingRef.current = playing;
 
   const duration = totalDuration(project);
@@ -118,6 +174,8 @@ export function MotionStudio() {
   useEffect(() => {
     const saved = loadSaved();
     if (saved?.scenes?.length) setProject(saved);
+    setBrand(loadBrand());
+    brandLoaded.current = true;
     supabase.auth.getUser().then(async ({ data }) => {
       setLoggedIn(Boolean(data.user));
       if (!data.user) return;
@@ -133,6 +191,10 @@ export function MotionStudio() {
       /* stockage indisponible : pas grave */
     }
   }, [project]);
+
+  useEffect(() => {
+    if (brandLoaded.current) saveBrand(brand);
+  }, [brand]);
 
   useEffect(() => {
     const family = motionFont.style.fontFamily;
@@ -226,7 +288,7 @@ export function MotionStudio() {
     });
   };
   const removeScene = (index: number) => setProject((p) => (p.scenes.length <= 1 ? p : { ...p, scenes: p.scenes.filter((_, i) => i !== index) }));
-  const addScene = (type: SceneType) => setProject((p) => (p.scenes.length >= 8 ? p : { ...p, scenes: [...p.scenes, defaultScene(type)] }));
+  const addScene = (type: SceneType) => setProject((p) => (p.scenes.length >= MAX_SCENES ? p : { ...p, scenes: [...p.scenes, defaultScene(type)] }));
 
   const loadImage = (file: File | undefined, key: keyof MotionAssets) => {
     if (!file) return;
@@ -252,7 +314,7 @@ export function MotionStudio() {
       setMedia((list) => [...list, item]);
       // Première vidéo : on l'ajoute tout de suite au projet en plein écran.
       setProject((p) => {
-        if (p.scenes.some((sc) => sc.type === 'video') || p.scenes.length >= 8) return p;
+        if (p.scenes.some((sc) => sc.type === 'video') || p.scenes.length >= MAX_SCENES) return p;
         const scene: Scene = { type: 'video', duration: Math.min(8, Math.max(2, Math.round(item.duration * 10) / 10 || 4)), media: index, from: 0, caption: 'Découvrez *notre savoir-faire*', layout: 'full' };
         return { ...p, scenes: [p.scenes[0], scene, ...p.scenes.slice(1)] };
       });
@@ -270,12 +332,54 @@ export function MotionStudio() {
     });
   };
 
+  const addPhotos = (files: FileList | null) => {
+    if (!files?.length) return;
+    const room = MAX_PHOTOS - photosRef.current.length;
+    if (room <= 0) { setNotice(`${MAX_PHOTOS} photos maximum par projet.`); return; }
+    const list = Array.from(files).filter((f) => f.type.startsWith('image/')).slice(0, room);
+    if (!list.length) { setNotice('Choisissez des images (JPG, PNG, WebP, HEIC converti).'); return; }
+    let loaded = 0;
+    const added: Photo[] = [];
+    list.forEach((file) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        added.push({ name: file.name.replace(/\.[^.]+$/, '').slice(0, 40), url, img });
+        loaded += 1;
+        if (loaded === list.length) finish();
+      };
+      img.onerror = () => { loaded += 1; if (loaded === list.length) finish(); };
+      img.src = url;
+    });
+    const finish = () => {
+      if (!added.length) { setNotice('Ces images ne peuvent pas être lues par votre navigateur.'); return; }
+      const first = photosRef.current.length;
+      setPhotos((prev) => [...prev, ...added]);
+      setProject((p) => {
+        if (p.scenes.some((sc) => sc.type === 'photo') || p.scenes.length >= MAX_SCENES) return p;
+        const scene: Scene = { type: 'photo', duration: 3, photo: first, caption: 'Fait *avec passion*', layout: 'full' };
+        return { ...p, scenes: [p.scenes[0], scene, ...p.scenes.slice(1)] };
+      });
+      setNotice(`${added.length} photo${added.length > 1 ? 's' : ''} ajoutée${added.length > 1 ? 's' : ''} ✓ Cliquez sur « Créer une pub avec mes médias » : l’IA regarde vos photos et construit la pub autour.`);
+    };
+  };
+  const removePhoto = (index: number) => {
+    setPhotos((list) => list.filter((_, i) => i !== index));
+    setProject((p) => {
+      const scenes = p.scenes
+        .filter((sc) => !(sc.type === 'photo' && sc.photo === index))
+        .map((sc) => (sc.type === 'photo' && sc.photo > index ? { ...sc, photo: sc.photo - 1 } : sc));
+      return { ...p, scenes: scenes.length ? scenes : [defaultScene('title')] };
+    });
+  };
+
   const askAi = async (text: string) => {
     const value = text.trim();
     if (!value || aiBusy) return;
     if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour utiliser l’IA du Studio.'); return; }
     setAiBusy(true);
     setPrompt('');
+    const photoKey = photos.map((ph) => ph.url).join('|');
     setMessages((m) => [...m, { role: 'user', text: value }]);
     try {
       const res = await fetch('/api/motion/generate', {
@@ -284,10 +388,14 @@ export function MotionStudio() {
         body: JSON.stringify({
           prompt: value,
           project: messages.length || project !== TEMPLATES[0].project ? project : undefined,
-          media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 }))
+          media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 })),
+          photos: photos.map((ph, i) => ({ index: i, name: ph.name })),
+          ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
+          brand: brand.company || brand.notes.trim() || brand.brief ? brand : undefined
         })
       });
       const json = await res.json().catch(() => ({}));
+      if (typeof json.photoNotes === 'string' && json.photoNotes) photoNotesRef.current = { key: photoKey, notes: json.photoNotes };
       if (!res.ok || !json.project) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
       replaceProject(json.project as MotionProject);
       setMessages((m) => [...m, { role: 'ai', text: `C’est fait : ${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s. Demandez-moi une autre modification si besoin.` }]);
@@ -453,13 +561,13 @@ export function MotionStudio() {
 
         {/* ---------- Panneau d'édition ---------- */}
         <div className="flex min-h-[420px] flex-col rounded-2xl border border-white/10 bg-white/[0.03]">
-          <div className="grid grid-cols-4 gap-1 border-b border-white/10 p-1.5">
-            {([['ia', 'IA', <Wand2 key="i" className="h-4 w-4" />], ['medias', 'Médias', <Film key="m" className="h-4 w-4" />], ['scenes', 'Scènes', <Plus key="s" className="h-4 w-4" />], ['style', 'Style', <Palette key="p" className="h-4 w-4" />]] as [Tab, string, ReactNode][]).map(([id, label, icon]) => (
+          <div className="grid grid-cols-5 gap-1 border-b border-white/10 p-1.5">
+            {([['ia', 'IA', <Wand2 key="i" className="h-4 w-4" />], ['marque', 'Marque', <Building2 key="b" className="h-4 w-4" />], ['medias', 'Médias', <Film key="m" className="h-4 w-4" />], ['scenes', 'Scènes', <Plus key="s" className="h-4 w-4" />], ['style', 'Style', <Palette key="p" className="h-4 w-4" />]] as [Tab, string, ReactNode][]).map(([id, label, icon]) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
-                className={cn('flex cursor-pointer items-center justify-center gap-1 rounded-xl py-2 text-xs font-semibold transition sm:text-sm', tab === id ? 'bg-neon text-ink-950' : 'text-fg-muted hover:bg-white/[0.05]')}
+                className={cn('flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[11px] font-semibold transition sm:flex-row sm:gap-1 sm:text-xs', tab === id ? 'bg-neon text-ink-950' : 'text-fg-muted hover:bg-white/[0.05]')}
               >
                 {icon}
                 {label}
@@ -522,12 +630,46 @@ export function MotionStudio() {
               </div>
             ) : null}
 
+            {tab === 'marque' ? (
+              <BrandPanel
+                profile={brand}
+                onChange={setBrand}
+                loggedIn={loggedIn}
+                onApplyPalette={(pal) => setProject((p) => {
+                  const light = parseInt(pal.background.slice(1, 3), 16) * 0.299 + parseInt(pal.background.slice(3, 5), 16) * 0.587 + parseInt(pal.background.slice(5, 7), 16) * 0.114 > 160;
+                  return { ...p, theme: { ...p.theme, primary: pal.primary, accent: pal.accent, background: pal.background, text: light ? '#101225' : '#ffffff' } };
+                })}
+                onCreateAd={(idea) => { setTab('ia'); void askAi(`Crée cette pub pour ma marque : ${idea}`); }}
+              />
+            ) : null}
+
             {tab === 'medias' ? (
               <div className="space-y-4">
                 <div className="rounded-xl border border-neon/30 bg-neon/[0.05] p-3 text-sm text-fg">
                   <p className="font-semibold">Partez de vos propres images</p>
-                  <p className="mt-1 text-xs text-fg-muted">Ajoutez une vidéo de votre produit, de votre boutique, de votre équipe… L’IA construit la pub animée autour pour valoriser votre activité.</p>
+                  <p className="mt-1 text-xs text-fg-muted">Photos et vidéos de vos produits, de votre boutique, de votre équipe, de vos événements… L’IA les regarde et construit la pub animée autour.</p>
                 </div>
+                <label className="flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed border-neon/40 p-5 text-center text-sm text-fg hover:bg-neon/[0.04]">
+                  <Images className="h-6 w-6 text-neon" />
+                  <span className="font-semibold">Ajouter des photos</span>
+                  <span className="text-[11px] text-fg-muted">JPG, PNG, WebP · plusieurs à la fois · {MAX_PHOTOS} maximum</span>
+                  <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+                </label>
+                {photos.length ? (
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {photos.map((ph, i) => (
+                      <div key={ph.url} className="group relative aspect-square overflow-hidden rounded-lg border border-white/10">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={ph.url} alt={ph.name} className="h-full w-full object-cover" />
+                        <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px] font-bold text-white">{i + 1}</span>
+                        <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/70 opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100">
+                          <button type="button" title="Ajouter en scène" onClick={() => setProject((p) => (p.scenes.length >= MAX_SCENES ? p : { ...p, scenes: [...p.scenes, { type: 'photo', duration: 3, photo: i, layout: 'full' }] }))} className="flex-1 cursor-pointer py-0.5 text-[10px] text-white hover:text-neon">+ Scène</button>
+                          <button type="button" title="Retirer" aria-label="Retirer la photo" onClick={() => removePhoto(i)} className="cursor-pointer px-1.5 py-0.5 text-[10px] text-red-300">×</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <label className="flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed border-neon/40 p-5 text-center text-sm text-fg hover:bg-neon/[0.04]">
                   <Film className="h-6 w-6 text-neon" />
                   <span className="font-semibold">Ajouter une vidéo</span>
@@ -541,8 +683,8 @@ export function MotionStudio() {
                       <span className="shrink-0 font-code text-xs text-fg-muted">{m.duration.toFixed(1)} s</span>
                     </div>
                     <div className="grid grid-cols-3 gap-1.5">
-                      <button type="button" onClick={() => setProject((p) => (p.scenes.length >= 8 ? p : { ...p, scenes: [...p.scenes, { type: 'video', duration: Math.min(8, Math.max(2, m.duration)), media: i, from: 0, layout: 'full' }] }))} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Plein écran</button>
-                      <button type="button" onClick={() => setProject((p) => (p.scenes.length >= 8 ? p : { ...p, scenes: [...p.scenes, { type: 'video', duration: Math.min(6, Math.max(2, m.duration)), media: i, from: 0, layout: 'frame', caption: 'Votre *produit*' }] }))} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Dans un cadre</button>
+                      <button type="button" onClick={() => setProject((p) => (p.scenes.length >= MAX_SCENES ? p : { ...p, scenes: [...p.scenes, { type: 'video', duration: Math.min(8, Math.max(2, m.duration)), media: i, from: 0, layout: 'full' }] }))} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Plein écran</button>
+                      <button type="button" onClick={() => setProject((p) => (p.scenes.length >= MAX_SCENES ? p : { ...p, scenes: [...p.scenes, { type: 'video', duration: Math.min(6, Math.max(2, m.duration)), media: i, from: 0, layout: 'frame', caption: 'Votre *produit*' }] }))} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Dans un cadre</button>
                       <button type="button" onClick={() => removeVideo(i)} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-red-300 hover:border-red-400/40">Retirer</button>
                     </div>
                     <button
@@ -554,14 +696,14 @@ export function MotionStudio() {
                     </button>
                   </div>
                 ))}
-                {media.length ? (
-                  <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => { setTab('ia'); void askAi('Crée une pub professionnelle à partir de ma vidéo : accroche forte, mon contenu en plein écran avec des textes animés, les points forts, et un appel à l’action'); }}>
-                    <Sparkles className="h-4 w-4" /> Créer une pub avec ma vidéo (IA)
+                {media.length || photos.length ? (
+                  <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => { setTab('ia'); void askAi('Crée une pub professionnelle à partir de mes photos et vidéos : accroche forte, mes images en vedette avec des textes animés, mes points forts, et un appel à l’action'); }}>
+                    <Sparkles className="h-4 w-4" /> Créer une pub avec mes médias (IA)
                   </Button>
                 ) : null}
                 <div className="grid grid-cols-2 gap-2">
                   <Upload label="Logo" hint="scène finale" loaded={Boolean(assets.logo)} onFile={(f) => loadImage(f, 'logo')} onClear={() => setAssets((a) => ({ ...a, logo: null }))} />
-                  <Upload label="Photo / capture" hint="scène produit" loaded={Boolean(assets.screenshot)} onFile={(f) => loadImage(f, 'screenshot')} onClear={() => setAssets((a) => ({ ...a, screenshot: null }))} />
+                  <Upload label="Capture d’écran" hint="scène « capture produit »" loaded={Boolean(assets.screenshot)} onFile={(f) => loadImage(f, 'screenshot')} onClear={() => setAssets((a) => ({ ...a, screenshot: null }))} />
                 </div>
                 <p className="text-[11px] text-fg-subtle">Vos fichiers restent sur votre appareil : ils ne sont pas envoyés sur nos serveurs. Gardez cette page ouverte pendant votre création.</p>
               </div>
@@ -582,7 +724,7 @@ export function MotionStudio() {
                         <IconBtn label="Supprimer" onClick={() => removeScene(i)}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
                       </div>
                     </div>
-                    <SceneFields scene={scene} media={media} onChange={(patch) => updateScene(i, patch)} />
+                    <SceneFields scene={scene} media={media} photos={photos} onChange={(patch) => updateScene(i, patch)} />
                     <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
                       Durée
                       <input type="range" min={1.5} max={scene.type === 'video' ? 15 : 8} step={0.5} value={scene.duration} onChange={(e) => updateScene(i, { duration: Number(e.target.value) })} className="flex-1 accent-[var(--color-neon)]" />
@@ -590,7 +732,7 @@ export function MotionStudio() {
                     </label>
                   </div>
                 ))}
-                {project.scenes.length < 8 ? (
+                {project.scenes.length < MAX_SCENES ? (
                   <div>
                     <p className="mb-1.5 text-xs font-semibold text-fg-muted">Ajouter une scène</p>
                     <div className="grid grid-cols-2 gap-1.5">
@@ -658,7 +800,7 @@ export function MotionStudio() {
               Offre Free : petite mention « Réalisé avec IziCut ». <Link href="/#pricing" className="text-neon underline">Passer en Pro</Link> pour la retirer.
             </p>
           ) : null}
-          <button type="button" onClick={() => { replaceProject(TEMPLATES[0].project); setMessages([]); setAssets({}); }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
+          <button type="button" onClick={() => { replaceProject(TEMPLATES[0].project); setMessages([]); setAssets({}); setPhotos([]); }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
             <RotateCcw className="h-3 w-3" /> Repartir de zéro
           </button>
         </div>
@@ -708,8 +850,29 @@ function Upload({ label, hint, loaded, onFile, onClear }: { label: string; hint:
 
 const inputCls = 'w-full rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-sm text-fg outline-none focus:border-neon/50';
 
-function SceneFields({ scene, media, onChange }: { scene: Scene; media: Media[]; onChange: (patch: Partial<Scene>) => void }) {
+function SceneFields({ scene, media, photos, onChange }: { scene: Scene; media: Media[]; photos: Photo[]; onChange: (patch: Partial<Scene>) => void }) {
   switch (scene.type) {
+    case 'photo':
+      return (
+        <div className="space-y-1.5">
+          {photos.length === 0 ? <p className="text-xs text-amber-300">Ajoutez d’abord vos photos dans l’onglet « Médias ».</p> : (
+            <div className="flex flex-wrap gap-1">
+              {photos.map((ph, k) => (
+                <button key={ph.url} type="button" onClick={() => onChange({ photo: k })} className={cn('h-10 w-10 cursor-pointer overflow-hidden rounded-md border-2', scene.photo === k ? 'border-neon' : 'border-transparent opacity-70')}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={ph.url} alt="" className="h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+          <input className={inputCls} value={scene.caption ?? ''} maxLength={80} onChange={(e) => onChange({ caption: e.target.value || undefined })} placeholder="Texte sur la photo (facultatif)" />
+          <div className="flex gap-1.5">
+            {(['full', 'frame'] as const).map((lay) => (
+              <button key={lay} type="button" onClick={() => onChange({ layout: lay })} className={cn('flex-1 cursor-pointer rounded-lg border px-2 py-1 text-xs', scene.layout === lay ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>{lay === 'full' ? 'Plein écran' : 'Tirage photo'}</button>
+            ))}
+          </div>
+        </div>
+      );
     case 'title':
       return (
         <div className="space-y-1.5">
