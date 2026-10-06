@@ -11,6 +11,8 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
  * et palette, à partir du registre officiel + ce que le client en dit.
  */
 
+export const maxDuration = 60;
+
 const BodySchema = z.object({ company: CompanySchema.nullable(), notes: z.string().max(2000) });
 
 export async function POST(request: Request) {
@@ -30,8 +32,22 @@ export async function POST(request: Request) {
       maxTokens: 1200,
       temperature: 0.6
     });
-    const brief = BrandBriefSchema.safeParse(raw);
-    if (!brief.success) return NextResponse.json({ error: "L'IA n'a pas réussi, réessayez." }, { status: 502 });
+    // L'IA déborde parfois (texte trop long, une idée de trop) : on rabote
+    // plutôt que d'échouer.
+    const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    const str = (v: unknown, n: number) => (typeof v === 'string' ? v.trim().slice(0, n) : Array.isArray(v) ? v.join(', ').slice(0, n) : '');
+    const list = (v: unknown, count: number, n: number) => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []).map((x) => str(x, n)).filter(Boolean).slice(0, count);
+    const pal = o.palette && typeof o.palette === 'object' ? (o.palette as Record<string, unknown>) : null;
+    const brief = BrandBriefSchema.safeParse({
+      pitch: str(o.pitch, 400),
+      audience: str(o.audience, 300),
+      tone: str(o.tone, 120),
+      strengths: list(o.strengths, 6, 120),
+      slogans: list(o.slogans, 5, 90),
+      adIdeas: list(o.adIdeas, 5, 160),
+      palette: pal ? { primary: str(pal.primary, 7), accent: str(pal.accent, 7), background: str(pal.background, 7) } : undefined
+    });
+    if (!brief.success || !brief.data.pitch) return NextResponse.json({ error: "L'IA n'a pas réussi, réessayez." }, { status: 502 });
     const hex = (v: string, d: string) => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : d);
     const p = brief.data.palette;
     return NextResponse.json({
