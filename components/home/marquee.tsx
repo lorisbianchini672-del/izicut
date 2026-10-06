@@ -1,6 +1,6 @@
 import { Sparkle } from 'lucide-react';
 
-const ITEMS = ['TikTok', 'Reels', 'Shorts', '1080×1920', 'Sous-titres mot à mot', 'Silences coupés', 'Score viral', 'Fond flou', 'Titre d’accroche', 'Zooms dynamiques'];
+const ITEMS = ['Boulangeries', 'Associations', 'Restaurants', 'Salons de coiffure', 'Clubs de sport', 'Artisans', 'Boutiques', 'Agences immobilières', 'Coachs', 'Mairies & collectifs', 'Start-up', 'Instituts de beauté'];
 
 /** Bandeau défilant (CSS pur, en pause au survol, figé si mouvement réduit). */
 export function Marquee() {

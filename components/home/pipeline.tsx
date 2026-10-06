@@ -2,15 +2,15 @@
 
 import { useRef } from 'react';
 import { motion, useReducedMotion, useScroll, useSpring, useTransform, type MotionValue } from 'framer-motion';
-import { AudioLines, Clapperboard, Link2, Sparkles } from 'lucide-react';
+import { Building2, ImagePlus, Sparkles, Wand2 } from 'lucide-react';
 
 import { EASE } from './motion';
 
 const STEPS = [
-  { icon: Link2, title: 'Vous collez un lien', text: 'YouTube, Twitch ou un fichier. Rien à installer.' },
-  { icon: AudioLines, title: 'On transcrit chaque mot', text: 'Horodatage au mot près, même sur 2 h de podcast.' },
-  { icon: Sparkles, title: "L'IA choisit les moments", text: 'Accroche forte, idée complète, chute nette. Notés sur 100.' },
-  { icon: Clapperboard, title: 'Vos clips sont rendus', text: '9:16, sous-titres animés, prêts à publier.' },
+  { icon: Building2, title: 'Vous trouvez votre structure', text: 'Entreprise ou association : l’IA connaît votre activité grâce au registre officiel.' },
+  { icon: ImagePlus, title: 'Vous ajoutez vos images', text: 'Photos, vidéos, logo. Vos vraies images font la pub.' },
+  { icon: Sparkles, title: 'L’IA monte la pub', text: 'Accroche, textes animés, rythme, appel à l’action. En quelques secondes.' },
+  { icon: Wand2, title: 'Vous modifiez à volonté', text: 'Dites-lui « plus rapide », « en bleu »… ou changez tout à la main.' },
 ];
 
 /** Bande « timeline » : la ligne néon se remplit avec le scroll, chaque étape s'allume à son tour. */

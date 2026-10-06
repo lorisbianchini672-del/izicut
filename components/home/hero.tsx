@@ -10,17 +10,11 @@ import {
   useSpring,
   useTransform,
 } from 'framer-motion';
-import { AudioWaveform, Gauge, Type } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowRight, Scissors } from 'lucide-react';
 
-import { LinkForm } from './link-form';
-import { EASE, SplitWords, Tilt } from './motion';
-import { ProductPreview } from './product-preview';
-
-const CHIPS = [
-  { icon: Gauge, label: 'Score viral 91', className: '-left-6 top-10 sm:-left-10', delay: 1.1, float: 0 },
-  { icon: Type, label: 'Mot à mot', className: '-right-4 top-1/3 sm:-right-8', delay: 1.25, float: 1.2 },
-  { icon: AudioWaveform, label: 'Silences coupés', className: 'left-10 -bottom-5', delay: 1.4, float: 2.4 },
-];
+import { LiveMotionDemo } from './live-motion-demo';
+import { EASE, Magnetic, SplitWords } from './motion';
 
 export function Hero() {
   const reduce = useReducedMotion();
@@ -66,29 +60,39 @@ export function Hero() {
         <motion.div style={{ y: textY, opacity: textOpacity }} className="flex flex-col items-start">
           <motion.p {...rise(0)} className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-white/[0.03] px-3 py-1 font-code text-[11px] uppercase tracking-[0.18em] text-fg-muted">
             <span className="h-1.5 w-1.5 animate-pulse-rec rounded-full bg-rec" aria-hidden />
-            Le clipping IA pensé pour le français
+            Le 1er studio de pub en motion design · 100 % français
           </motion.p>
 
           <h1 className="mt-6 text-balance text-[2.6rem] font-semibold leading-[1.02] tracking-[-0.035em] text-fg sm:text-6xl lg:text-[4.4rem]">
-            <SplitWords text="Une vidéo longue." delay={0.1} />
+            <SplitWords text="Votre pub en motion design." delay={0.1} accentFrom={2} />
             <br />
-            <SplitWords text="Des clips qui retiennent." delay={0.35} accentFrom={3} />
+            <SplitWords text="Sans agence." delay={0.4} />
           </h1>
-
-          <motion.p {...rise(0.65)} className="mt-6 max-w-lg text-pretty text-lg leading-relaxed text-fg-muted">
-            Collez un lien ou importez une vidéo : IziCut transcrit chaque mot (accents et
-            ponctuation compris), repère les passages qui accrochent et livre des clips 9:16
-            sous-titrés, avec la légende et les hashtags prêts à publier.
+          <motion.p {...rise(0.55)} className="mt-3 text-xl font-medium tracking-tight text-fg-muted sm:text-2xl">
+            Sans community manager. Avec l’IA.
           </motion.p>
 
-          <motion.div {...rise(0.8)} className="mt-9 w-full">
-            <LinkForm />
+          <motion.p {...rise(0.65)} className="mt-6 max-w-lg text-pretty text-lg leading-relaxed text-fg-muted">
+            Commerçants, artisans, PME, associations : créez vos pubs, posts et vidéos animées
+            avec vos photos, vos vidéos et votre logo. L’IA connaît votre activité et monte tout.
+            Ensuite, vous modifiez à volonté : textes, couleurs, rythme, effets.
+          </motion.p>
+
+          <motion.div {...rise(0.8)} className="mt-9 flex w-full flex-col gap-3 sm:flex-row sm:items-center">
+            <Magnetic>
+              <Link href="/studio" className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-neon px-6 py-3.5 text-base font-bold text-ink-950 shadow-[0_18px_50px_-15px_rgb(200_255_61/0.7)] transition hover:brightness-110 sm:w-auto">
+                Créer ma pub gratuitement <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Magnetic>
+            <Link href="/upload" className="inline-flex items-center justify-center gap-2 rounded-2xl border border-line-strong px-5 py-3.5 text-sm font-medium text-fg-muted transition hover:border-neon/50 hover:text-fg">
+              <Scissors className="h-4 w-4" /> Découper une vidéo longue en clips
+            </Link>
           </motion.div>
 
           <motion.dl {...rise(0.95)} className="mt-10 grid w-full max-w-lg grid-cols-3 gap-6 border-t border-line pt-6">
             {[
-              ['100 % FR', 'sous-titres, légendes, support'],
-              ['Prêt à poster', 'légende + hashtags par IA'],
+              ['Toute la France', 'entreprises et associations'],
+              ['100 % modifiable', 'textes, couleurs, rythme'],
               ['7 €/mois', 'offre Pro, sans engagement'],
             ].map(([k, v]) => (
               <div key={k}>
@@ -106,27 +110,7 @@ export function Hero() {
           transition={{ duration: 1.3, delay: 0.3, ease: EASE }}
           className="relative [perspective:1400px]"
         >
-          <Tilt className="rounded-2xl" max={5}>
-            <ProductPreview />
-          </Tilt>
-
-          {CHIPS.map(({ icon: Icon, label, className, delay, float }) => (
-            <motion.span
-              key={label}
-              aria-hidden
-              className={`absolute z-10 hidden items-center gap-2 rounded-full border border-line-strong bg-ink-900/90 px-3 py-1.5 text-xs font-medium text-fg shadow-[0_20px_40px_-12px_rgb(0_0_0/0.8)] backdrop-blur md:inline-flex ${className}`}
-              initial={reduce ? false : { opacity: 0, scale: 0.6, y: 10 }}
-              animate={reduce ? undefined : { opacity: 1, scale: 1, y: [0, -8, 0] }}
-              transition={{
-                opacity: { duration: 0.6, delay, ease: EASE },
-                scale: { duration: 0.6, delay, ease: EASE },
-                y: { duration: 5, delay: delay + float, repeat: Infinity, ease: 'easeInOut' },
-              }}
-            >
-              <Icon className="h-3.5 w-3.5 text-neon" />
-              {label}
-            </motion.span>
-          ))}
+          <LiveMotionDemo />
         </motion.div>
       </div>
     </section>

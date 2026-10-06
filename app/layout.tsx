@@ -12,11 +12,11 @@ const siteUrl = getSiteUrl();
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: 'IziCut — transformez vos vidéos longues en clips viraux',
+    default: 'IziCut — vos pubs en motion design, créées avec l’IA',
     template: '%s · IziCut'
   },
   description:
-    "Déposez une vidéo longue : l'IA repère les meilleurs moments et génère des clips 9:16 sous-titrés, prêts pour TikTok, Reels et Shorts.",
+    "Entreprises et associations : créez vos pubs, posts et vidéos animées en motion design avec vos photos, vidéos et logo. L'IA monte tout, vous modifiez à volonté. Et vos vidéos longues deviennent des clips sous-titrés.",
   applicationName: 'IziCut',
   robots: { index: true, follow: true },
   openGraph: {
@@ -24,14 +24,14 @@ export const metadata: Metadata = {
     locale: 'fr_FR',
     url: siteUrl,
     siteName: 'IziCut',
-    title: 'IziCut — vos vidéos longues en clips viraux',
+    title: 'IziCut — vos pubs en motion design, sans agence',
     description:
-      'Transcription mot-à-mot, détection des moments forts par IA, rendu 9:16 sous-titré.'
+      'Pubs, posts et vidéos animées pour toutes les entreprises et associations de France, avec vos propres images.'
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'IziCut — vos vidéos longues en clips viraux',
-    description: 'De la vidéo longue au clip viral, sans montage.'
+    title: 'IziCut — vos pubs en motion design, sans agence',
+    description: 'Pubs et vidéos animées avec vos images, modifiables à volonté.'
   }
 };
 
