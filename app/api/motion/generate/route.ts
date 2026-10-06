@@ -77,7 +77,9 @@ Méthode :
    - 3-10 s : mise en scène du produit / service avec un motion design propre à la marque ;
    - 10-15 s : chute, signature de marque, slogan et appel à l'action.
 3. Sound design : style musical précis (genre, bpm, humeur) et effets sonores spécifiques à la marque.
-4. Traduis ensuite ce concept en projet animé avec les outils disponibles (scènes, couleurs, texture, transitions, musique, sons). La somme des durées = 14 à 16 s par défaut.
+4. Traduis ensuite ce concept en projet animé avec les outils disponibles (scènes, couleurs, texture, transitions, musique, sons). La somme des durées = 14 à 16 s par défaut, en 5 à 7 scènes (rythme de pub : aucune scène de plus de 4 s, sauf une scène "video"), chacune avec un "sfx" adapté.
+5. TOUT est rédigé en français (concept, descriptions, signatures, textes à l'écran). Les noms de sons dans "sfx" restent ceux de la liste.
+6. N'invente JAMAIS de réduction, promotion, prix, chiffre, avis client ou récompense que le client n'a pas donnés : sans information, l'appel à l'action invite simplement à venir, découvrir, réserver, suivre, adhérer…
 
 Réponds UNIQUEMENT par un objet JSON :
 {
