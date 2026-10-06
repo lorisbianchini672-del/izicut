@@ -425,7 +425,8 @@ export function MotionStudio() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: value,
-          project: !opts.fresh && (messages.length || project !== TEMPLATES[0].project) ? project : undefined,
+          // Premier message = nouvelle pub (concept complet) ; ensuite = modifications.
+          project: !opts.fresh && messages.length ? project : undefined,
           media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 })),
           photos: photos.map((ph, i) => ({ index: i, name: ph.name })),
           ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
