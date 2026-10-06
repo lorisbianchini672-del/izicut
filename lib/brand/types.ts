@@ -7,15 +7,15 @@ import { z } from 'zod';
 export const CompanySchema = z.object({
   siren: z.string().max(12),
   name: z.string().max(160),
-  activityCode: z.string().max(10).optional(),
-  activityLabel: z.string().max(160).optional(),
-  city: z.string().max(80).optional(),
-  postalCode: z.string().max(10).optional(),
-  address: z.string().max(200).optional(),
-  createdAt: z.string().max(12).optional(),
-  employees: z.string().max(40).optional(),
-  isAssociation: z.boolean().optional(),
-  category: z.string().max(20).optional()
+  activityCode: z.string().max(10).nullish(),
+  activityLabel: z.string().max(160).nullish(),
+  city: z.string().max(80).nullish(),
+  postalCode: z.string().max(10).nullish(),
+  address: z.string().max(200).nullish(),
+  createdAt: z.string().max(12).nullish(),
+  employees: z.string().max(40).nullish(),
+  isAssociation: z.boolean().nullish(),
+  category: z.string().max(20).nullish()
 });
 export type Company = z.infer<typeof CompanySchema>;
 

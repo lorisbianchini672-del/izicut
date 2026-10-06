@@ -40,18 +40,19 @@ export async function GET(request: Request) {
     });
     if (!res.ok) return NextResponse.json({ error: 'Registre des entreprises momentanément indisponible.' }, { status: 502 });
     const data = (await res.json()) as { results?: Raw[] };
+    const u = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
     const results: Company[] = (data.results ?? []).map((r) => ({
-      siren: String(r.siren ?? ''),
+      siren: String(r.siren ?? '').slice(0, 12),
       name: String(r.nom_complet ?? r.nom_raison_sociale ?? '').slice(0, 160),
-      activityCode: r.activite_principale,
-      activityLabel: (r.libelle_activite_principale ?? r.siege?.libelle_activite_principale ?? nafLabel(r.activite_principale))?.slice(0, 160),
-      city: r.siege?.libelle_commune,
-      postalCode: r.siege?.code_postal,
-      address: r.siege?.adresse?.slice(0, 200),
-      createdAt: r.date_creation,
-      employees: r.tranche_effectif_salarie ? EFFECTIFS[r.tranche_effectif_salarie] ?? r.tranche_effectif_salarie : undefined,
+      activityCode: u(r.activite_principale, 10),
+      activityLabel: u(r.libelle_activite_principale ?? r.siege?.libelle_activite_principale ?? nafLabel(r.activite_principale), 160),
+      city: u(r.siege?.libelle_commune, 80),
+      postalCode: u(r.siege?.code_postal, 10),
+      address: u(r.siege?.adresse, 200),
+      createdAt: u(r.date_creation, 12),
+      employees: r.tranche_effectif_salarie ? (EFFECTIFS[r.tranche_effectif_salarie] ?? r.tranche_effectif_salarie).slice(0, 40) : undefined,
       isAssociation: Boolean(r.complements?.est_association),
-      category: r.categorie_entreprise
+      category: u(r.categorie_entreprise, 20)
     }));
     return NextResponse.json({ results });
   } catch {
