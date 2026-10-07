@@ -133,7 +133,7 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="min-h-screen bg-background text-foreground pt-20 pb-16 px-4 relative overflow-hidden">
+    <div className="min-h-screen text-foreground pt-20 pb-16 px-4 relative overflow-hidden">
       {/* Orbes lumineux d'ambiance */}
       <div aria-hidden className="izi-grid pointer-events-none absolute inset-0 opacity-40 [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
 
@@ -143,27 +143,30 @@ export default function DashboardPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-border/40">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">Mes projets</h1>
+              <h1 className="izi-title-gradient font-display text-3xl font-semibold tracking-tight sm:text-4xl">Mes créations</h1>
               <span className="px-3 py-0.5 rounded-full text-xs font-bold bg-primary/20 text-primary border border-primary/30">
                 {isSubscribed ? 'Abonnement actif' : 'Offre Free'}
               </span>
             </div>
             <p className="text-sm text-muted-foreground">
-              Collez un lien ou importez une vidéo : vos clips 9:16 sous-titrés arrivent ici.
+              Vos pubs en motion design, vos vidéos retouchées par l’IA et vos clips sous-titrés, au même endroit.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="h-11 rounded-xl border-neon/40 px-5 font-semibold text-neon" asChild>
+            <Button variant="outline" className="h-11 rounded-full border-neon/40 px-5 font-semibold text-neon" asChild>
               <Link href="/montage/nouveau">Modifier une vidéo (IA)</Link>
             </Button>
-            <Button variant="outline" className="h-11 rounded-xl border-neon/40 px-5 font-semibold text-neon" asChild>
-              <Link href="/studio">Studio Motion</Link>
-            </Button>
-            <Button variant="gradient" className="glow-primary h-11 px-6 font-bold" asChild>
+            <Button variant="outline" className="h-11 rounded-full border-neon/40 px-5 font-semibold text-neon" asChild>
               <Link href="/upload">
                 <Plus className="w-4 h-4 mr-2" />
-                Nouveau projet vidéo
+                Clips depuis une vidéo longue
+              </Link>
+            </Button>
+            <Button variant="gradient" className="h-11 rounded-full px-6 font-bold" asChild>
+              <Link href="/studio">
+                <Plus className="w-4 h-4 mr-2" />
+                Créer une pub
               </Link>
             </Button>
           </div>

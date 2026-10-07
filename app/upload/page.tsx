@@ -74,7 +74,7 @@ export default function UploadPage() {
   const isUrlTab = tab !== 'file';
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden flex flex-col items-center justify-center px-4 pt-20 pb-12">
+    <div className="min-h-screen relative overflow-hidden flex flex-col items-center justify-center px-4 pt-20 pb-12">
       <div className="bg-orb bg-orb-purple w-[500px] h-[500px] top-0 left-0 opacity-60" />
       <div className="bg-orb bg-orb-pink w-[400px] h-[400px] bottom-0 right-0 opacity-50" />
 
@@ -89,7 +89,7 @@ export default function UploadPage() {
             <Zap className="w-4 h-4" />
             Vos clips prêts en quelques minutes
           </div>
-          <h1 className="font-display mb-3 text-4xl font-semibold tracking-tight text-fg sm:text-5xl">
+          <h1 className="izi-title-gradient font-display mb-3 text-4xl font-semibold tracking-tight sm:text-5xl">
             Importez votre <span className="izi-neon-text">vidéo</span>
           </h1>
           <p className="text-muted-foreground">

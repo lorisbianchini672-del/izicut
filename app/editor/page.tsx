@@ -42,7 +42,7 @@ const MOCK_TRANSCRIPT: RelativeWord[] = [
 
 export default function EditorPage() {
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
+    <div className="min-h-screen relative overflow-hidden">
       {/* Orbes d'ambiance */}
       <div className="bg-orb bg-orb-purple w-[400px] h-[400px] top-0 -left-32 opacity-30 pointer-events-none" />
 

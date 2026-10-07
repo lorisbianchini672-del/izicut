@@ -1,3 +1,4 @@
+import { AllInOne } from '@/components/home/all-in-one';
 import { CaptionStudio } from '@/components/home/caption-studio';
 import { Faq } from '@/components/home/faq';
 import { FeatureBento } from '@/components/home/feature-bento';
@@ -15,6 +16,7 @@ export default function HomePage() {
       <ScrollProgress />
       <Hero />
       <Pipeline />
+      <AllInOne />
       <Marquee />
       <FeatureBento />
       <CaptionStudio />

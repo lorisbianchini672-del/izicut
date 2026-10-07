@@ -485,7 +485,7 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
     return (
       <div className="mx-auto max-w-xl px-4 pb-16 pt-28">
         <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neon"><Sparkles className="h-3.5 w-3.5" /> Montage IA</p>
-        <h1 className="mb-2 text-3xl font-semibold text-fg">Modifier ma vidéo</h1>
+        <h1 className="izi-title-gradient mb-2 text-3xl font-semibold sm:text-4xl">Modifier ma vidéo</h1>
         <p className="mb-6 text-sm text-fg-muted">Ralentis, accélérés, coupes, effets calés sur la musique, glitch, filtres, textes… À la main ou en dictant à l’IA. Votre vidéo reste sur votre appareil.</p>
         <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-neon/40 bg-neon/[0.03] p-10 text-center hover:bg-neon/[0.06]">
           <Film className="h-8 w-8 text-neon" />

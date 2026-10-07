@@ -462,7 +462,7 @@ export function VideoEditor({ clipId }: VideoEditorProps) {
   // ---------- États de chargement ----------
   if (loading || loadError || !clip || !settings) {
     return (
-      <div className="min-h-screen bg-background px-4 pb-16 pt-24 text-foreground">
+      <div className="min-h-screen px-4 pb-16 pt-24 text-foreground">
         <div className="container mx-auto max-w-3xl space-y-4">
           <Button variant="ghost" size="sm" className="rounded-xl" asChild>
             <Link href="/dashboard">

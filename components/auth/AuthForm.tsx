@@ -224,7 +224,7 @@ export function AuthForm({ nextPath = '/dashboard', initialError = null, initial
             <Logo href="/" size="md" />
           </div>
 
-          <h1 className="text-balance text-3xl font-semibold tracking-[-0.03em] text-fg sm:text-4xl">
+          <h1 className="izi-title-gradient text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
             <SplitWords
               key={mode}
               text={mode === 'signup' ? 'Créez votre studio.' : mode === 'magic' ? 'Connexion sans mot de passe.' : 'Bon retour.'}

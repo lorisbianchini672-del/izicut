@@ -75,7 +75,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   // qui suppose un clip sélectionné (rendu, score, mots horodatés).
   if (loading || loadError || !selectedClip) {
     return (
-      <div className="min-h-screen bg-background text-foreground px-4 pt-24 pb-16">
+      <div className="min-h-screen text-foreground px-4 pt-24 pb-16">
         <div className="container mx-auto max-w-3xl space-y-4">
           <Button variant="ghost" size="sm" className="rounded-xl" asChild>
             <Link href="/dashboard">
@@ -162,7 +162,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const readyCount = clips.filter((c) => c.status === 'ready' && c.renderedStoragePath).length;
 
   return (
-    <div className="min-h-screen bg-background text-foreground px-4 pt-24 pb-16">
+    <div className="min-h-screen text-foreground px-4 pt-24 pb-16">
       <div className="container mx-auto max-w-6xl space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0 space-y-2">

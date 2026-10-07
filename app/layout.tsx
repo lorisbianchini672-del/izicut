@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
+import { AmbientBackground } from '@/components/ambient/AmbientBackground';
 import { SiteNav } from '@/components/home/site-nav';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr" className={`dark ${geist.variable} ${geistMono.variable} ${jakarta.variable}`}>
       <body className="min-h-screen bg-background text-foreground antialiased">
+        <AmbientBackground />
         <SiteNav />
         {children}
       </body>

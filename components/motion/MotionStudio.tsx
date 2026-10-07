@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 
 import { BrandPanel, EMPTY_BRAND, loadBrand, saveBrand } from '@/components/motion/BrandPanel';
+import { CertificationPanel } from '@/components/motion/CertificationPanel';
 import { Button } from '@/components/ui/button';
 import type { BrandProfile } from '@/lib/brand/types';
 import { FREE_LIMITS, FREE_MOTION_CREATIONS, type MotionQuota } from '@/lib/motion/plan';
@@ -559,7 +560,7 @@ export function MotionStudio() {
           <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-neon/30 bg-neon/10 px-3 py-1 text-xs font-semibold text-neon">
             <Sparkles className="h-3.5 w-3.5" /> Nouveau
           </p>
-          <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">Studio Motion</h1>
+          <h1 className="izi-title-gradient font-display text-3xl font-semibold tracking-tight sm:text-5xl">Studio Motion</h1>
           {quota ? (
             <p className="izi-glass-pill mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs text-fg-muted">
               {quota.limit === null ? (
@@ -651,6 +652,17 @@ export function MotionStudio() {
               <span className="w-16 shrink-0 text-right font-code text-xs text-fg-muted">{time.toFixed(1)} / {duration.toFixed(0)} s</span>
             </div>
           </div>
+          <CertificationPanel
+            project={project}
+            onFix={(next) => { setProject(next); timeRef.current = 0; setPlaying(true); setNotice('Pub corrigée ✓ Vérifiez le résultat dans l’aperçu.'); }}
+            hasLogo={Boolean(assets.logo)}
+            link={brand.link}
+            notes={brand.notes}
+            concept={concept?.creative_concept}
+            loggedIn={loggedIn}
+            onExport={exportVideo}
+            exporting={exporting}
+          />
         </div>
 
         {/* ---------- Panneau d'édition ---------- */}
