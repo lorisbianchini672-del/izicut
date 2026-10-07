@@ -86,6 +86,7 @@ const RULES = `Règles techniques :
 - Scène "photo" UNIQUEMENT si le client a importé des photos : montre-les presque toutes (1.5 à 3 s chacune), la bonne photo sur le bon texte, alterne "full" et "frame", jamais deux fois de suite la même.
 - Fiche marque / site web fournis : parle EXACTEMENT de cette entreprise ou association, utilise son vrai nom, reprends les couleurs de son site ou de sa fiche. Association : adhérents, bénévoles, événements, dons.
 - N'invente JAMAIS de réduction, code promo, prix, chiffre, avis, récompense ou label non fournis par le client. Sans offre fournie, l'appel à l'action invite à venir, découvrir, réserver, commander, suivre, adhérer.
+- Sans nom de marque fourni, n'invente pas de nom : utilise un nom générique lié à l'activité (« Votre salon », « Votre boulangerie »…).
 - Format : "9:16" par défaut ; "16:9" si le client parle de YouTube (vidéo classique) ; "1:1" pour un post carré.`;
 
 /** Création : fusion des briefs « directeur de création » d'IziCut. */
