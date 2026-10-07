@@ -29,33 +29,99 @@ type Raw = {
   siege?: { adresse?: string; libelle_commune?: string; code_postal?: string; libelle_activite_principale?: string };
 };
 
+/** Mots d'activité → début du code NAF correspondant (pour classer les résultats). */
+const ACTIVITY_HINTS: [RegExp, string[]][] = [
+  [/compta|expert[- ]?compta/, ['69.20']],
+  [/avocat|juridique|notaire/, ['69.10']],
+  [/boulang|patiss/, ['10.71', '47.24']],
+  [/coiff/, ['96.02']],
+  [/beaut|esth[eé]ti|ongle/, ['96.02', '96.04']],
+  [/restau|brasserie|pizz|traiteur/, ['56.1', '56.21']],
+  [/bar|caf[eé]/, ['56.30']],
+  [/sport|fitness|muscu|salle de gym/, ['93.1']],
+  [/immobili|agence immo/, ['68.3']],
+  [/garage|auto|carross/, ['45.']],
+  [/plomb|chauffag|[eé]lectric|ma[cç]on|b[aâ]timent|menuis|peint/, ['43.', '41.']],
+  [/fleur/, ['47.76']],
+  [/pharma/, ['47.73']],
+  [/m[eé]decin|kin[eé]|dentist|infirmi|ost[eé]o/, ['86.']],
+  [/association|asso\b/, ['94.']],
+  [/informatique|logiciel|web|digital|agence (web|digitale)/, ['62.', '63.']],
+  [/communication|publicit|marketing/, ['73.']],
+  [/h[oô]tel|g[iî]te/, ['55.']],
+  [/v[eê]tement|boutique|pr[eê]t[- ][aà][- ]porter/, ['47.71']],
+  [/formation|[eé]cole|cours/, ['85.']]
+];
+const GENERIC = /^(cabinet|expert|experts|expertise|comptable|comptables|societe|société|sarl|sas|sasu|eurl|sa|entreprise|ets|etablissements|établissements|groupe|agence|la|le|les|de|du|des|d|l|et|chez|association|asso|salon|boulangerie|restaurant|garage|boutique|magasin)$/i;
+
+const norm = (v?: string) => (v ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/** Variantes d'orthographe fréquentes (ph/f, y/i, lettres doublées, s final…). */
+function variants(word: string): string[] {
+  const w = norm(word);
+  const out = new Set<string>([
+    w.replace(/ph/g, 'f'),
+    w.replace(/f/g, 'ph'),
+    w.replace(/y/g, 'i'),
+    w.replace(/i/g, 'y'),
+    w.replace(/k/g, 'c'),
+    w.replace(/c(?=[aou])/g, 'k'),
+    w.replace(/(.)\1/g, '$1'),
+    w.replace(/s$/, ''),
+    w.endsWith('s') ? w : `${w}s`,
+    w.replace(/e$/, ''),
+    w.replace(/ie$/, 'is').replace(/is$/, 'ie')
+  ]);
+  out.delete(w);
+  return [...out].filter((v) => v.length >= 3).slice(0, 8);
+}
+
 export async function GET(request: Request) {
   const q = new URL(request.url).searchParams.get('q')?.trim() ?? '';
   if (q.length < 2) return NextResponse.json({ results: [] });
   try {
-    const search = (text: string, per = 8) =>
-      fetch(`https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(text.slice(0, 120))}&per_page=${per}&etat_administratif=A`, {
+    const search = async (text: string, per = 10): Promise<Raw[] | null> => {
+      const res = await fetch(`https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(text.slice(0, 120))}&per_page=${per}&etat_administratif=A`, {
         headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(10_000),
         next: { revalidate: 3600 }
       });
-    const res = await search(q);
-    if (!res.ok) return NextResponse.json({ error: 'Registre des entreprises momentanément indisponible.' }, { status: 502 });
-    let data = (await res.json()) as { results?: Raw[] };
-    // « nom + ville » : si rien ne sort, on cherche le nom seul et on met en
-    // tête les structures de cette ville.
-    const words = q.split(/\s+/);
-    if (!data.results?.length && words.length >= 2) {
-      const city = words[words.length - 1].toLowerCase();
-      const res2 = await search(words.slice(0, -1).join(' '), 25);
-      if (res2.ok) {
-        const d2 = (await res2.json()) as { results?: Raw[] };
-        const norm = (v?: string) => (v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        const inCity = (r: Raw) => norm(r.siege?.libelle_commune).includes(norm(city)) || (r.siege?.code_postal ?? '').startsWith(city);
-        const list = d2.results ?? [];
-        data = { results: [...list.filter(inCity), ...list.filter((r) => !inCity(r))].slice(0, 8) };
+      if (!res.ok) return null;
+      return ((await res.json()) as { results?: Raw[] }).results ?? [];
+    };
+
+    const lower = norm(q);
+    const hints = ACTIVITY_HINTS.filter(([re]) => re.test(lower)).flatMap(([, codes]) => codes);
+    const matchesHint = (r: Raw) => hints.some((h) => (r.activite_principale ?? '').startsWith(h));
+    const words = q.split(/\s+/).filter(Boolean);
+    const nameWords = words.filter((w) => !GENERIC.test(norm(w)));
+    const nameQuery = nameWords.join(' ') || q;
+
+    const first = await search(q);
+    if (first === null) return NextResponse.json({ error: 'Registre des entreprises momentanément indisponible.' }, { status: 502 });
+    let pool: Raw[] = [...first];
+    const seen = new Set(pool.map((r) => r.siren));
+    const add = (list: Raw[] | null) => { for (const r of list ?? []) if (r.siren && !seen.has(r.siren)) { seen.add(r.siren); pool.push(r); } };
+
+    const good = () => (hints.length ? pool.some(matchesHint) : pool.length > 0);
+    // 1) Nom seul, sans les mots génériques (« cabinet », « expert comptable »…).
+    if (!good() && nameQuery !== q) add(await search(nameQuery, 20));
+    // 2) Orthographes voisines (Orphis → Orfis, Kafé → Café…).
+    if (!good() && nameWords.length) {
+      const main = nameWords.reduce((a, b) => (b.length > a.length ? b : a), nameWords[0]);
+      for (const v of variants(main)) {
+        add(await search(nameQuery.replace(main, v), 10));
+        if (good()) break;
       }
     }
+    // 3) « nom + ville » : on met en tête les structures de cette ville.
+    const lastWord = norm(words[words.length - 1]);
+    const inCity = (r: Raw) => words.length >= 2 && (norm(r.siege?.libelle_commune).includes(lastWord) || (r.siege?.code_postal ?? '').startsWith(lastWord));
+    if (!pool.length && words.length >= 2) add(await search(words.slice(0, -1).join(' '), 25));
+
+    const score = (r: Raw) => (matchesHint(r) ? 2 : 0) + (inCity(r) ? 1 : 0);
+    pool = pool.map((r, i) => ({ r, i })).sort((a, b) => score(b.r) - score(a.r) || a.i - b.i).map((x) => x.r).slice(0, 8);
+    const data = { results: pool };
     const u = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
     const results: Company[] = (data.results ?? []).map((r) => ({
       siren: String(r.siren ?? '').slice(0, 12),
