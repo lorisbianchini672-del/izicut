@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
+import { maybeSendWelcome } from '@/lib/email/welcome';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 /**
@@ -33,13 +34,19 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(`${origin}${safeNext}`);
+    if (!error) {
+      await maybeSendWelcome(supabase);
+      return NextResponse.redirect(`${origin}${safeNext}`);
+    }
   } else if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({
       type: type as EmailOtpType,
       token_hash: tokenHash
     });
-    if (!error) return NextResponse.redirect(`${origin}${safeNext}`);
+    if (!error) {
+      if (type !== 'recovery') await maybeSendWelcome(supabase);
+      return NextResponse.redirect(`${origin}${safeNext}`);
+    }
   }
 
   return NextResponse.redirect(`${origin}/login?error=lien_invalide`);

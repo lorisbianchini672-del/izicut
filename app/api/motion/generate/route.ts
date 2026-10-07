@@ -5,6 +5,8 @@ import { AiNotConfiguredError, chatJson, describeImages } from '@/lib/ai/chat';
 import { BrandBriefSchema, CompanySchema, SiteSchema } from '@/lib/brand/types';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, isAdminEmail } from '@/lib/motion/plan';
+import { trialsUsedEmail } from '@/lib/email/messages';
+import { sendEmail } from '@/lib/email/send';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, SFX, SceneSchema, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -369,6 +371,10 @@ export async function POST(request: Request) {
             try {
               await createAdminClient().auth.admin.updateUserById(user.id, { app_metadata: { ...meta, motion_creations: used + 1 } });
               quota = { ...quota, used: used + 1 };
+              if (free && used + 1 === FREE_MOTION_CREATIONS && user.email) {
+                const { subject, content } = trialsUsedEmail(FREE_MOTION_CREATIONS);
+                await sendEmail(user.email, subject, content, { idempotencyKey: `trials-used-${user.id}` });
+              }
             } catch {
               /* compteur indisponible : on n'empêche pas la création */
             }

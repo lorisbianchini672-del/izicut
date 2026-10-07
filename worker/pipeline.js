@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { ffmpegRenderArgs } from './ffmpeg-render.js';
+import { notifyProjectReady } from './email.js';
 
 import {
   planChunks,
@@ -1205,6 +1206,7 @@ export async function runRender(supabase, job, project, ctx) {
     .update({ status: 'ready', rendered_storage_path: storagePath })
     .eq('id', clip.id);
   await updateProgress(100);
+  await notifyProjectReady(supabase, project);
 
   return { outputPath: storagePath };
 }
