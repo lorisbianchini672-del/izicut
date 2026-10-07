@@ -54,7 +54,7 @@ const FORMAT = `{
   "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop" | "none", "bpm": 60-170, "volume": 0-1 },
   "scenes": [ 1 à 12 scènes. Chaque scène peut avoir :
       "sfx" = son à son entrée : "whoosh" | "pop" | "click" | "impact" | "riser" | "chime" | "fizz" | "bubble" | "swipe" | "glitch"
-      "magic" = 0 à 2 apparitions magiques : [{ "kind": "notification" | "sticker" | "badge" | "button" | "emoji" | "review", "text": "max 60 car.", "sub": "optionnel max 60", "emoji": "optionnel, 1 emoji", "at": seconde d'apparition dans la scène, "pos": "top" | "center" | "bottom", "sfx": "optionnel" }]
+      "magic" = 0 à 2 apparitions magiques : [{ "kind": "notification" | "sticker" | "badge" | "button" | "emoji" | "review" | "qr", "text": "max 60 car.", "sub": "optionnel max 60", "emoji": "optionnel, 1 emoji", "at": seconde d'apparition dans la scène, "pos": "top" | "center" | "bottom", "sfx": "optionnel" }]
     Types de scènes :
     { "type": "title", "duration": 2-5, "title": "max 90 car.", "subtitle": "optionnel, max 120" },
     { "type": "bullets", "duration": 3-6, "title": "max 60", "items": ["2 à 4 éléments de max 60 car."] },
@@ -80,6 +80,7 @@ const RULES = `Règles techniques :
   · "badge" : tampon (« Nouveau », « Fait maison », « Made in France », « 100 % bio » seulement si c'est vrai) ;
   · "button" : bouton d'action que le doigt vient cliquer (« Réserver », « Commander »…), idéal dans le CTA ;
   · "sticker" : sticker « Lien en bio » + emoji 👇 dans la scène finale (conversion) ;
+  · "qr" : QR code qui se construit à l'écran vers le lien du client ("sub" = le lien, "text" = « Scannez-moi » ou équivalent), UNIQUEMENT si un lien est fourni ; dans une scène "cta" il remplace le bouton ; idéal en fin de pub pour l'affichage en boutique / écran ;
   · "review" : UNIQUEMENT avec un avis réel cité par le client (texte + "sub" = prénom). Jamais d'avis inventé.
   Placement : une apparition ne doit pas masquer le texte de la scène. "notification" et "emoji" vont en haut ("top"), "sticker", "button", "badge" et "review" en bas ("bottom"). Sur une scène "cta" (qui a déjà son bouton), ajoute le "sticker" « Lien en bio » plutôt qu'un "button". "review" plutôt sur une scène "photo", "video" ou un "title" court.
 - Lien du client : s'il est fourni, mets-le en "sub" du bouton ou du sticker final (version courte, sans https://).
@@ -92,8 +93,15 @@ const RULES = `Règles techniques :
 - Format : "9:16" par défaut ; "16:9" si le client parle de YouTube (vidéo classique) ; "1:1" pour un post carré.`;
 
 /** Création : fusion des briefs « directeur de création » d'IziCut. */
-const DIRECTOR = (free: boolean) => `Tu es le Directeur Créatif et Motion Designer principal d'IziCut, une agence de motion design IA de classe mondiale.
-Ta mission : remplacer le travail d'un community manager / monteur en créant une pub motion design ULTRA-PERSONNALISÉE, haute conversion, pour n'importe quel brief (marque mondiale, commerce local, e-commerce, startup, artisan, association, indépendant). Jamais de concept générique.
+const DIRECTOR = (free: boolean) => `Tu es Directeur Artistique, Réalisateur de publicités et Lead Motion Designer « haute couture » chez IziCut, au niveau des grandes agences qui travaillent pour des marques mondiales.
+Ta mission : remplacer le travail d'un community manager / monteur en créant une pub motion design ULTRA-PERSONNALISÉE, haute conversion, pour n'importe quel brief (marque mondiale, commerce local, e-commerce, startup, artisan, association, indépendant). Jamais de concept générique : dépasse l'idée évidente.
+
+RÉFLEXION APPROFONDIE (avant d'écrire le JSON, fais-la mentalement) :
+- ADN de la marque : ses codes visuels iconiques (forme, mouvement, matière, rythme), ce qui la rend unique.
+- Psychologie du spectateur : comment capter l'attention dès la frame 0 et garder la rétention 15 s (rupture, tension, révélation, récompense).
+- Micro-détails motion : easing (expo-out pour les entrées, back pour les rebonds), parallaxe, typographie cinétique, masques, accélérations (speed ramp) — traduits avec les outils disponibles (transitions, textures, apparitions, rythme des scènes).
+- Sound design en couches : musique, impacts, ambiance, sons d'interface calés sur chaque mouvement.
+- Intégration ORGANIQUE de la marque : le logo et le nom se révèlent par un mouvement (particules qui convergent, reflet, apparition) au lieu d'être « collés ».
 
 Méthode :
 1. ANALYSE : proposition de valeur unique, cible exacte, émotion à déclencher (urgence, prestige, confiance, curiosité, hype, chaleur), levier de conversion.
@@ -121,7 +129,7 @@ Tout est rédigé en FRANÇAIS. Réponds UNIQUEMENT par un objet JSON :
     },
     "signatures": ["signature 1", "signature 2", "signature 3"],
     "scenes": [
-      { "timeframe": "0-3s Hook", "idea": "...", "visual_motion_description": "animation précise", "text_on_screen": "...", "sound_design": "..." },
+      { "timeframe": "0-3s Hook", "idea": "...", "visual_motion_description": "ce qui se passe à l'écran, frame par frame", "motion_design_effects": "transitions, masques, easing, typographie cinétique", "brand_assets_integration": "comment la marque / le logo apparaît", "text_on_screen": "...", "typography_animation": "effet d'apparition du texte", "sound_design": "SFX + rythme" },
       { "timeframe": "3-7s Problème", ... }, { "timeframe": "7-12s Solution", ... }, { "timeframe": "12-15s CTA", ... }
     ]${free ? '' : `,
     "voiceover": [ { "time": "0-3s", "text": "texte exact de la voix-off", "sfx": "[Whoosh]" }, ... ]`}
@@ -155,6 +163,9 @@ function repairConcept(raw: unknown): Concept | undefined {
       timeframe: str(x.timeframe, 40),
       idea: str(x.idea ?? x.hook_concept ?? x.core_message ?? x.call_to_action_scene, 300) || undefined,
       visual_motion_description: str(x.visual_motion_description, 500),
+      motion_design_effects: str(x.motion_design_effects, 400) || undefined,
+      brand_assets_integration: str(x.brand_assets_integration, 300) || undefined,
+      typography_animation: str(x.typography_animation, 200) || undefined,
       text_on_screen: str(x.text_on_screen, 160),
       sound_design: str(x.sound_design, 300)
     };

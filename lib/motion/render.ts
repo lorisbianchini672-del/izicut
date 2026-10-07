@@ -3,7 +3,17 @@
  * drawFrame() dessine l'image exacte à l'instant t : le même code sert à
  * l'aperçu en direct et à l'export MP4 (enregistrement du canvas).
  */
+import { makeQr } from './qr';
 import { FORMAT_SIZE, TRANSITION, type Magic, type MotionProject, type Scene } from './types';
+
+const qrCache = new Map<string, boolean[][] | null>();
+function qrFor(text: string): boolean[][] | null {
+  if (!qrCache.has(text)) {
+    try { qrCache.set(text, makeQr(text)); } catch { qrCache.set(text, null); }
+    if (qrCache.size > 20) qrCache.delete(qrCache.keys().next().value as string);
+  }
+  return qrCache.get(text) ?? null;
+}
 
 export type MotionAssets = {
   logo?: HTMLImageElement | null;
@@ -572,7 +582,23 @@ function sceneCta(c: Ctx, s: Extract<Scene, { type: 'cta' }>, lt: number) {
   const { ctx, W, H, U, assets } = c;
   const logoY = H * (c.vertical ? 0.3 : 0.26);
   const r = U * 0.11;
-  const p = easeOutBack(progress(lt, 0.05, 0.6));
+  // Intégration organique du logo : des particules aux couleurs de la marque
+  // convergent vers son emplacement, puis il se matérialise.
+  const gather = progress(lt, 0, 0.45);
+  if (gather < 1) {
+    ctx.save();
+    for (let i = 0; i < 46; i++) {
+      const a = rand(i + 900) * Math.PI * 2;
+      const dist = U * (0.35 + rand(i + 950) * 0.55) * (1 - easeInCubic(gather));
+      const px = W / 2 + Math.cos(a) * dist;
+      const py = logoY + Math.sin(a) * dist;
+      ctx.globalAlpha = 0.25 + 0.6 * gather;
+      ctx.fillStyle = i % 3 ? c.theme.primary : c.theme.accent;
+      ctx.beginPath(); ctx.arc(px, py, U * (0.004 + rand(i + 990) * 0.006), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  const p = easeOutBack(progress(lt, 0.38, 0.55));
   ctx.save();
   ctx.translate(W / 2, logoY);
   ctx.scale(p, p);
@@ -590,6 +616,17 @@ function sceneCta(c: Ctx, s: Extract<Scene, { type: 'cta' }>, lt: number) {
     const img = assets.logo;
     const k = Math.max((2 * r) / img.width, (2 * r) / img.height);
     ctx.drawImage(img, -img.width * k / 2, -img.height * k / 2, img.width * k, img.height * k);
+    // Reflet qui balaie le logo.
+    const sh = progress(lt, 0.8, 0.6);
+    if (sh > 0 && sh < 1) {
+      const sx = -r + sh * 4 * r - r;
+      const g = ctx.createLinearGradient(sx, -r, sx + r * 0.6, r);
+      g.addColorStop(0, 'rgba(255,255,255,0)');
+      g.addColorStop(0.5, 'rgba(255,255,255,0.65)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(-r, -r, 2 * r, 2 * r);
+    }
     ctx.restore();
   } else {
     const g = ctx.createLinearGradient(-r, -r, r, r);
@@ -619,7 +656,8 @@ function sceneCta(c: Ctx, s: Extract<Scene, { type: 'cta' }>, lt: number) {
   }
   const box = kinetic(c, s.title, W / 2, H * (c.vertical ? 0.52 : 0.55), U * 0.09, W * 0.84, lt, { start: 0.45 });
   // Bouton qui « pulse ».
-  const bp = easeOutBack(progress(lt, 0.9, 0.5));
+  // Un QR code dans la scène remplace le bouton (pas de chevauchement).
+  const bp = s.magic?.some((m) => m.kind === 'qr') ? 0 : easeOutBack(progress(lt, 0.9, 0.5));
   if (bp > 0) {
     setFont(c, 900, U * 0.05);
     const label = s.button.replace(/\*/g, '');
@@ -798,7 +836,7 @@ function magicY(c: Ctx, m: Magic, k: number): number {
   const pos = m.pos ?? (m.kind === 'notification' || m.kind === 'emoji' ? 'top' : 'bottom');
   const H = c.H;
   if (pos === 'top') return H * (m.kind === 'emoji' ? (c.vertical ? 0.27 : 0.26) : c.vertical ? 0.19 : 0.2) + k * c.U * 0.02;
-  if (pos === 'bottom') return H * (c.vertical ? 0.72 : 0.74);
+  if (pos === 'bottom') return H * (m.kind === 'qr' ? (c.vertical ? 0.64 : 0.62) : c.vertical ? 0.72 : 0.74);
   return H * 0.5;
 }
 
@@ -999,6 +1037,48 @@ function drawMagic(c: Ctx, m: Magic, lt: number, d: number, k: number) {
         ctx.fillStyle = theme.text;
         ctx.fillText(m.text, 0, size * 0.75);
       }
+      break;
+    }
+    case 'qr': {
+      // QR code qui se « construit » module par module, sur carte blanche, avec un balayage lumineux.
+      const link = (m.sub || m.text).trim();
+      const mat = qrFor(/^https?:\/\//i.test(link) || !/\./.test(link) ? link : `https://${link}`);
+      if (!mat) break;
+      const n = mat.length;
+      const side = U * 0.34;
+      const cell = side / (n + 2);
+      ctx.translate(W / 2, y);
+      ctx.scale(0.85 + 0.15 * pIn, 0.85 + 0.15 * pIn);
+      ctx.save();
+      ctx.shadowColor = rgba(theme.primary, 0.55);
+      ctx.shadowBlur = U * 0.06;
+      ctx.fillStyle = '#ffffff';
+      roundRect(ctx, -side / 2 - U * 0.02, -side / 2 - U * 0.02, side + U * 0.04, side + U * 0.04 + U * 0.07, U * 0.03);
+      ctx.fill();
+      ctx.restore();
+      const build = clamp((t - 0.05) / 0.6);
+      ctx.fillStyle = '#0b0b14';
+      for (let yy = 0; yy < n; yy++) for (let xx = 0; xx < n; xx++) {
+        if (!mat[yy][xx]) continue;
+        // Apparition en diagonale (motion design) ; les repères d'angle d'abord.
+        const corner = (xx < 8 && yy < 8) || (xx >= n - 8 && yy < 8) || (xx < 8 && yy >= n - 8);
+        if (!corner && (xx + yy) / (2 * n) > build) continue;
+        ctx.fillRect(-side / 2 + cell * (xx + 1), -side / 2 + cell * (yy + 1), cell + 0.5, cell + 0.5);
+      }
+      if (build >= 1 && t < 1.6) {
+        const sy = -side / 2 + side * clamp((t - 0.65) / 0.8);
+        const g = ctx.createLinearGradient(0, sy - U * 0.03, 0, sy + U * 0.03);
+        g.addColorStop(0, rgba(theme.primary, 0));
+        g.addColorStop(0.5, rgba(theme.primary, 0.55));
+        g.addColorStop(1, rgba(theme.primary, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(-side / 2, sy - U * 0.03, side, U * 0.06);
+      }
+      setFont(c, 900, U * 0.034);
+      ctx.fillStyle = '#0b0b14';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(m.text.slice(0, 28), 0, side / 2 + U * 0.04);
       break;
     }
     case 'review': {

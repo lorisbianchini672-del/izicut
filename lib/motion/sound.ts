@@ -41,7 +41,7 @@ const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 /** Effet sonore joué par défaut à chaque coupe, selon la transition. */
 const DEFAULT_CUT: Record<NonNullable<MotionProject['transition']>, Sfx> = { flash: 'whoosh', slide: 'swipe', zoom: 'whoosh', wipe: 'swipe', glitch: 'glitch' };
 
-const MAGIC_SFX: Record<MagicKind, Sfx> = { notification: 'chime', sticker: 'pop', badge: 'pop', button: 'pop', emoji: 'pop', review: 'chime' };
+const MAGIC_SFX: Record<MagicKind, Sfx> = { notification: 'chime', sticker: 'pop', badge: 'pop', button: 'pop', emoji: 'pop', review: 'chime', qr: 'click' };
 
 export function hasSound(p: MotionProject): boolean {
   return Boolean(p.sound) || p.scenes.some((s) => s.sfx || s.magic?.length);

@@ -511,8 +511,8 @@ export function MotionStudio() {
         audioTracks = [];
       }
     }
-    const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...audioTracks]);
-    const recorder = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 10_000_000 });
+    const stream = new MediaStream([...canvas.captureStream(60).getVideoTracks(), ...audioTracks]);
+    const recorder = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 14_000_000 });
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     const done = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
@@ -987,7 +987,8 @@ const MAGIC_DEFAULTS: Record<MagicKind, Magic> = {
   badge: { kind: 'badge', text: 'Nouveau', at: 0.4 },
   button: { kind: 'button', text: 'Réserver', at: 0.3 },
   emoji: { kind: 'emoji', text: '', emoji: '✨', at: 0.3 },
-  review: { kind: 'review', text: 'Collez ici un vrai avis client', sub: 'Prénom', at: 0.4 }
+  review: { kind: 'review', text: 'Collez ici un vrai avis client', sub: 'Prénom', at: 0.4 },
+  qr: { kind: 'qr', text: 'Scannez-moi', sub: 'monsite.fr', at: 0.4 }
 };
 
 /** Apparitions magiques d'une scène : ajouter, modifier, retirer. */
@@ -1005,8 +1006,8 @@ function MagicFields({ magic, duration, onChange }: { magic: Magic[]; duration: 
             <input className={inputCls} value={m.text} maxLength={60} onChange={(e) => set(k, { text: e.target.value || ' ' })} placeholder="Texte" />
             <input className={cn(inputCls, 'text-center')} value={m.emoji ?? ''} maxLength={8} onChange={(e) => set(k, { emoji: e.target.value || undefined })} placeholder="😀" aria-label="Emoji" />
           </div>
-          {m.kind === 'notification' || m.kind === 'button' || m.kind === 'review' || m.kind === 'sticker' ? (
-            <input className={cn(inputCls, 'mt-1')} value={m.sub ?? ''} maxLength={60} onChange={(e) => set(k, { sub: e.target.value || undefined })} placeholder={m.kind === 'review' ? 'Prénom du client' : 'Sous-texte / lien (facultatif)'} />
+          {m.kind === 'notification' || m.kind === 'button' || m.kind === 'review' || m.kind === 'sticker' || m.kind === 'qr' ? (
+            <input className={cn(inputCls, 'mt-1')} value={m.sub ?? ''} maxLength={60} onChange={(e) => set(k, { sub: e.target.value || undefined })} placeholder={m.kind === 'review' ? 'Prénom du client' : m.kind === 'qr' ? 'Lien encodé dans le QR code' : 'Sous-texte / lien (facultatif)'} />
           ) : null}
           <label className="mt-1 flex items-center gap-2 text-[11px] text-fg-muted">
             Apparaît à
@@ -1089,6 +1090,8 @@ function ConceptCard({ concept }: { concept: Concept }) {
                 <p className="font-code text-[10px] font-semibold text-neon">{sc.timeframe}</p>
                 <p className="text-fg">{sc.text_on_screen}</p>
                 <p className="text-fg-muted">{sc.visual_motion_description}</p>
+                {sc.motion_design_effects ? <p className="text-fg-subtle">✦ {sc.motion_design_effects}</p> : null}
+                {sc.brand_assets_integration ? <p className="text-fg-subtle">◆ Marque : {sc.brand_assets_integration}</p> : null}
                 <p className="text-fg-subtle">♪ {sc.sound_design}</p>
               </div>
             ))}

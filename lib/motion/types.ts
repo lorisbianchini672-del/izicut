@@ -24,7 +24,7 @@ export const MUSIC = ['pop', 'electro', 'chill', 'epic', 'acoustic', 'hiphop', '
 export type Music = (typeof MUSIC)[number];
 
 /** « Apparitions magiques » : éléments qui surgissent par-dessus une scène. */
-export const MAGIC_KINDS = ['notification', 'sticker', 'badge', 'button', 'emoji', 'review'] as const;
+export const MAGIC_KINDS = ['notification', 'sticker', 'badge', 'button', 'emoji', 'review', 'qr'] as const;
 export type MagicKind = (typeof MAGIC_KINDS)[number];
 export const MagicSchema = z.object({
   kind: z.enum(MAGIC_KINDS),
@@ -38,7 +38,7 @@ export const MagicSchema = z.object({
 });
 export type Magic = z.infer<typeof MagicSchema>;
 export const MAGIC_LABELS: Record<MagicKind, string> = {
-  notification: 'Notification', sticker: 'Sticker « lien en bio »', badge: 'Badge', button: 'Bouton cliqué', emoji: 'Objet / emoji 3D', review: 'Avis client (réel)'
+  notification: 'Notification', sticker: 'Sticker « lien en bio »', badge: 'Badge', button: 'Bouton cliqué', emoji: 'Objet / emoji 3D', review: 'Avis client (réel)', qr: 'QR code vers votre lien'
 };
 
 /** Nombre maximum de scènes dans une vidéo. */
@@ -131,6 +131,9 @@ export const ConceptSchema = z.object({
         timeframe: z.string().max(40),
         idea: z.string().max(300).optional(),
         visual_motion_description: z.string().max(500),
+        motion_design_effects: z.string().max(400).optional(),
+        brand_assets_integration: z.string().max(300).optional(),
+        typography_animation: z.string().max(200).optional(),
         text_on_screen: z.string().max(160),
         sound_design: z.string().max(300)
       })
