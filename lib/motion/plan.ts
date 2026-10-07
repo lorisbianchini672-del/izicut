@@ -40,6 +40,6 @@ export function clampToFree(p: MotionProject): MotionProject {
 /** Les administrateurs du site (ADMIN_EMAILS) ont toutes les fonctions, sans limite. */
 export function isAdminEmail(email: string | null | undefined): boolean {
   if (!email) return false;
-  const admins = (process.env.ADMIN_EMAILS ?? '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  const admins = `${process.env.ADMIN_EMAILS ?? ''},${process.env.ADMIN_EMAILS_EXTRA ?? ''}`.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
   return admins.includes(email.toLowerCase());
 }
