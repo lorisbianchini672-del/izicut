@@ -36,3 +36,10 @@ export function clampToFree(p: MotionProject): MotionProject {
   const transition = p.transition && !FREE_LIMITS.transitions.includes(p.transition) ? 'flash' : p.transition;
   return { ...p, theme, sound, transition };
 }
+
+/** Les administrateurs du site (ADMIN_EMAILS) ont toutes les fonctions, sans limite. */
+export function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const admins = (process.env.ADMIN_EMAILS ?? '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return admins.includes(email.toLowerCase());
+}

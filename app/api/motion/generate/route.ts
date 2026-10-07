@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { AiNotConfiguredError, chatJson, describeImages } from '@/lib/ai/chat';
 import { BrandBriefSchema, CompanySchema, SiteSchema } from '@/lib/brand/types';
 import { resolvePlanTier } from '@/lib/entitlements';
-import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree } from '@/lib/motion/plan';
+import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, isAdminEmail } from '@/lib/motion/plan';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, SFX, SceneSchema, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -279,7 +279,7 @@ export async function POST(request: Request) {
 
   // Offre : 3 pubs créées gratuitement, puis Pro. Les retouches restent possibles.
   const { data: profile } = await supabase.from('profiles').select('plan, subscription_status').eq('id', user.id).maybeSingle();
-  const tier = resolvePlanTier(profile?.plan, profile?.subscription_status);
+  const tier = isAdminEmail(user.email) ? 'agency' : resolvePlanTier(profile?.plan, profile?.subscription_status);
   const free = tier === 'free';
   const meta = (user.app_metadata ?? {}) as Record<string, unknown>;
   const used = Number(meta.motion_creations) || 0;

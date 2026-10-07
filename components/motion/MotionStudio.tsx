@@ -215,7 +215,7 @@ export function MotionStudio() {
       if (!data.user) return;
       const { data: profile } = await supabase.from('profiles').select('plan, subscription_status').eq('id', data.user.id).maybeSingle();
       setIsPaid(resolvePlanTier(profile?.plan, profile?.subscription_status) !== 'free');
-      fetch('/api/motion/quota').then((r) => (r.ok ? r.json() : null)).then((q) => q && setQuota(q as MotionQuota)).catch(() => undefined);
+      fetch('/api/motion/quota').then((r) => (r.ok ? r.json() : null)).then((q) => { if (!q) return; setQuota(q as MotionQuota); if ((q as MotionQuota).tier !== 'free') setIsPaid(true); }).catch(() => undefined);
     });
   }, [supabase]);
 
