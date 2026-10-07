@@ -114,6 +114,13 @@ export async function GET(request: Request) {
         if (good()) break;
       }
     }
+    // 2 bis) Un seul mot et aucun nom identique : on propose aussi les orthographes voisines.
+    if (nameWords.length === 1 && !pool.some((r) => norm(r.nom_complet ?? r.nom_raison_sociale).split(/[^a-z0-9]+/).includes(norm(nameWords[0])))) {
+      const extra: Raw[] = [];
+      for (const v of variants(nameWords[0]).slice(0, 4)) for (const r of (await search(v, 4)) ?? []) if (r.siren && !seen.has(r.siren)) { seen.add(r.siren); extra.push(r); }
+      // Moitié résultats d'origine, moitié variantes, pour que « Orfis » apparaisse quand on tape « Orphis ».
+      pool = [...pool.slice(0, 4), ...extra.slice(0, 4), ...pool.slice(4), ...extra.slice(4)];
+    }
     // 3) « nom + ville » : on met en tête les structures de cette ville.
     const lastWord = norm(words[words.length - 1]);
     const inCity = (r: Raw) => words.length >= 2 && (norm(r.siege?.libelle_commune).includes(lastWord) || (r.siege?.code_postal ?? '').startsWith(lastWord));

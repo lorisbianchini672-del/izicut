@@ -40,8 +40,10 @@ export async function GET(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous pour analyser votre site.' }, { status: 401 });
   const raw = new URL(request.url).searchParams.get('url')?.trim() ?? '';
-  const url = raw ? await safeUrl(raw) : null;
-  if (!url) return NextResponse.json({ error: 'Adresse de site invalide.' }, { status: 400 });
+  let url = raw ? await safeUrl(raw) : null;
+  // « monsite.fr » introuvable : on essaie « www.monsite.fr ».
+  if (!url && raw && !/^(https?:\/\/)?www\./i.test(raw)) url = await safeUrl(`www.${raw.replace(/^https?:\/\//i, '')}`);
+  if (!url) return NextResponse.json({ error: 'Site introuvable : vérifiez l’adresse (ex. monsite.fr).' }, { status: 400 });
   try {
     // Redirections suivies à la main : chaque étape est revérifiée (pas d'adresse interne).
     let target: URL | null = url;
