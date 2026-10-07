@@ -70,6 +70,7 @@ export const SceneSchema = z.discriminatedUnion('type', [
     /** Seconde de départ dans la vidéo importée. */
     from: z.number().min(0).max(3600),
     caption: z.string().trim().max(80).optional(),
+    captionPos: z.enum(['top', 'bottom']).optional(),
     layout: z.enum(['full', 'frame'])
   }),
   z.object({
@@ -79,6 +80,7 @@ export const SceneSchema = z.discriminatedUnion('type', [
     /** Index de la photo importée par le client (0 à 11). */
     photo: z.number().int().min(0).max(11),
     caption: z.string().trim().max(80).optional(),
+    captionPos: z.enum(['top', 'bottom']).optional(),
     layout: z.enum(['full', 'frame'])
   })
 ]);
@@ -92,7 +94,9 @@ export const MotionProjectSchema = z.object({
     accent: hex,
     text: hex,
     style: z.enum(['neon', 'clean', 'bold']),
-    motif: z.enum(MOTIFS).optional()
+    motif: z.enum(MOTIFS).optional(),
+    /** Style des boutons / cartes repris du site du client. */
+    radius: z.enum(['square', 'rounded', 'pill']).optional()
   }),
   transition: z.enum(TRANSITIONS).optional(),
   sound: z

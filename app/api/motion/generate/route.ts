@@ -48,7 +48,8 @@ const FORMAT = `{
   "theme": {
     "background": "#RRGGBB", "primary": "#RRGGBB", "accent": "#RRGGBB", "text": "#RRGGBB",
     "style": "neon" | "clean" | "bold",
-    "motif": "particles" | "bubbles" | "grain" | "waves" | "confetti" | "sparkles" | "lines" | "none"
+    "motif": "particles" | "bubbles" | "grain" | "waves" | "confetti" | "sparkles" | "lines" | "none",
+    "radius": "square" | "rounded" | "pill" (style des boutons de la marque)
   },
   "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch",
   "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop" | "none", "bpm": 60-170, "volume": 0-1 },
@@ -62,8 +63,8 @@ const FORMAT = `{
     { "type": "screenshot", "duration": 3-5, "caption": "max 80" },
     { "type": "quote", "duration": 3-6, "text": "max 160", "author": "optionnel" },
     { "type": "cta", "duration": 2.5-4, "title": "max 70", "button": "max 30" },
-    { "type": "video", "duration": 2-15, "media": index de la vidéo du client, "from": seconde de départ, "caption": "optionnel max 80", "layout": "full" | "frame" },
-    { "type": "photo", "duration": 1.5-5, "photo": index de la photo du client, "caption": "optionnel max 80", "layout": "full" | "frame" }
+    { "type": "video", "duration": 2-15, "media": index de la vidéo du client, "from": seconde de départ, "caption": "optionnel max 80", "captionPos": "top" | "bottom", "layout": "full" | "frame" },
+    { "type": "photo", "duration": 1.5-5, "photo": index de la photo du client, "caption": "optionnel max 80", "captionPos": "top" | "bottom", "layout": "full" | "frame" }
   ]
 }`;
 
@@ -91,6 +92,8 @@ const RULES = `Règles techniques :
 - N'invente JAMAIS de réduction, code promo, prix, chiffre, avis, récompense ou label non fournis par le client. Sans offre fournie, l'appel à l'action invite à venir, découvrir, réserver, commander, suivre, adhérer.
 - Ne recopie jamais un slogan déposé ou une campagne existante d'une marque : invente une création originale, même pour une grande marque.
 - Sans nom de marque fourni, n'invente pas de nom : utilise un nom générique lié à l'activité (« Votre salon », « Votre boulangerie »…).
+- Texte sur photo / vidéo : JAMAIS sur le visage ni sur le produit. "captionPos" = la zone vide, à l'opposé du sujet décrit dans les notes des photos (sujet en bas → "top"). Le moteur ajoute un calque d'assombrissement calculé selon la luminosité.
+- "theme.radius" : reprends le style de boutons du site du client s'il est fourni (carré, arrondi, pilule).
 - Format : "9:16" par défaut ; "16:9" si le client parle de YouTube (vidéo classique) ; "1:1" pour un post carré.`;
 
 /** Création : fusion des briefs « directeur de création » d'IziCut. */
@@ -114,10 +117,12 @@ Méthode :
    - 12-15 s CTA : signature de marque, appel à l'action clair, bouton cliqué ou sticker « lien en bio ».
 4. SOUND DESIGN : musique précise (genre, bpm, humeur) + bruitage sur chaque mouvement et chaque apparition.
 ${free ? '' : `5. A/B TESTING : 3 accroches alternatives pour la scène 1 — A = problème / frustration, B = bénéfice / résultat, C = curiosité / question intrigante. La scène 1 du projet = l'accroche A.
-6. VOIX-OFF : texte exact, ton dynamique et naturel, chronométré, avec marqueurs de bruitages ([Whoosh], [Pop], [Click], [Ding]).
+6. VOIX-OFF : 35 à 40 mots maximum pour 15 s, ton dynamique et naturel, une réplique par moment clé, avec marqueurs de bruitages ([Whoosh], [Pop], [Click], [Ding]). La musique baissera de 12 dB pendant chaque réplique.
 `}
 Tout est rédigé en FRANÇAIS. Réponds UNIQUEMENT par un objet JSON :
 {
+  "message": "synthèse express, 2 phrases MAX, vivante et enthousiaste, de l'intention visuelle et sonore (tutoiement si le client tutoie)",
+  "question": "AU MAXIMUM une question courte pour affiner un choix, ou chaîne vide — ne bloque jamais : décide toi-même ce qui manque",
   "concept": {
     "brand_name": "...",
     "strategy": { "value": "proposition de valeur", "audience": "cible", "emotion": "émotion clé", "lever": "levier de conversion" },
@@ -144,8 +149,13 @@ ${RULES}`;
 /** Modification d'une vidéo existante : on garde l'harmonie globale. */
 const EDITOR = `Tu es le Directeur Créatif motion design d'IziCut. Le client retouche une pub animée existante.
 Applique UNIQUEMENT la modification demandée (« modifie le rythme », « change la palette », « plus moderne », « ajoute un effet »…) sans détruire l'harmonie globale, et renvoie le projet COMPLET mis à jour (garde à l'identique theme.motif, transition, sound, sfx et magic s'ils ne sont pas concernés).
-Réponds UNIQUEMENT par un objet JSON au format :
-${FORMAT}
+Traduis les demandes floues ou hésitantes (« un truc qui pète ») en décisions visuelles précises.
+Réponds UNIQUEMENT par un objet JSON :
+{
+  "message": "2 phrases MAX : ce que tu as changé, de façon vivante",
+  "question": "au maximum UNE question courte, ou chaîne vide",
+  "project": ${FORMAT}
+}
 
 ${RULES}`;
 
@@ -222,6 +232,7 @@ function repair(raw: unknown, fallback?: MotionProject): unknown {
       if (Array.isArray(sc.items)) sc.items = sc.items.slice(0, 4).map((i) => cut(String(i), 60));
       if (sc.type === 'stat') sc.value = Number(sc.value) || 0;
       if (sc.sfx !== undefined && !pick(SFX, sc.sfx)) delete sc.sfx;
+      if (sc.captionPos !== undefined && !['top', 'bottom'].includes(String(sc.captionPos))) delete sc.captionPos;
       if (sc.magic !== undefined) {
         const dur = Number(sc.duration) || 3;
         const list = (Array.isArray(sc.magic) ? sc.magic : [])
@@ -250,6 +261,7 @@ function repair(raw: unknown, fallback?: MotionProject): unknown {
   if (p.theme && typeof p.theme === 'object') {
     const th = p.theme as Record<string, unknown>;
     if (th.motif !== undefined && !pick(MOTIFS, th.motif)) delete th.motif;
+    if (th.radius !== undefined && !['square', 'rounded', 'pill'].includes(String(th.radius))) delete th.radius;
     if (!['neon', 'clean', 'bold'].includes(String(th.style))) th.style = 'clean';
   }
   if (p.transition !== undefined && !pick(TRANSITIONS, p.transition)) delete p.transition;
@@ -314,7 +326,7 @@ export async function POST(request: Request) {
     try {
       photoNotes = (await describeImages(
         photoSheets,
-        `Ces images sont des planches de photos numérotées (le numéro est en haut à gauche de chaque photo). Pour CHAQUE photo, écris une ligne "n : description" (ce qu'on voit, le cadrage, l'ambiance, si c'est un produit / un lieu / une personne / un logo). En français, concis.`,
+        `Ces images sont des planches de photos numérotées (le numéro est en haut à gauche de chaque photo). Pour CHAQUE photo, écris une ligne "n : description | sujet : haut / centre / bas | zone vide : haut / bas" (ce qu'on voit, le cadrage, l'ambiance, si c'est un produit / un lieu / une personne / un logo, où se trouve le sujet principal ou le visage, et où il y a de la place pour du texte). En français, concis.`,
         700
       )).slice(0, 3000);
     } catch {
@@ -334,7 +346,7 @@ export async function POST(request: Request) {
           : undefined,
         ce_que_dit_le_client: brand.notes || undefined,
         fiche: brand.brief ?? undefined,
-        site_web: brand.site ? { adresse: brand.site.url, titre: brand.site.title, description: brand.site.description, couleurs_du_site: brand.site.colors, polices: brand.site.fonts } : undefined,
+        site_web: brand.site ? { adresse: brand.site.url, titre: brand.site.title, description: brand.site.description, couleurs_du_site: brand.site.colors, polices: brand.site.fonts, style_boutons: brand.site.radius } : undefined,
         lien_cta: brand.link || undefined
       })}`
     : '';
@@ -352,8 +364,11 @@ export async function POST(request: Request) {
         maxTokens: project ? 3500 : free ? 6000 : 8000,
         temperature: project ? 0.4 : 0.85
       });
-      const wrapped = !project && raw && typeof raw === 'object' && 'project' in (raw as Record<string, unknown>);
-      const concept = wrapped ? repairConcept((raw as Record<string, unknown>).concept) : undefined;
+      const wrapped = Boolean(raw && typeof raw === 'object' && 'project' in (raw as Record<string, unknown>));
+      const said = wrapped ? (raw as Record<string, unknown>) : {};
+      const message = typeof said.message === 'string' ? said.message.slice(0, 400) : undefined;
+      const question = typeof said.question === 'string' && said.question.trim() ? said.question.slice(0, 200) : undefined;
+      const concept = wrapped && !project ? repairConcept((raw as Record<string, unknown>).concept) : undefined;
       const result = MotionProjectSchema.safeParse(repair(wrapped ? (raw as Record<string, unknown>).project : raw, project));
       // 3 accroches A/B (offres payantes).
       const hookList: Scene[] = [];
@@ -392,7 +407,7 @@ export async function POST(request: Request) {
             }
           }
           const cleanConcept = concept && free ? { ...concept, voiceover: undefined } : concept;
-          return NextResponse.json({ project: finalProject, concept: cleanConcept, hooks: hookList.length >= 2 ? hookList.slice(0, 3) : undefined, quota, photoNotes: photoNotes || undefined });
+          return NextResponse.json({ project: finalProject, message, question, concept: cleanConcept, hooks: hookList.length >= 2 ? hookList.slice(0, 3) : undefined, quota, photoNotes: photoNotes || undefined });
         }
       }
       lastError = (result.error?.issues ?? []).slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');

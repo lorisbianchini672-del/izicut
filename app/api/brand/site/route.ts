@@ -90,6 +90,10 @@ export async function GET(request: Request) {
       )
     ].slice(0, 4);
     const colors = colorsOf(html);
+    // Rayon de bordure dominant des boutons / cartes → style d'interface de la marque.
+    const radii = [...html.matchAll(/border-radius\s*:\s*([\d.]+)(px|rem|em|%)/gi)].map((m) => (m[2] === '%' ? (Number(m[1]) >= 50 ? 999 : Number(m[1])) : m[2] === 'px' ? Number(m[1]) : Number(m[1]) * 16)).filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+    const med = radii.length ? radii[Math.floor(radii.length / 2)] : null;
+    const radius = med === null ? undefined : med <= 4 ? 'square' : med <= 16 ? 'rounded' : 'pill';
     // Logo et visuels du site (utilisables seulement par le titulaire de la marque).
     const base = res.url || url.toString();
     const abs = (v?: string | null) => { if (!v) return undefined; try { const u = new URL(v.replace(/&amp;/g, '&'), base); return /^https?:$/.test(u.protocol) ? u.toString().slice(0, 400) : undefined; } catch { return undefined; } };
@@ -128,7 +132,8 @@ export async function GET(request: Request) {
         fonts,
         image: image && /^https?:\/\//.test(image) ? image.slice(0, 300) : undefined,
         logo: [...new Set(logoCandidates)][0],
-        images: images.slice(0, 8)
+        images: images.slice(0, 8),
+        radius
       }
     });
   } catch {

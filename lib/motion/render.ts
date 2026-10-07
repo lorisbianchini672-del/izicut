@@ -669,7 +669,7 @@ function sceneCta(c: Ctx, s: Extract<Scene, { type: 'cta' }>, lt: number) {
     ctx.scale(bp * pulse, bp * pulse);
     ctx.fillStyle = c.theme.primary;
     if (c.theme.style === 'neon') { ctx.shadowColor = rgba(c.theme.primary, 0.8); ctx.shadowBlur = U * 0.05; }
-    roundRect(ctx, -bw / 2, -bh / 2, bw, bh, bh / 2);
+    roundRect(ctx, -bw / 2, -bh / 2, bw, bh, radiusOf(c, bh));
     ctx.fill();
     ctx.shadowBlur = 0;
     ctx.fillStyle = isLight(c.theme.primary) ? '#0b0b10' : '#ffffff';
@@ -694,15 +694,7 @@ function sceneVideo(c: Ctx, s: Extract<Scene, { type: 'video' }>, lt: number) {
     } else {
       placeholder(c, 0, 0, W, H);
     }
-    if (s.caption) {
-      // Dégradé pour que le texte reste lisible sur n'importe quelle vidéo.
-      const g = ctx.createLinearGradient(0, H * 0.55, 0, H);
-      g.addColorStop(0, 'rgba(0,0,0,0)');
-      g.addColorStop(1, 'rgba(0,0,0,0.75)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, H * 0.55, W, H * 0.45);
-      kinetic(c, s.caption, W / 2, c.vertical ? H * 0.74 : H * 0.8, U * 0.075, W * 0.86, lt, { start: 0.2 });
-    }
+    if (s.caption) captionOverMedia(c, s.caption, lt, s.captionPos ?? 'bottom', ready ? video : null);
     return;
   }
   // Cadre incliné qui flotte (comme la capture produit).
@@ -763,14 +755,7 @@ function scenePhoto(c: Ctx, s: Extract<Scene, { type: 'photo' }>, lt: number, sc
     } else {
       placeholder(c, 0, 0, W, H, 'Ajoutez vos photos');
     }
-    if (s.caption) {
-      const g = ctx.createLinearGradient(0, H * 0.55, 0, H);
-      g.addColorStop(0, 'rgba(0,0,0,0)');
-      g.addColorStop(1, 'rgba(0,0,0,0.75)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, H * 0.55, W, H * 0.45);
-      kinetic(c, s.caption, W / 2, c.vertical ? H * 0.74 : H * 0.8, U * 0.075, W * 0.86, lt, { start: 0.2 });
-    }
+    if (s.caption) captionOverMedia(c, s.caption, lt, s.captionPos ?? 'bottom', ready ? img : null);
     return;
   }
   const capY = c.vertical ? H * 0.17 : H * 0.14;
@@ -826,6 +811,65 @@ function placeholder(c: Ctx, x: number, y: number, w: number, h: number, label =
   ctx.fillStyle = rgba(c.theme.text, 0.55);
   ctx.fillText('onglet « Médias »', x + w / 2, y + h / 2 + U * 0.03);
   ctx.restore();
+}
+
+
+// ---------- Texte sur image : zone choisie + calque d'assombrissement calculé ----------
+const lumCanvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+const lumCache = new WeakMap<object, { t: number; top: number; bottom: number }>();
+/** Luminance moyenne (0-1) du haut et du bas de l'image affichée, mesurée 2 fois par seconde. */
+function zoneLuminance(src: CanvasImageSource & object, now: number): { top: number; bottom: number } | null {
+  const hit = lumCache.get(src);
+  if (hit && Math.abs(now - hit.t) < 0.5) return hit;
+  if (!lumCanvas) return null;
+  try {
+    lumCanvas.width = 8;
+    lumCanvas.height = 16;
+    const lc = lumCanvas.getContext('2d', { willReadFrequently: true });
+    if (!lc) return null;
+    lc.drawImage(src, 0, 0, 8, 16);
+    const d = lc.getImageData(0, 0, 8, 16).data;
+    const avg = (y0: number, y1: number) => {
+      let sum = 0, n = 0;
+      for (let y = y0; y < y1; y++) for (let x = 0; x < 8; x++) {
+        const i = (y * 8 + x) * 4;
+        sum += (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255;
+        n++;
+      }
+      return sum / n;
+    };
+    const res = { t: now, top: avg(2, 7), bottom: avg(10, 15) };
+    lumCache.set(src, res);
+    return res;
+  } catch {
+    return null; // image d'un autre domaine : pas de mesure possible
+  }
+}
+
+function captionOverMedia(c: Ctx, text: string, lt: number, pos: 'top' | 'bottom', src: (CanvasImageSource & object) | null) {
+  const { ctx, W, H, U } = c;
+  const lum = src ? zoneLuminance(src, lt) : null;
+  const zone = lum ? (pos === 'top' ? lum.top : lum.bottom) : 0.5;
+  // Plus la zone est claire, plus le calque est dense (le texte reste blanc et lisible).
+  const strength = Math.min(0.9, 0.45 + zone * 0.6);
+  const top = pos === 'top';
+  const y0 = top ? 0 : H * 0.52;
+  const y1 = top ? H * 0.48 : H;
+  const g = ctx.createLinearGradient(0, top ? y0 : y0, 0, top ? y1 : y1);
+  g.addColorStop(top ? 0 : 1, `rgba(0,0,0,${strength})`);
+  g.addColorStop(top ? 1 : 0, 'rgba(0,0,0,0)');
+  ctx.save();
+  ctx.fillStyle = g;
+  ctx.fillRect(0, y0, W, y1 - y0);
+  ctx.restore();
+  const ty = top ? (c.vertical ? H * 0.24 : H * 0.2) : c.vertical ? H * 0.72 : H * 0.8;
+  kinetic(c, text, W / 2, ty, U * 0.075, W * 0.86, lt, { start: 0.2, color: '#ffffff' });
+}
+
+/** Rayon des boutons et cartes selon la charte du client (carré, arrondi, pilule). */
+function radiusOf(c: Ctx, h: number): number {
+  const r = c.theme.radius ?? 'pill';
+  return r === 'square' ? Math.min(h * 0.12, c.U * 0.008) : r === 'rounded' ? h * 0.28 : h / 2;
 }
 
 // ---------- Apparitions magiques ----------
@@ -980,7 +1024,7 @@ function drawMagic(c: Ctx, m: Magic, lt: number, d: number, k: number) {
       ctx.shadowColor = rgba(theme.primary, 0.7);
       ctx.shadowBlur = U * 0.06;
       ctx.fillStyle = theme.primary;
-      roundRect(ctx, -w / 2, -h / 2, w, h, h / 2);
+      roundRect(ctx, -w / 2, -h / 2, w, h, radiusOf(c, h));
       ctx.fill();
       ctx.restore();
       ctx.fillStyle = isLight(theme.primary) ? '#0b0b14' : '#ffffff';

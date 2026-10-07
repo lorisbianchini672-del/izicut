@@ -43,6 +43,10 @@ const DEFAULT_CUT: Record<NonNullable<MotionProject['transition']>, Sfx> = { fla
 
 const MAGIC_SFX: Record<MagicKind, Sfx> = { notification: 'chime', sticker: 'pop', badge: 'pop', button: 'pop', emoji: 'pop', review: 'chime', qr: 'click' };
 
+/** Réplique de voix-off déjà synthétisée, calée sur la timeline. */
+export type VoiceClip = { start: number; buffer: AudioBuffer };
+export type VoiceTrack = { key: string; clips: VoiceClip[] };
+
 export function hasSound(p: MotionProject): boolean {
   return Boolean(p.sound) || p.scenes.some((s) => s.sfx || s.magic?.length);
 }
@@ -50,18 +54,18 @@ export function hasSound(p: MotionProject): boolean {
 const cache = new Map<string, Promise<AudioBuffer | null>>();
 
 /** Bande-son complète du projet (mise en cache tant que le projet sonore ne change pas). */
-export function renderSoundtrack(project: MotionProject): Promise<AudioBuffer | null> {
-  if (typeof window === 'undefined' || typeof OfflineAudioContext === 'undefined' || !hasSound(project)) return Promise.resolve(null);
-  const key = JSON.stringify([project.sound, project.transition, project.scenes.map((s) => [s.duration, s.sfx, s.type, s.magic?.map((m) => [m.kind, m.at, m.sfx])])]);
+export function renderSoundtrack(project: MotionProject, voice?: VoiceTrack | null): Promise<AudioBuffer | null> {
+  if (typeof window === 'undefined' || typeof OfflineAudioContext === 'undefined' || (!hasSound(project) && !voice?.clips.length)) return Promise.resolve(null);
+  const key = JSON.stringify([voice?.key ?? '', project.sound, project.transition, project.scenes.map((s) => [s.duration, s.sfx, s.type, s.magic?.map((m) => [m.kind, m.at, m.sfx])])]);
   const hit = cache.get(key);
   if (hit) return hit;
-  const job = render(project).catch(() => null);
+  const job = render(project, voice?.clips ?? []).catch(() => null);
   cache.set(key, job);
   if (cache.size > 12) cache.delete(cache.keys().next().value as string);
   return job;
 }
 
-async function render(project: MotionProject): Promise<AudioBuffer> {
+async function render(project: MotionProject, voice: VoiceClip[]): Promise<AudioBuffer> {
   const sr = 44100;
   const total = totalDuration(project);
   const ctx = new OfflineAudioContext(2, Math.ceil((total + 0.05) * sr), sr);
@@ -83,12 +87,39 @@ async function render(project: MotionProject): Promise<AudioBuffer> {
   if (music !== 'none') {
     const bus = ctx.createGain();
     const vol = project.sound?.volume ?? 0.6;
+    const L = vol * 0.9;
+    const duck = L * 0.25; // ≈ -12 dB pendant que la voix parle (ducking)
     bus.gain.setValueAtTime(0, 0);
-    bus.gain.linearRampToValueAtTime(vol * 0.9, 0.15);
-    bus.gain.setValueAtTime(vol * 0.9, Math.max(0.2, total - 1));
-    bus.gain.linearRampToValueAtTime(vol * 0.45, total);
+    bus.gain.linearRampToValueAtTime(L, 0.15);
+    let cursor = 0.15;
+    for (const v of [...voice].sort((a, b) => a.start - b.start)) {
+      const s0 = Math.max(cursor + 0.01, v.start - 0.12);
+      const e0 = Math.min(total, v.start + v.buffer.duration);
+      if (s0 >= e0) continue;
+      bus.gain.setValueAtTime(L, s0);
+      bus.gain.linearRampToValueAtTime(duck, Math.min(e0, s0 + 0.12));
+      bus.gain.setValueAtTime(duck, e0);
+      cursor = Math.min(total - 0.01, e0 + 0.3);
+      bus.gain.linearRampToValueAtTime(L, cursor);
+    }
+    bus.gain.setValueAtTime(L, Math.max(cursor + 0.01, total - 1));
+    bus.gain.linearRampToValueAtTime(L * 0.5, total);
     bus.connect(master);
     playMusic(ctx, bus, noise, GENRES[music], project.sound?.bpm ?? 110, total, project);
+  }
+
+  // Voix-off au-dessus de tout (le compresseur évite la saturation).
+  if (voice.length) {
+    const vBus = ctx.createGain();
+    vBus.gain.value = 1.15;
+    vBus.connect(master);
+    for (const v of voice) {
+      if (v.start >= total) continue;
+      const src = ctx.createBufferSource();
+      src.buffer = v.buffer;
+      src.connect(vBus);
+      src.start(v.start);
+    }
   }
 
   const sfxBus = ctx.createGain();

@@ -30,7 +30,10 @@ import {
   Images,
   Volume2,
   VolumeX,
-  Clapperboard
+  Clapperboard,
+  Mic,
+  MicOff,
+  Loader2
 } from 'lucide-react';
 
 import { BrandPanel, EMPTY_BRAND, loadBrand, saveBrand } from '@/components/motion/BrandPanel';
@@ -40,7 +43,7 @@ import type { BrandProfile } from '@/lib/brand/types';
 import { FREE_LIMITS, FREE_MOTION_CREATIONS, type MotionQuota } from '@/lib/motion/plan';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { drawFrame, locate, type MotionAssets } from '@/lib/motion/render';
-import { SoundPlayer, renderSoundtrack } from '@/lib/motion/sound';
+import { SoundPlayer, renderSoundtrack, type VoiceTrack } from '@/lib/motion/sound';
 import {
   FORMAT_SIZE,
   MAX_PHOTOS,
@@ -177,6 +180,14 @@ export function MotionStudio() {
   const [concept, setConcept] = useState<Concept | null>(null);
   const [hooks, setHooks] = useState<Scene[]>([]);
   const [quota, setQuota] = useState<MotionQuota | null>(null);
+  const [voiceTrack, setVoiceTrack] = useState<VoiceTrack | null>(null);
+  const voiceRef = useRef<VoiceTrack | null>(null);
+  voiceRef.current = voiceTrack;
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceGender, setVoiceGender] = useState<'femme' | 'homme'>('femme');
+  const [listening, setListening] = useState(false);
+  const [spoken, setSpoken] = useState(false);
+  const recRef = useRef<{ stop: () => void } | null>(null);
   const [soundOn, setSoundOn] = useState(false);
   const soundOnRef = useRef(false);
   soundOnRef.current = soundOn;
@@ -236,10 +247,10 @@ export function MotionStudio() {
   useEffect(() => {
     let alive = true;
     const id = window.setTimeout(() => {
-      renderSoundtrack(project).then((buf) => { if (alive) playerRef.current?.setBuffer(buf); });
+      renderSoundtrack(project, voiceTrack).then((buf) => { if (alive) playerRef.current?.setBuffer(buf); });
     }, 250);
     return () => { alive = false; window.clearTimeout(id); };
-  }, [project]);
+  }, [project, voiceTrack]);
   useEffect(() => () => playerRef.current?.stop(), []);
 
   useEffect(() => {
@@ -443,7 +454,70 @@ export function MotionStudio() {
     });
   };
 
-  const askAi = async (text: string, opts: { fresh?: boolean } = {}) => {
+  /** Voix-off réelle intégrée à la vidéo (musique baissée de 12 dB pendant qu'elle parle). */
+  const generateVoice = async () => {
+    const lines = (concept?.voiceover ?? [])
+      .map((v) => ({ start: (Number(v.time.match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(',', '.')) || 0) + 0.15, text: v.text.trim() }))
+      .filter((l) => l.text)
+      .slice(0, 6);
+    if (!lines.length) return;
+    setVoiceBusy(true);
+    try {
+      const res = await fetch('/api/motion/voice', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines, voice: voiceGender }) });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !Array.isArray(json.clips)) throw new Error(json.error ?? 'Voix-off indisponible.');
+      const ctx = playerRef.current?.context();
+      if (!ctx) throw new Error('Audio indisponible dans ce navigateur.');
+      const clips = await Promise.all(
+        (json.clips as { start: number; data: string }[]).map(async (c) => {
+          const bin = Uint8Array.from(atob(c.data), (ch) => ch.charCodeAt(0));
+          return { start: c.start, buffer: await ctx.decodeAudioData(bin.buffer) };
+        })
+      );
+      setVoiceTrack({ key: `${Date.now()}`, clips });
+      void playerRef.current?.unlock();
+      setSoundOn(true);
+      timeRef.current = 0;
+      setPlaying(true);
+      setNotice('Voix-off ajoutée à la vidéo ✓ La musique baisse automatiquement quand la voix parle.');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Voix-off indisponible.');
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
+
+  /** Dictée : on parle à l'IA au lieu d'écrire (Chrome, Edge, Safari). */
+  const toggleListening = () => {
+    if (listening) { recRef.current?.stop(); return; }
+    const W = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec };
+    const Ctor = W.SpeechRecognition ?? W.webkitSpeechRecognition;
+    if (!Ctor) { setNotice('La dictée vocale n’est pas disponible dans ce navigateur (essayez Chrome ou Safari).'); return; }
+    const rec = new Ctor();
+    rec.lang = 'fr-FR';
+    rec.interimResults = true;
+    rec.continuous = false;
+    let finalText = '';
+    rec.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
+      }
+      setPrompt((finalText + interim).trim());
+    };
+    rec.onend = () => {
+      setListening(false);
+      recRef.current = null;
+      if (finalText.trim()) { setSpoken(true); void askAi(finalText.trim(), { voice: true }); }
+    };
+    rec.onerror = () => setListening(false);
+    recRef.current = rec;
+    setListening(true);
+    rec.start();
+  };
+
+  const askAi = async (text: string, opts: { fresh?: boolean; voice?: boolean } = {}) => {
     const value = text.trim();
     if (!value || aiBusy) return;
     if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour utiliser l’IA du Studio.'); return; }
@@ -475,9 +549,12 @@ export function MotionStudio() {
         setConcept(json.concept as Concept);
         try { window.localStorage.setItem(CONCEPT_KEY, JSON.stringify(json.concept)); } catch { /* rien */ }
       }
+      const aiSays = [typeof json.message === 'string' ? json.message : '', typeof json.question === 'string' ? json.question : ''].filter(Boolean).join(' ');
+      if (aiSays && (spoken || opts.voice)) speak([{ text: aiSays }]);
+      if (json.concept) setVoiceTrack(null);
       setMessages((m) => [...m, {
         role: 'ai',
-        text: json.concept
+        text: aiSays ? `${aiSays}${json.concept ? `\n\n${json.project.scenes.length} scènes · ${Math.round(totalDuration(json.project))} s · concept complet dans « Direction artistique ».` : ''}` : json.concept
           ? `Votre pub est prête : ${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s, avec musique et effets sonores (activez le son sous l’aperçu). Le concept complet est dans « Direction artistique ». Demandez-moi n’importe quelle modification.`
           : `C’est fait : ${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s. Demandez-moi une autre modification si besoin.`
       }]);
@@ -495,7 +572,7 @@ export function MotionStudio() {
       setNotice('Votre navigateur ne permet pas l’export vidéo. Utilisez Chrome, Edge ou Safari récent sur ordinateur.');
       return;
     }
-    const soundtrack = await renderSoundtrack(projectRef.current);
+    const soundtrack = await renderSoundtrack(projectRef.current, voiceRef.current);
     const { mime, ext } = pickMime(mediaRef.current.length > 0 || Boolean(soundtrack));
     exportingRef.current = true;
     setExporting(0);
@@ -708,7 +785,7 @@ export function MotionStudio() {
                     <Lock className="mr-1 inline h-3.5 w-3.5" /> <Link href="/login?next=/studio" className="font-semibold text-neon underline">Connectez-vous</Link> (gratuit) pour que l’IA crée et modifie vos vidéos. Vous pouvez déjà tester les modèles et tout modifier à la main.
                   </p>
                 ) : null}
-                {concept ? <ConceptCard concept={concept} /> : null}
+                {concept ? <ConceptCard concept={concept} onVoice={generateVoice} voiceBusy={voiceBusy} hasVoice={Boolean(voiceTrack)} gender={voiceGender} onGender={setVoiceGender} canVoice={isPaid} /> : null}
                 {hooks.length ? (
                   <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
                     <p className="mb-1.5 text-xs font-semibold text-fg">Accroches A/B — testez celle qui retient le plus</p>
@@ -771,6 +848,15 @@ export function MotionStudio() {
                     placeholder={messages.length ? 'Ex. : mets le titre en jaune, plus rapide…' : 'Ex. : pub pour mon salon de coiffure, -30 % en mai…'}
                     className="min-h-[52px] flex-1 resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-fg outline-none focus:border-neon/50"
                   />
+                  <button
+                    type="button"
+                    onClick={toggleListening}
+                    className={cn('grid h-[52px] w-12 shrink-0 cursor-pointer place-items-center rounded-xl border transition', listening ? 'animate-pulse border-rec bg-rec/20 text-rec' : 'border-white/10 text-fg-muted hover:text-fg')}
+                    aria-label={listening ? 'Arrêter la dictée' : 'Parler à l’IA'}
+                    title={listening ? 'Arrêter' : 'Parler à l’IA (réponse vocale)'}
+                  >
+                    {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  </button>
                   <Button type="submit" variant="gradient" className="h-[52px] rounded-xl" disabled={aiBusy || !prompt.trim()} aria-label="Envoyer à l’IA">
                     <Send className="h-4 w-4" />
                   </Button>
@@ -1059,7 +1145,18 @@ function speak(lines: { text: string }[]) {
   }
 }
 
-function ConceptCard({ concept }: { concept: Concept }) {
+type SpeechRec = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: (e: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void;
+  onend: () => void;
+  onerror: () => void;
+};
+
+function ConceptCard({ concept, onVoice, voiceBusy, hasVoice, gender, onGender, canVoice }: { concept: Concept; onVoice: () => void; voiceBusy: boolean; hasVoice: boolean; gender: 'femme' | 'homme'; onGender: (g: 'femme' | 'homme') => void; canVoice: boolean }) {
   const [open, setOpen] = useState(false);
   const ad = concept.art_direction;
   return (
@@ -1101,7 +1198,15 @@ function ConceptCard({ concept }: { concept: Concept }) {
               {concept.voiceover.map((v, i) => (
                 <p key={i} className="text-fg-muted"><span className="font-code text-[10px] text-neon">{v.time}</span> {v.text} {v.sfx ? <span className="text-fg-subtle">{v.sfx}</span> : null}</p>
               ))}
-              <p className="text-[10px] text-fg-subtle">À enregistrer avec votre voix ou une voix de synthèse ; la vidéo exportée contient la musique et les bruitages.</p>
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {(['femme', 'homme'] as const).map((g) => (
+                  <button key={g} type="button" onClick={() => onGender(g)} className={cn('cursor-pointer rounded-full border px-2 py-0.5 text-[10px]', gender === g ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>Voix {g}</button>
+                ))}
+                <button type="button" disabled={voiceBusy || !canVoice} onClick={onVoice} className="izi-cta ml-auto inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold disabled:opacity-50">
+                  {voiceBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mic className="h-3 w-3" />} {hasVoice ? 'Regénérer la voix-off' : 'Mettre la voix-off dans la vidéo'}
+                </button>
+              </div>
+              <p className="text-[10px] text-fg-subtle">{canVoice ? 'Voix de synthèse calée sur chaque scène ; la musique baisse de 12 dB quand elle parle (ducking).' : 'Voix-off intégrée à la vidéo : offre Pro.'}</p>
             </div>
           ) : null}
           <div className="space-y-1.5 border-t border-white/10 pt-2">
@@ -1181,6 +1286,11 @@ function SceneFields({ scene, media, photos, onChange }: { scene: Scene; media: 
           )}
           <input className={inputCls} value={scene.caption ?? ''} maxLength={80} onChange={(e) => onChange({ caption: e.target.value || undefined })} placeholder="Texte sur la photo (facultatif)" />
           <div className="flex gap-1.5">
+            {(['top', 'bottom'] as const).map((pos) => (
+              <button key={pos} type="button" onClick={() => onChange({ captionPos: pos })} className={cn('flex-1 cursor-pointer rounded-lg border px-2 py-1 text-xs', (scene.captionPos ?? 'bottom') === pos ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>Texte en {pos === 'top' ? 'haut' : 'bas'}</button>
+            ))}
+          </div>
+          <div className="flex gap-1.5">
             {(['full', 'frame'] as const).map((lay) => (
               <button key={lay} type="button" onClick={() => onChange({ layout: lay })} className={cn('flex-1 cursor-pointer rounded-lg border px-2 py-1 text-xs', scene.layout === lay ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>{lay === 'full' ? 'Plein écran' : 'Tirage photo'}</button>
             ))}
@@ -1249,6 +1359,11 @@ function SceneFields({ scene, media, photos, onChange }: { scene: Scene; media: 
             </div>
           ) : null}
           <input className={inputCls} value={scene.caption ?? ''} maxLength={80} onChange={(e) => onChange({ caption: e.target.value || undefined })} placeholder="Texte sur la vidéo (facultatif)" />
+          <div className="flex gap-1.5">
+            {(['top', 'bottom'] as const).map((pos) => (
+              <button key={pos} type="button" onClick={() => onChange({ captionPos: pos })} className={cn('flex-1 cursor-pointer rounded-lg border px-2 py-1 text-xs', (scene.captionPos ?? 'bottom') === pos ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>Texte en {pos === 'top' ? 'haut' : 'bas'}</button>
+            ))}
+          </div>
           <div className="flex gap-1.5">
             {(['full', 'frame'] as const).map((lay) => (
               <button key={lay} type="button" onClick={() => onChange({ layout: lay })} className={cn('flex-1 cursor-pointer rounded-lg border px-2 py-1 text-xs', scene.layout === lay ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>{lay === 'full' ? 'Plein écran' : 'Dans un cadre'}</button>
