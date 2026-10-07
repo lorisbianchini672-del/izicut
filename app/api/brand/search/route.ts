@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { chatJson } from '@/lib/ai/chat';
 import { nafLabel } from '@/lib/brand/naf';
 import type { Company } from '@/lib/brand/types';
 
@@ -76,6 +77,17 @@ function variants(word: string): string[] {
   return [...out].filter((v) => v.length >= 3).slice(0, 8);
 }
 
+/** Sigle d'un nom : « Basket Charpennes Croix-Luizet » → BCCL. */
+function initials(name: string): string {
+  return norm(name)
+    .replace(/\(.*?\)/g, ' ')
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w && !/^(de|du|des|la|le|les|et|d|l|en|a|au|aux|sur)$/.test(w))
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+}
+
 export async function GET(request: Request) {
   const q = new URL(request.url).searchParams.get('q')?.trim() ?? '';
   if (q.length < 2) return NextResponse.json({ results: [] });
@@ -126,7 +138,32 @@ export async function GET(request: Request) {
     const inCity = (r: Raw) => words.length >= 2 && (norm(r.siege?.libelle_commune).includes(lastWord) || (r.siege?.code_postal ?? '').startsWith(lastWord));
     if (!pool.length && words.length >= 2) add(await search(words.slice(0, -1).join(' '), 25));
 
-    const score = (r: Raw) => (matchesHint(r) ? 2 : 0) + (inCity(r) ? 1 : 0);
+    // Sigle (BCCL, ASVEL…) : le registre indexe mal les sigles. On demande à l'IA les noms
+    // complets possibles, puis on ne garde que ceux dont les initiales correspondent vraiment.
+    const acro = nameWords.find((w) => (/^[a-z]{2,6}$/i.test(w) && w === w.toUpperCase()) || (/^[a-z]{3,6}$/i.test(w) && (w.match(/[aeiouy]/gi)?.length ?? 0) <= 1));
+    const sigleOf = (r: Raw) => initials(r.nom_complet ?? r.nom_raison_sociale ?? '');
+    if (acro && !pool.some((r) => sigleOf(r).startsWith(acro.toUpperCase()))) {
+      const city = words.length >= 2 ? words.filter((w) => w !== acro).join(' ') : '';
+      try {
+        const ai = (await chatJson({
+          system: 'Tu connais très bien les entreprises, clubs et associations de France. Réponds UNIQUEMENT en JSON {"names":["nom complet 1","nom complet 2","nom complet 3"]}.',
+          user: `Quels noms complets de structures françaises correspondent au sigle « ${acro.toUpperCase()} »${city ? ` (ville / indice : ${city})` : ''} ? Donne jusqu'à 4 propositions plausibles, la plus probable d'abord.`,
+          maxTokens: 300,
+          temperature: 0.2
+        })) as { names?: unknown };
+        const names = (Array.isArray(ai.names) ? ai.names : []).filter((n): n is string => typeof n === 'string').slice(0, 4);
+        for (const n of names) {
+          if (initials(n) !== acro.toUpperCase()) continue;
+          for (const r of (await search(n, 5)) ?? []) {
+            if (sigleOf(r).startsWith(acro.toUpperCase()) && r.siren && !seen.has(r.siren)) { seen.add(r.siren); pool.unshift(r); }
+          }
+        }
+      } catch {
+        /* IA indisponible : on garde les résultats du registre */
+      }
+    }
+    const acroMatch = (r: Raw) => Boolean(acro) && sigleOf(r).startsWith(acro!.toUpperCase());
+    const score = (r: Raw) => (acroMatch(r) ? 4 : 0) + (matchesHint(r) ? 2 : 0) + (inCity(r) ? 1 : 0);
     pool = pool.map((r, i) => ({ r, i })).sort((a, b) => score(b.r) - score(a.r) || a.i - b.i).map((x) => x.r).slice(0, 8);
     const data = { results: pool };
     const u = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
