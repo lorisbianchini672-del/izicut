@@ -142,8 +142,9 @@ export async function GET(request: Request) {
     // complets possibles, puis on ne garde que ceux dont les initiales correspondent vraiment.
     const acro = nameWords.find((w) => (/^[a-z]{2,6}$/i.test(w) && w === w.toUpperCase()) || (/^[a-z]{3,6}$/i.test(w) && (w.match(/[aeiouy]/gi)?.length ?? 0) <= 1));
     const sigleOf = (r: Raw) => initials(r.nom_complet ?? r.nom_raison_sociale ?? '');
-    if (acro && !pool.some((r) => sigleOf(r).startsWith(acro.toUpperCase()))) {
-      const city = words.length >= 2 ? words.filter((w) => w !== acro).join(' ') : '';
+    const city = acro && words.length >= 2 ? words.filter((w) => w !== acro).join(' ') : '';
+    const inCityWord = (r: Raw) => Boolean(city) && norm(r.siege?.libelle_commune).includes(norm(city));
+    if (acro && !pool.some((r) => sigleOf(r).startsWith(acro.toUpperCase()) && (!city || inCityWord(r)))) {
       try {
         const ai = (await chatJson({
           system: 'Tu connais très bien les entreprises, clubs et associations de France. Réponds UNIQUEMENT en JSON {"names":["nom complet 1","nom complet 2","nom complet 3"]}.',
@@ -163,7 +164,7 @@ export async function GET(request: Request) {
       }
     }
     const acroMatch = (r: Raw) => Boolean(acro) && sigleOf(r).startsWith(acro!.toUpperCase());
-    const score = (r: Raw) => (acroMatch(r) ? 4 : 0) + (matchesHint(r) ? 2 : 0) + (inCity(r) ? 1 : 0);
+    const score = (r: Raw) => (acroMatch(r) ? 4 : 0) + (matchesHint(r) ? 2 : 0) + (inCity(r) ? 3 : 0);
     pool = pool.map((r, i) => ({ r, i })).sort((a, b) => score(b.r) - score(a.r) || a.i - b.i).map((x) => x.r).slice(0, 8);
     const data = { results: pool };
     const u = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
