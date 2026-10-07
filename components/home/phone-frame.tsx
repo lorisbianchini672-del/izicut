@@ -20,7 +20,7 @@ export function PhoneFrame({
   template,
   words,
   active,
-  color = '#c8ff3d',
+  color = '#a990ff',
   layout = 'crop',
   hook = 'Le secret des 3 premières secondes',
   progress = true,
@@ -71,7 +71,7 @@ function Scene({ layout }: { layout: FrameLayout }) {
     <svg viewBox="0 0 90 160" className="h-full w-full" aria-hidden>
       <defs>
         <radialGradient id="izi-key" cx="30%" cy="25%" r="80%">
-          <stop offset="0" stopColor="#3de0ff" stopOpacity="0.35" />
+          <stop offset="0" stopColor="#ffbe76" stopOpacity="0.35" />
           <stop offset="1" stopColor="#05060a" stopOpacity="0" />
         </radialGradient>
         <linearGradient id="izi-body" x1="0" x2="0" y1="0" y2="1">

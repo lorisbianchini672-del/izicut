@@ -128,7 +128,7 @@ export function SiteNav() {
     >
       <nav aria-label="Navigation principale" className="mx-auto flex h-16 max-w-7xl items-center gap-8 px-4 sm:px-6 lg:px-8">
         <Link href="/" className="izi-focus flex items-center gap-2.5 rounded-lg" aria-label="IziCut, accueil">
-          <span aria-hidden className="grid h-8 w-8 place-items-center rounded-lg bg-neon font-code text-xs font-bold text-ink-950 shadow-[0_0_20px_-4px_rgb(200_255_61/0.7)]">
+          <span aria-hidden className="grid h-8 w-8 place-items-center rounded-lg bg-neon font-code text-xs font-bold text-ink-950 shadow-[0_0_20px_-4px_rgb(169_144_255/0.7)]">
             IZ
           </span>
           <span className="text-[17px] font-semibold tracking-tight text-fg">IziCut</span>

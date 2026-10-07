@@ -99,7 +99,7 @@ export default function ResetPasswordPage() {
             <button
               type="submit"
               disabled={pending || ready !== 'ok'}
-              className="izi-focus group inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-neon px-4 py-3.5 text-sm font-semibold text-ink-950 shadow-[0_0_36px_-8px_rgb(200_255_61/0.8)] disabled:cursor-wait disabled:opacity-60"
+              className="izi-focus group inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-neon px-4 py-3.5 text-sm font-semibold text-ink-950 shadow-[0_0_36px_-8px_rgb(169_144_255/0.8)] disabled:cursor-wait disabled:opacity-60"
             >
               {pending || ready === 'checking' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Enregistrer et continuer

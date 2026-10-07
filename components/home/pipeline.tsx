@@ -27,7 +27,7 @@ export function Pipeline() {
       <div aria-hidden className="absolute inset-x-0 top-0 h-px bg-line" />
       <motion.div
         aria-hidden
-        className="absolute inset-x-0 top-0 h-[2px] origin-left bg-gradient-to-r from-cyan via-neon to-neon shadow-[0_0_14px_rgb(200_255_61/0.6)]"
+        className="absolute inset-x-0 top-0 h-[2px] origin-left bg-gradient-to-r from-cyan via-neon to-neon shadow-[0_0_14px_rgb(169_144_255/0.6)]"
         style={{ scaleX: reduce ? 1 : progress }}
       />
       <ol className="mx-auto grid max-w-7xl gap-px bg-line sm:grid-cols-2 lg:grid-cols-4">
@@ -49,7 +49,7 @@ function Step({
 }: (typeof STEPS)[number] & { index: number; progress: MotionValue<number>; reduce: boolean }) {
   const start = index / STEPS.length;
   const on = useTransform(progress, [start, start + 0.18], [0, 1]);
-  const iconColor = useTransform(on, [0, 1], ['rgb(238 240 245)', 'rgb(200 255 61)']);
+  const iconColor = useTransform(on, [0, 1], ['rgb(238 240 245)', 'rgb(169 144 255)']);
   const iconBorder = useTransform(on, [0, 1], ['rgba(255,255,255,0.14)', 'rgba(200,255,61,0.55)']);
   const glow = useTransform(on, [0, 1], ['0 0 0 0 rgba(200,255,61,0)', '0 0 28px -4px rgba(200,255,61,0.55)']);
 

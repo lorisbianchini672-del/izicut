@@ -144,7 +144,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                       const done = order.indexOf(project.status) >= order.indexOf(step);
                       return (
                         <li key={step} className={cn('flex flex-col items-center gap-1.5', done && 'text-neon')}>
-                          <span className={cn('h-2 w-2 rounded-full', done ? 'bg-neon shadow-[0_0_10px_rgb(200_255_61/0.8)]' : 'bg-white/15')} />
+                          <span className={cn('h-2 w-2 rounded-full', done ? 'bg-neon shadow-[0_0_10px_rgb(169_144_255/0.8)]' : 'bg-white/15')} />
                           {step === 'processing_audio' ? 'Vidéo' : step === 'transcribing' ? 'Paroles' : step === 'analyzing' ? 'Moments forts' : 'Montage'}
                         </li>
                       );
@@ -357,7 +357,7 @@ function ClipCard({
           href={`/montage/${clip.id}`}
           aria-disabled={!ready}
           className={cn(
-            'flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-neon to-[#3de0ff] px-3 py-2 text-xs font-bold text-ink-950 transition hover:opacity-90',
+            'flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-neon to-[#ffbe76] px-3 py-2 text-xs font-bold text-ink-950 transition hover:opacity-90',
             !ready && 'pointer-events-none opacity-40'
           )}
         >

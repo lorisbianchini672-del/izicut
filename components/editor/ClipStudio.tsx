@@ -785,7 +785,7 @@ export function ClipStudio({ clipId }: { clipId: string }) {
           <div
             ref={frameRef}
             onClick={togglePlay}
-            className="relative aspect-[9/16] w-full max-w-[min(340px,calc((100dvh-22rem)*9/16))] cursor-pointer overflow-hidden rounded-[22px] border border-line-strong bg-black shadow-[0_30px_80px_-30px_rgb(200_255_61/0.25)]"
+            className="relative aspect-[9/16] w-full max-w-[min(340px,calc((100dvh-22rem)*9/16))] cursor-pointer overflow-hidden rounded-[22px] border border-line-strong bg-black shadow-[0_30px_80px_-30px_rgb(169_144_255/0.25)]"
           >
             {showFinal && finalUrl ? (
               <video src={finalUrl} controls playsInline className="h-full w-full object-cover" onClick={(e) => e.stopPropagation()} />

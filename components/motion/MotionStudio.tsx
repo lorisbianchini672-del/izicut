@@ -759,7 +759,7 @@ export function MotionStudio() {
                     <button
                       type="button"
                       onClick={() => { setPendingVideo(m.file); router.push('/montage/nouveau'); }}
-                      className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-neon to-[#3de0ff] px-2 py-1.5 text-xs font-bold text-ink-950"
+                      className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-neon to-[#ffbe76] px-2 py-1.5 text-xs font-bold text-ink-950"
                     >
                       <Wand2 className="h-3.5 w-3.5" /> Modifier directement cette vidéo (ralentis, effets, rythme…)
                     </button>

@@ -49,7 +49,7 @@ export function StepGuide({
                 className={cn(
                   'relative z-10 grid h-8 w-8 place-items-center rounded-full text-sm font-bold transition-colors',
                   done && 'bg-neon text-ink-950',
-                  active && 'bg-neon text-ink-950 shadow-[0_0_18px_rgb(200_255_61/0.6)] ring-4 ring-neon/20',
+                  active && 'bg-neon text-ink-950 shadow-[0_0_18px_rgb(169_144_255/0.6)] ring-4 ring-neon/20',
                   !done && !active && 'bg-white/10 text-fg-muted'
                 )}
               >

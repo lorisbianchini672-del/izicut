@@ -128,7 +128,7 @@ function CropVisual() {
         <span className="absolute bottom-0 left-1/2 h-12 w-12 -translate-x-1/2 rounded-t-full bg-white/15" />
       </div>
       <div className="relative h-28 w-16 overflow-hidden rounded-lg border border-line-strong bg-ink-800">
-        <span className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgb(61_224_255/0.25),transparent_70%)] blur-sm" />
+        <span className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgb(255_190_118/0.25),transparent_70%)] blur-sm" />
         <span className="absolute inset-x-0 top-1/2 h-9 -translate-y-1/2 border-y border-white/20 bg-ink-900" />
       </div>
     </div>

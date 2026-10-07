@@ -13,6 +13,7 @@ import {
 import Link from 'next/link';
 import { ArrowRight, Scissors } from 'lucide-react';
 
+import { GlassRing } from './glass-ring';
 import { LiveMotionDemo } from './live-motion-demo';
 import { EASE, Magnetic, SplitWords } from './motion';
 
@@ -36,7 +37,7 @@ export function Hero() {
   const my = useMotionValue(-1000);
   const sx = useSpring(mx, { stiffness: 90, damping: 20 });
   const sy = useSpring(my, { stiffness: 90, damping: 20 });
-  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${sx}px ${sy}px, rgb(200 255 61 / 0.09), transparent 65%)`;
+  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${sx}px ${sy}px, rgb(169 144 255 / 0.09), transparent 65%)`;
 
   // Sortie de scène : l'aperçu monte, se redresse et recule
   const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start start', 'end start'] });
@@ -62,14 +63,14 @@ export function Hero() {
       {!reduce ? <motion.div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: spotlight }} /> : null}
       <motion.div
         aria-hidden
-        className="pointer-events-none absolute left-1/2 top-0 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(61_224_255/0.12),transparent)]"
+        className="pointer-events-none absolute left-1/2 top-0 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(255_190_118/0.12),transparent)]"
         animate={reduce ? undefined : { opacity: [0.6, 1, 0.6], scale: [1, 1.06, 1] }}
         transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
       />
 
       <div className="relative mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)] items-center gap-14 px-4 pb-24 sm:px-6 lg:grid-cols-[1.02fr_1fr] lg:gap-10 lg:px-8 lg:pb-32">
         <motion.div style={{ y: textY, opacity: textOpacity }} className="flex flex-col items-start">
-          <motion.p {...rise(0)} className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-white/[0.03] px-3 py-1 font-code text-[11px] uppercase tracking-[0.18em] text-fg-muted">
+          <motion.p {...rise(0)} className="izi-glass-pill inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium text-fg-muted">
             <span className="h-1.5 w-1.5 animate-pulse-rec rounded-full bg-rec" aria-hidden />
             Le 1er studio de pub en motion design · 100 % français
           </motion.p>
@@ -91,11 +92,11 @@ export function Hero() {
 
           <motion.div {...rise(0.8)} className="mt-9 flex w-full flex-col gap-3 sm:flex-row sm:items-center">
             <Magnetic>
-              <Link href="/studio" className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-neon px-6 py-3.5 text-base font-bold text-ink-950 shadow-[0_18px_50px_-15px_rgb(200_255_61/0.7)] transition hover:brightness-110 sm:w-auto">
+              <Link href="/studio" className="izi-cta inline-flex w-full items-center justify-center gap-2 rounded-full px-7 py-3.5 text-base font-bold transition hover:brightness-110 sm:w-auto">
                 Créer ma pub gratuitement <ArrowRight className="h-4 w-4" />
               </Link>
             </Magnetic>
-            <Link href="/upload" className="inline-flex items-center justify-center gap-2 rounded-2xl border border-line-strong px-5 py-3.5 text-sm font-medium text-fg-muted transition hover:border-neon/50 hover:text-fg">
+            <Link href="/upload" className="izi-glass-pill inline-flex items-center justify-center gap-2 rounded-full px-5 py-3.5 text-sm font-medium text-fg-muted transition hover:text-fg">
               <Scissors className="h-4 w-4" /> Découper une vidéo longue en clips
             </Link>
           </motion.div>
@@ -121,7 +122,11 @@ export function Hero() {
           transition={{ duration: 1.3, delay: 0.3, ease: EASE }}
           className="relative [perspective:1400px]"
         >
-          <LiveMotionDemo />
+          <GlassRing className="absolute left-1/2 top-1/2 h-[560px] w-[560px] -translate-x-[38%] -translate-y-1/2 opacity-90 sm:h-[640px] sm:w-[640px]" />
+          <div aria-hidden className="pointer-events-none absolute -right-10 bottom-0 h-72 w-72 rounded-full bg-[radial-gradient(closest-side,rgb(255_190_118/0.28),transparent)] blur-2xl" />
+          <div className="relative z-10">
+            <LiveMotionDemo />
+          </div>
         </motion.div>
       </div>
     </section>

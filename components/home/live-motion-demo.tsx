@@ -173,7 +173,7 @@ export function LiveMotionDemo() {
     <div ref={wrapRef} className="mx-auto flex w-full max-w-[560px] flex-col items-center gap-5 sm:flex-row sm:items-stretch">
       {/* Téléphone */}
       <div className="relative w-[230px] shrink-0 sm:w-[250px]">
-        <div className="rounded-[2.2rem] border border-white/15 bg-black p-2 shadow-[0_40px_90px_-30px_rgb(0_0_0/0.95),0_0_0_1px_rgb(255_255_255/0.04)]">
+        <div className="izi-glow-frame p-[3px]"><div className="rounded-[2.1rem] bg-[#05040f] p-2">
           <div className="relative overflow-hidden rounded-[1.7rem]" style={{ aspectRatio: `${width} / ${height}` }}>
             <canvas ref={canvasRef} width={width} height={height} className="block h-full w-full" aria-label={`Pub animée pour ${brandName}`} />
             <button
@@ -190,10 +190,11 @@ export function LiveMotionDemo() {
             </div>
           </div>
         </div>
+        </div>
       </div>
 
       {/* Personnalisation en direct */}
-      <div className="flex w-full flex-col gap-4 rounded-2xl border border-line bg-white/[0.03] p-4 backdrop-blur">
+      <div className="izi-card flex w-full flex-col gap-4 rounded-3xl p-4 backdrop-blur-xl">
         <p className="font-code text-[11px] uppercase tracking-[0.18em] text-fg-subtle">Essayez : tout se modifie</p>
 
         <div>
@@ -248,7 +249,7 @@ export function LiveMotionDemo() {
           </div>
         </div>
 
-        <button type="button" onClick={openInStudio} className="mt-auto flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-neon px-4 py-2.5 text-sm font-bold text-ink-950 transition hover:brightness-110">
+        <button type="button" onClick={openInStudio} className="izi-cta mt-auto flex cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold transition hover:brightness-110">
           Continuer dans le Studio <ArrowRight className="h-4 w-4" />
         </button>
         <p className="-mt-2 text-center text-[11px] text-fg-subtle">Ajoutez vos photos, vidéos et logo · l’IA fait le reste</p>

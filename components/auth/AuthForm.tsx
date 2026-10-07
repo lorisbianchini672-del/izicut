@@ -259,7 +259,7 @@ export function AuthForm({ nextPath = '/dashboard', initialError = null, initial
                   {on && (
                     <motion.span
                       layoutId="auth-mode"
-                      className="absolute inset-0 -z-0 rounded-lg bg-neon shadow-[0_0_24px_-6px_rgb(200_255_61/0.8)]"
+                      className="absolute inset-0 -z-0 rounded-lg bg-neon shadow-[0_0_24px_-6px_rgb(169_144_255/0.8)]"
                       transition={{ type: 'spring', stiffness: 420, damping: 34 }}
                     />
                   )}
@@ -357,7 +357,7 @@ export function AuthForm({ nextPath = '/dashboard', initialError = null, initial
               <button
                 type="submit"
                 disabled={pending || !supabaseConfigured}
-                className="izi-focus group inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-neon px-4 py-3.5 text-sm font-semibold text-ink-950 shadow-[0_0_36px_-8px_rgb(200_255_61/0.8)] transition-all hover:shadow-[0_0_48px_-6px_rgb(200_255_61/0.95)] active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
+                className="izi-focus group inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-neon px-4 py-3.5 text-sm font-semibold text-ink-950 shadow-[0_0_36px_-8px_rgb(169_144_255/0.8)] transition-all hover:shadow-[0_0_48px_-6px_rgb(169_144_255/0.95)] active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
               >
                 {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
                 {pending ? 'Un instant…' : submitLabel}
@@ -438,7 +438,7 @@ function Field({
       <label htmlFor={id} className="text-xs font-medium text-fg-muted">
         {label}
       </label>
-      <div className="relative rounded-xl border border-line-strong bg-ink-900/70 transition-colors focus-within:border-neon/60 focus-within:shadow-[0_0_0_4px_rgb(200_255_61/0.08)]">
+      <div className="relative rounded-xl border border-line-strong bg-ink-900/70 transition-colors focus-within:border-neon/60 focus-within:shadow-[0_0_0_4px_rgb(169_144_255/0.08)]">
         <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
         {children}
       </div>
@@ -454,7 +454,7 @@ function AuthShowcase() {
       <p className="font-code text-xs uppercase tracking-[0.2em] text-fg-subtle"><span className="mr-2 text-neon">▍</span>Studio IziCut</p>
 
       <div className="relative mx-auto flex w-full max-w-md items-center justify-center py-10">
-        <div aria-hidden className="absolute h-[420px] w-[420px] rounded-full bg-[radial-gradient(closest-side,rgb(200_255_61/0.14),transparent)]" />
+        <div aria-hidden className="absolute h-[420px] w-[420px] rounded-full bg-[radial-gradient(closest-side,rgb(169_144_255/0.14),transparent)]" />
         <motion.div
           initial={{ opacity: 0, y: 40, rotate: -4, scale: 0.94 }}
           animate={{ opacity: 1, y: 0, rotate: -3, scale: 1 }}

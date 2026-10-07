@@ -64,7 +64,7 @@ export function LinkForm() {
         <Magnetic strength={0.25}>
         <button
           type="submit"
-          className="izi-focus group/btn inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-xl bg-neon px-4 py-2.5 text-sm font-semibold text-ink-950 shadow-[0_0_32px_-6px_rgb(200_255_61/0.7)] transition-all hover:shadow-[0_0_44px_-4px_rgb(200_255_61/0.9)] active:scale-[0.98]"
+          className="izi-focus group/btn inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-xl bg-neon px-4 py-2.5 text-sm font-semibold text-ink-950 shadow-[0_0_32px_-6px_rgb(169_144_255/0.7)] transition-all hover:shadow-[0_0_44px_-4px_rgb(169_144_255/0.9)] active:scale-[0.98]"
         >
           <span className="hidden sm:inline">Générer mes clips</span>
           <span className="sm:hidden">Générer</span>

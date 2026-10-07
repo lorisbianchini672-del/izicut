@@ -171,7 +171,7 @@ export function defaultScene(type: SceneType): Scene {
 }
 
 export const THEME_PRESETS: { name: string; theme: MotionProject['theme'] }[] = [
-  { name: 'Néon', theme: { background: '#07080d', primary: '#c8ff3d', accent: '#3de0ff', text: '#ffffff', style: 'neon' } },
+  { name: 'Néon', theme: { background: '#0b0920', primary: '#a990ff', accent: '#ffbe76', text: '#ffffff', style: 'neon' } },
   { name: 'Océan', theme: { background: '#06122b', primary: '#4f8cff', accent: '#22d3ee', text: '#ffffff', style: 'clean' } },
   { name: 'Sunset', theme: { background: '#1a0b16', primary: '#ff5c8a', accent: '#ffb547', text: '#ffffff', style: 'bold' } },
   { name: 'Luxe', theme: { background: '#0e0d0b', primary: '#e6c375', accent: '#f5e6c4', text: '#fdf8ef', style: 'clean' } },

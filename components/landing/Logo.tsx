@@ -30,7 +30,7 @@ export function Logo({ size = 'md', iconOnly = false, subtitle, href = '/', clas
       <span
         aria-hidden
         className={cn(
-          'grid place-items-center bg-neon font-code font-bold text-ink-950 shadow-[0_0_20px_-4px_rgb(200_255_61/0.7)]',
+          'grid place-items-center bg-neon font-code font-bold text-ink-950 shadow-[0_0_20px_-4px_rgb(169_144_255/0.7)]',
           MARK[size]
         )}
       >

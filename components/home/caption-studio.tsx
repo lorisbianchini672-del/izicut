@@ -34,7 +34,7 @@ export function CaptionStudio() {
 
   return (
     <section id="studio" className="relative overflow-hidden border-y border-line bg-ink-900/40 py-24 sm:py-32">
-      <div aria-hidden className="pointer-events-none absolute -right-40 top-10 h-[480px] w-[480px] rounded-full bg-[radial-gradient(closest-side,rgb(200_255_61/0.08),transparent)]" />
+      <div aria-hidden className="pointer-events-none absolute -right-40 top-10 h-[480px] w-[480px] rounded-full bg-[radial-gradient(closest-side,rgb(169_144_255/0.08),transparent)]" />
       <div className="relative mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)] items-center gap-14 px-4 sm:px-6 lg:grid-cols-[1fr_minmax(0,380px)] lg:px-8">
         <div>
           <SectionHeading

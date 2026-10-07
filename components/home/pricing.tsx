@@ -36,7 +36,7 @@ function PlanCard({ planKey, featured }: { planKey: 'free' | 'pro' | 'agency'; f
   return (
     <article
       onPointerMove={onMove}
-      className={`izi-card flex w-full flex-col rounded-3xl p-7 ${featured ? 'border-neon/40 bg-[linear-gradient(180deg,rgb(200_255_61/0.06),rgb(255_255_255/0.01))] lg:-my-3 lg:py-10' : ''}`}
+      className={`izi-card flex w-full flex-col rounded-3xl p-7 ${featured ? 'border-neon/40 bg-[linear-gradient(180deg,rgb(169_144_255/0.06),rgb(255_255_255/0.01))] lg:-my-3 lg:py-10' : ''}`}
     >
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-fg">{plan.name}</h3>
@@ -74,7 +74,7 @@ function PlanCta({ planKey, featured }: { planKey: 'free' | 'pro' | 'agency'; fe
   const [error, setError] = useState<string | null>(null);
   const cls = `izi-focus inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all active:scale-[0.99] ${
     featured
-      ? 'bg-neon text-ink-950 shadow-[0_0_32px_-8px_rgb(200_255_61/0.8)] hover:shadow-[0_0_44px_-6px_rgb(200_255_61/0.9)]'
+      ? 'bg-neon text-ink-950 shadow-[0_0_32px_-8px_rgb(169_144_255/0.8)] hover:shadow-[0_0_44px_-6px_rgb(169_144_255/0.9)]'
       : 'border border-line-strong bg-white/[0.03] text-fg hover:bg-white/[0.07]'
   }`;
 
