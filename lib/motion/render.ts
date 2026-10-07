@@ -1188,6 +1188,8 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
   const c: Ctx = { ctx, W, H, U: Math.min(W, H), vertical: H > W, theme: project.theme, font: opts.fontFamily, assets, brand: project.brand };
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;
   background(c, t);

@@ -445,7 +445,9 @@ export function MotionStudio() {
     return (async () => {
       const logoImg = logo ? await load(logo) : null;
       if (logoImg) setAssets((a) => ({ ...a, logo: logoImg }));
-      const imgs = (await Promise.all(images.slice(0, Math.max(0, maxPhotos)).map(load))).filter((x): x is HTMLImageElement => Boolean(x));
+      // On charge large puis on garde les plus belles images (assez grandes, de la plus grande à la plus petite).
+      const loaded = (await Promise.all(images.slice(0, 12).map(load))).filter((x): x is HTMLImageElement => Boolean(x) && (x as HTMLImageElement).naturalWidth >= 500 && (x as HTMLImageElement).naturalHeight >= 300);
+      const imgs = loaded.sort((a, b) => b.naturalWidth * b.naturalHeight - a.naturalWidth * a.naturalHeight).slice(0, Math.max(0, maxPhotos));
       const start = photosRef.current.length;
       const added: Photo[] = imgs.map((img, i) => ({ name: `Visuel du site ${start + i + 1}`, url: img.src, img }));
       const all = [...photosRef.current, ...added];

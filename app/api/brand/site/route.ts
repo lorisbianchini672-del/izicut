@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { fetchHtml, visibleText } from '@/lib/net/fetch-page';
 import { safeUrl } from '@/lib/net/safe-url';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -11,6 +12,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
  * limitée à 1,5 Mo et 8 s.
  */
 export const runtime = 'nodejs';
+export const maxDuration = 30;
 
 const meta = (html: string, name: string) =>
   html.match(new RegExp(`<meta[^>]+(?:name|property)=["']${name}["'][^>]*content=["']([^"']{1,400})["']`, 'i'))?.[1] ??
@@ -45,39 +47,10 @@ export async function GET(request: Request) {
   if (!url && raw && !/^(https?:\/\/)?www\./i.test(raw)) url = await safeUrl(`www.${raw.replace(/^https?:\/\//i, '')}`);
   if (!url) return NextResponse.json({ error: 'Site introuvable : vérifiez l’adresse (ex. monsite.fr).' }, { status: 400 });
   try {
-    // Redirections suivies à la main : chaque étape est revérifiée (pas d'adresse interne).
-    let target: URL | null = url;
-    let res: Response | null = null;
-    for (let hop = 0; hop < 4 && target; hop++) {
-      res = await fetch(target, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; IziCutBot/1.0; +https://izicut.vercel.app)', Accept: 'text/html' },
-        redirect: 'manual',
-        signal: AbortSignal.timeout(8000)
-      });
-      const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
-      if (!loc) break;
-      target = await safeUrl(new URL(loc, target).toString());
-      if (!target) return NextResponse.json({ error: 'Ce site redirige vers une adresse non autorisée.' }, { status: 400 });
-      res = null;
-    }
-    if (!res) return NextResponse.json({ error: 'Trop de redirections.' }, { status: 502 });
-    if (!res.ok || !(res.headers.get('content-type') ?? '').includes('html')) {
-      return NextResponse.json({ error: 'Impossible de lire ce site (page introuvable ou protégée).' }, { status: 502 });
-    }
-    // Lecture limitée à 1,5 Mo.
-    const reader = res.body?.getReader();
-    let html = '';
-    if (reader) {
-      const dec = new TextDecoder();
-      let size = 0;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        size += value.byteLength;
-        html += dec.decode(value, { stream: true });
-        if (size > 1_500_000) { await reader.cancel(); break; }
-      }
-    }
+    const page = await fetchHtml(url);
+    if (!page) return NextResponse.json({ error: 'Impossible de lire ce site (page introuvable ou protégée).' }, { status: 502 });
+    const html = page.html;
+    const res = { url: page.url.toString() };
     const title = decode(html.match(/<title[^>]*>([^<]{1,200})<\/title>/i)?.[1] ?? meta(html, 'og:title') ?? '');
     const description = decode(meta(html, 'description') ?? meta(html, 'og:description') ?? '').slice(0, 300);
     const themeColor = meta(html, 'theme-color');
@@ -110,18 +83,55 @@ export async function GET(request: Request) {
       const href = abs(attr(m[0], 'href'));
       if (href) logoCandidates.push(href);
     }
-    const images: string[] = [];
-    const og = abs(image);
-    if (og) images.push(og);
-    for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
-      const tag = m[0];
-      const src = abs(attr(tag, 'src') ?? attr(tag, 'data-src'));
-      if (!src || /logo|icon|sprite|pixel|tracking|\.svg(\?|$)/i.test(src)) continue;
-      const w = Number(attr(tag, 'width') ?? 0);
-      if (w && w < 300) continue;
-      if (!images.includes(src)) images.push(src);
-      if (images.length >= 8) break;
-    }
+    // Visuels : on prend la plus grande version (srcset), on écarte icônes et miniatures,
+    // et on explore jusqu'à 4 pages internes (club, équipe, galerie, actualités…).
+    const scored = new Map<string, number>();
+    const collect = (doc: string, baseUrl: string, bonus = 0) => {
+      const absB = (v?: string | null) => { if (!v) return undefined; try { const u = new URL(v.replace(/&amp;/g, '&'), baseUrl); return /^https?:$/.test(u.protocol) ? u.toString().slice(0, 400) : undefined; } catch { return undefined; } };
+      const ogI = absB(meta(doc, 'og:image'));
+      if (ogI) scored.set(ogI, Math.max(scored.get(ogI) ?? 0, 1600 + bonus));
+      for (const m of doc.matchAll(/<img\b[^>]*>/gi)) {
+        const tag = m[0];
+        const srcset = attr(tag, 'srcset') ?? attr(tag, 'data-srcset');
+        let best: string | undefined;
+        let bestW = Number(attr(tag, 'width') ?? 0);
+        if (srcset) {
+          for (const part of srcset.split(',')) {
+            const [u, d] = part.trim().split(/\s+/);
+            const w = Number((d ?? '').replace(/w$/, '')) || 0;
+            if (u && w >= bestW) { bestW = w; best = u; }
+          }
+        }
+        const src = absB(best ?? attr(tag, 'data-src') ?? attr(tag, 'data-lazy-src') ?? attr(tag, 'src'));
+        if (!src || /logo|icon|sprite|pixel|tracking|avatar|emoji|placeholder|\.svg(\?|$)|\.gif(\?|$)/i.test(src)) continue;
+        if (bestW && bestW < 400) continue;
+        const alt = (attr(tag, 'alt') ?? '').length;
+        scored.set(src, Math.max(scored.get(src) ?? 0, (bestW || 800) + (alt ? 120 : 0) + bonus));
+      }
+      for (const m of doc.matchAll(/background-image\s*:\s*url\(['"]?([^'")]+)['"]?\)/gi)) {
+        const src = absB(m[1]);
+        if (src && !/logo|icon|sprite|\.svg/i.test(src)) scored.set(src, Math.max(scored.get(src) ?? 0, 1200 + bonus));
+      }
+    };
+    collect(html, base, 200);
+    // Pages internes intéressantes.
+    const host = new URL(base).host;
+    const links = [...new Set([...html.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]{0,120}?)<\/a>/gi)]
+      .map((m) => ({ href: abs(m[1]), label: m[2].replace(/<[^>]+>/g, ' ').toLowerCase() }))
+      .filter((l): l is { href: string; label: string } => Boolean(l.href) && new URL(l.href!).host === host)
+      .filter((l) => /club|equipe|équipe|histoire|qui-sommes|a-propos|about|presentation|présentation|galerie|photo|actualit|news|services|offre|produit|cabinet|notre|nos-/i.test(l.href + ' ' + l.label))
+      .map((l) => l.href))].slice(0, 4);
+    const texts: string[] = [`[Accueil] ${visibleText(html).slice(0, 3500)}`];
+    await Promise.all(links.map(async (href) => {
+      const u = await safeUrl(href);
+      if (!u) return;
+      const pg = await fetchHtml(u, { maxBytes: 900_000, timeoutMs: 6000 }).catch(() => null);
+      if (!pg) return;
+      collect(pg.html, pg.url.toString(), 0);
+      texts.push(`[${decode(pg.html.match(/<title[^>]*>([^<]{1,120})<\/title>/i)?.[1] ?? href)}] ${visibleText(pg.html).slice(0, 2500)}`);
+    }));
+    const images = [...scored.entries()].sort((a, b) => b[1] - a[1]).map(([u]) => u).slice(0, 12);
+    const text = texts.join('\n\n').slice(0, 9000);
     if (themeColor && /^#[0-9a-f]{6}$/i.test(themeColor) && !colors.includes(themeColor.toLowerCase())) colors.unshift(themeColor.toLowerCase());
     return NextResponse.json({
       site: {
@@ -132,7 +142,8 @@ export async function GET(request: Request) {
         fonts,
         image: image && /^https?:\/\//.test(image) ? image.slice(0, 300) : undefined,
         logo: [...new Set(logoCandidates)][0],
-        images: images.slice(0, 8),
+        images,
+        text,
         radius
       }
     });

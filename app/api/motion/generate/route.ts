@@ -88,6 +88,8 @@ const RULES = `Règles techniques :
 - "screenshot" sert à montrer le produit (capture fournie ou interface animée).
 - Scène "video" UNIQUEMENT si le client a importé des vidéos. Sa vidéo est alors le CŒUR de la pub (50 à 70 % de la durée, plusieurs passages "from"). "from" + "duration" ≤ durée de la vidéo.
 - Scène "photo" UNIQUEMENT si le client a importé des photos : montre-les presque toutes (1.5 à 3 s chacune), la bonne photo sur le bon texte, alterne "full" et "frame", jamais deux fois de suite la même.
+- PROFONDEUR : si des faits précis sont fournis (fiche.facts, texte du site), la pub en utilise AU MOINS 3, avec leurs vrais noms et chiffres (année de création, palmarès, catégories, offre phare, événement, lieu…). Une pub qui pourrait être celle d'un concurrent est ratée : chaque scène doit être impossible à confondre.
+- IMAGES DU CLIENT = HÉROS : quand des photos sont fournies (y compris celles de son site), elles occupent au moins 50 % de la durée, en grand ("full", Ken Burns), avec les meilleures en accroche et en final ; le texte se place dans la zone vide ("captionPos"). Le motion design les met en valeur, il ne les cache pas.
 - Fiche marque / site web fournis : parle EXACTEMENT de cette entreprise ou association, utilise son vrai nom, reprends les couleurs de son site ou de sa fiche. Association : adhérents, bénévoles, événements, dons.
 - N'invente JAMAIS de réduction, code promo, prix, chiffre, avis, récompense ou label non fournis par le client. Sans offre fournie, l'appel à l'action invite à venir, découvrir, réserver, commander, suivre, adhérer.
 - Ne recopie jamais un slogan déposé ou une campagne existante d'une marque : invente une création originale, même pour une grande marque.
@@ -346,7 +348,7 @@ export async function POST(request: Request) {
           : undefined,
         ce_que_dit_le_client: brand.notes || undefined,
         fiche: brand.brief ?? undefined,
-        site_web: brand.site ? { adresse: brand.site.url, titre: brand.site.title, description: brand.site.description, couleurs_du_site: brand.site.colors, polices: brand.site.fonts, style_boutons: brand.site.radius } : undefined,
+        site_web: brand.site ? { adresse: brand.site.url, titre: brand.site.title, description: brand.site.description, couleurs_du_site: brand.site.colors, polices: brand.site.fonts, style_boutons: brand.site.radius, extrait_du_texte: (brand.site.text ?? '').slice(0, 3500) || undefined } : undefined,
         lien_cta: brand.link || undefined
       })}`
     : '';

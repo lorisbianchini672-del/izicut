@@ -26,6 +26,8 @@ export const BrandBriefSchema = z.object({
   strengths: z.array(z.string().max(120)).max(6),
   slogans: z.array(z.string().max(90)).max(5),
   adIdeas: z.array(z.string().max(220)).max(5),
+  /** Faits précis tirés du registre et du site (palmarès, offres, chiffres, événements…). */
+  facts: z.array(z.string().max(200)).max(10).optional(),
   palette: z.object({ primary: z.string(), accent: z.string(), background: z.string() }).optional()
 });
 export type BrandBrief = z.infer<typeof BrandBriefSchema>;
@@ -38,7 +40,9 @@ export const SiteSchema = z.object({
   fonts: z.array(z.string().max(40)).max(4),
   image: z.string().max(300).optional(),
   logo: z.string().max(400).optional(),
-  images: z.array(z.string().max(400)).max(8).optional(),
+  images: z.array(z.string().max(400)).max(12).optional(),
+  /** Texte réel du site (accueil + pages internes), pour que l'IA parle de faits précis. */
+  text: z.string().max(9000).optional(),
   radius: z.enum(['square', 'rounded', 'pill']).optional()
 });
 export type SiteDna = z.infer<typeof SiteSchema>;

@@ -288,6 +288,12 @@ export function BrandPanel({
           <EditableText label="Pitch" value={b.pitch} max={400} onChange={(v) => onChange({ ...profile, brief: { ...b, pitch: v } })} />
           <EditableText label="Cible" value={b.audience} max={300} onChange={(v) => onChange({ ...profile, brief: { ...b, audience: v } })} />
           <EditableText label="Ton" value={b.tone} max={120} onChange={(v) => onChange({ ...profile, brief: { ...b, tone: v } })} />
+          {b.facts?.length ? (
+            <div>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">Faits trouvés (utilisés dans la pub)</p>
+              <ul className="space-y-0.5 text-xs text-fg">{b.facts.map((f) => <li key={f}>✦ {f}</li>)}</ul>
+            </div>
+          ) : null}
           {b.strengths.length ? (
             <div>
               <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">Points forts</p>

@@ -26,10 +26,12 @@ export async function POST(request: Request) {
   const { company, notes, site } = parsed.data;
   try {
     const raw = await chatJson({
-      system: `Tu es directrice de communication pour les TPE, PME, commerçants, artisans, indépendants et associations en France. À partir des informations officielles (registre SIRENE) et de ce que le client dit, tu rédiges une fiche marque concrète, crédible et locale. Tu n'inventes pas de faits vérifiables (prix, récompenses, chiffres) : si tu n'en es pas sûre, formule de façon générale. Réponds UNIQUEMENT en JSON :
-{"pitch":"1 à 2 phrases","audience":"la cible","tone":"le ton conseillé","strengths":["3 à 5 points forts probables"],"slogans":["3 slogans courts"],"adIdeas":["3 idées de pubs vidéo pour les réseaux, UNE phrase de 120 caractères max chacune"],"palette":{"primary":"#RRGGBB","accent":"#RRGGBB","background":"#RRGGBB"}}`,
-      user: `Registre officiel : ${company ? JSON.stringify(company) : '(non renseigné)'}\nCe que le client dit de son activité : ${notes || '(rien)'}${site ? `\nSite web du client : ${JSON.stringify(site)} (reprends ses couleurs dans la palette)` : ''}`,
-      maxTokens: 1200,
+      system: `Tu es directrice de communication pour les TPE, PME, commerçants, artisans, indépendants et associations en France. À partir des informations officielles (registre SIRENE) et de ce que le client dit, tu rédiges une fiche marque concrète, crédible et locale.
+Si le TEXTE DU SITE est fourni, lis-le en entier comme une stratège : relève les FAITS PRÉCIS qui rendent cette structure unique (histoire, date de création, palmarès, équipes ou catégories, nombre d'adhérents / clients s'il est écrit, offres, services, tarifs écrits, événements, valeurs, lieux, partenaires, slogans existants). Ces faits sont l'or de la pub : recopie-les fidèlement, sans rien inventer. Tu n'inventes jamais de fait vérifiable (prix, récompenses, chiffres) absent des sources.
+Réponds UNIQUEMENT en JSON :
+{"facts":["5 à 10 faits précis et vérifiables tirés des sources, avec les chiffres et noms exacts"],"pitch":"1 à 2 phrases","audience":"la cible","tone":"le ton conseillé","strengths":["3 à 5 points forts probables"],"slogans":["3 slogans courts"],"adIdeas":["3 idées de pubs vidéo qui exploitent ces faits précis, UNE phrase de 120 caractères max chacune"],"palette":{"primary":"#RRGGBB","accent":"#RRGGBB","background":"#RRGGBB"}}`,
+      user: `Registre officiel : ${company ? JSON.stringify(company) : '(non renseigné)'}\nCe que le client dit de son activité : ${notes || '(rien)'}${site ? `\nSite web du client : ${JSON.stringify({ url: site.url, titre: site.title, description: site.description, couleurs: site.colors, polices: site.fonts })} (reprends ses couleurs dans la palette)\nTEXTE DU SITE :\n${(site.text ?? '').slice(0, 8000)}` : ''}`,
+      maxTokens: 1800,
       temperature: 0.6
     });
     // L'IA déborde parfois (texte trop long, une idée de trop) : on rabote
@@ -45,6 +47,7 @@ export async function POST(request: Request) {
       strengths: list(o.strengths, 6, 120),
       slogans: list(o.slogans, 5, 90),
       adIdeas: list(o.adIdeas, 5, 220),
+      facts: list(o.facts, 10, 200),
       palette: pal ? { primary: str(pal.primary, 7), accent: str(pal.accent, 7), background: str(pal.background, 7) } : undefined
     });
     if (!brief.success || !brief.data.pitch) return NextResponse.json({ error: "L'IA n'a pas réussi, réessayez." }, { status: 502 });
