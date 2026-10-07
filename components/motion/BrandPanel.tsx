@@ -43,7 +43,9 @@ export function BrandPanel({
   loggedIn,
   onApplyPalette,
   onCreateAd,
-  onImportSite
+  onImportSite,
+  onAutoAd,
+  autoStep
 }: {
   profile: BrandProfile;
   onChange: (next: BrandProfile) => void;
@@ -51,6 +53,8 @@ export function BrandPanel({
   onApplyPalette: (palette: NonNullable<BrandBrief['palette']>) => void;
   onCreateAd: (idea: string) => void;
   onImportSite?: (assets: { logo?: string; images: string[] }) => void;
+  onAutoAd?: (owner: boolean) => void;
+  autoStep?: string | null;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Company[]>([]);
@@ -140,6 +144,22 @@ export function BrandPanel({
         <p className="text-sm font-semibold text-fg">Votre entreprise ou association</p>
         <p className="mt-0.5 text-xs text-fg-muted">Toutes les structures actives en France sont dans le registre officiel. L’IA s’en sert pour créer des pubs qui vous ressemblent.</p>
       </div>
+
+      {c ? (
+        <div className="izi-glow-frame p-[1.5px]">
+          <div className="space-y-2 bg-ink-900/95 p-3">
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-fg"><Sparkles className="h-4 w-4 text-neon" /> Pub automatique</p>
+            <p className="text-[11px] text-fg-muted">IziCut retrouve le site de « {c.name} », récupère ses couleurs et son style, étudie l’entreprise et crée la pub. Vous la modifiez ensuite en parlant à l’IA.</p>
+            <label className="flex cursor-pointer items-start gap-2 text-[11px] text-fg-muted">
+              <input type="checkbox" checked={owner} onChange={(e) => setOwner(e.target.checked)} className="mt-0.5 accent-[var(--color-neon)]" />
+              <span>J’agis pour cette entreprise (ou j’ai son accord) : utiliser aussi son logo et ses visuels.</span>
+            </label>
+            <button type="button" disabled={Boolean(autoStep)} onClick={() => onAutoAd?.(owner)} className="izi-cta flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold disabled:opacity-60">
+              {autoStep ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} {autoStep ?? 'Créer la pub automatiquement'}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {c ? (
         <div className="rounded-xl border border-neon/30 bg-neon/[0.05] p-3">

@@ -152,6 +152,11 @@ function photoSheets(photos: Photo[]): string[] {
   return sheets;
 }
 
+function contrastText(bg: string): string {
+  const n = parseInt(bg.slice(1), 16);
+  return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114 > 160 ? '#101225' : '#ffffff';
+}
+
 export function MotionStudio() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
@@ -163,6 +168,9 @@ export function MotionStudio() {
   /** Description des photos par l'IA (vision), gardée tant que les photos ne changent pas. */
   const photoNotesRef = useRef<{ key: string; notes: string } | null>(null);
   const [brand, setBrand] = useState<BrandProfile>(EMPTY_BRAND);
+  const brandRef = useRef<BrandProfile>(EMPTY_BRAND);
+  brandRef.current = brand;
+  const [autoStep, setAutoStep] = useState<string | null>(null);
   const brandLoaded = useRef(false);
   const mediaRef = useRef<Media[]>([]);
   const audioRef = useRef<{ ctx: AudioContext; dest: MediaStreamAudioDestinationNode; wired: Set<HTMLVideoElement> } | null>(null);
@@ -426,7 +434,7 @@ export function MotionStudio() {
     };
   };
   /** Logo + visuels du site du client (via le serveur, pour que l'export reste possible). */
-  const importSite = ({ logo, images }: { logo?: string; images: string[] }) => {
+  const importSite = ({ logo, images }: { logo?: string; images: string[] }): Promise<Photo[]> => {
     const load = (u: string) =>
       new Promise<HTMLImageElement | null>((resolve) => {
         const img = new Image();
@@ -435,12 +443,16 @@ export function MotionStudio() {
         img.src = `/api/brand/image?url=${encodeURIComponent(u)}`;
       });
     const maxPhotos = (isPaid ? MAX_PHOTOS : FREE_LIMITS.photos) - photosRef.current.length;
-    void (async () => {
+    return (async () => {
       const logoImg = logo ? await load(logo) : null;
       if (logoImg) setAssets((a) => ({ ...a, logo: logoImg }));
       const imgs = (await Promise.all(images.slice(0, Math.max(0, maxPhotos)).map(load))).filter((x): x is HTMLImageElement => Boolean(x));
-      if (imgs.length) setPhotos((prev) => [...prev, ...imgs.map((img, i) => ({ name: `Visuel du site ${prev.length + i + 1}`, url: img.src, img }))]);
+      const start = photosRef.current.length;
+      const added: Photo[] = imgs.map((img, i) => ({ name: `Visuel du site ${start + i + 1}`, url: img.src, img }));
+      const all = [...photosRef.current, ...added];
+      if (added.length) { setPhotos(all); photosRef.current = all; }
       setNotice(`${logoImg ? 'Logo' : 'Aucun logo'} et ${imgs.length} visuel${imgs.length > 1 ? 's' : ''} importé${imgs.length > 1 ? 's' : ''} depuis votre site ✓ Demandez maintenant une pub à l’IA.`);
+      return all;
     })();
   };
 
@@ -452,6 +464,47 @@ export function MotionStudio() {
         .map((sc) => (sc.type === 'photo' && sc.photo > index ? { ...sc, photo: sc.photo - 1 } : sc));
       return { ...p, scenes: scenes.length ? scenes : [defaultScene('title')] };
     });
+  };
+
+  /**
+   * Pub automatique : à partir de l'entreprise choisie, on retrouve son site,
+   * on en tire couleurs / logo / visuels, l'IA rédige la fiche marque puis crée
+   * la pub. Le client n'a plus qu'à demander ses modifications.
+   */
+  const autoAd = async (owner: boolean) => {
+    if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour créer une pub automatique.'); return; }
+    let b: BrandProfile = { ...brandRef.current };
+    const save = (next: BrandProfile) => { b = next; brandRef.current = next; setBrand(next); };
+    try {
+      if (!b.site && b.company?.name) {
+        setAutoStep('Recherche du site de l’entreprise…');
+        const f = await fetch(`/api/brand/find-site?name=${encodeURIComponent(b.company.name)}&city=${encodeURIComponent(b.company.city ?? '')}`).then((r) => r.json()).catch(() => ({}));
+        if (f.url) {
+          setAutoStep('Analyse du site (couleurs, logo, visuels)…');
+          const s = await fetch(`/api/brand/site?url=${encodeURIComponent(f.url)}`).then((r) => r.json()).catch(() => ({}));
+          if (s.site) save({ ...b, site: s.site, link: b.link || String(s.site.url).replace(/^https?:\/\//, '').replace(/\/$/, '') });
+        }
+      }
+      if (!b.brief) {
+        setAutoStep('L’IA étudie l’entreprise (fiche marque)…');
+        const r = await fetch('/api/brand/brief', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company: b.company, notes: b.notes, site: b.site ?? null }) }).then((x) => x.json()).catch(() => ({}));
+        if (r.brief) save({ ...b, brief: r.brief });
+      }
+      if (b.brief?.palette) {
+        const pal = b.brief.palette;
+        setProject((p) => ({ ...p, theme: { ...p.theme, primary: pal.primary, accent: pal.accent, background: pal.background, text: contrastText(pal.background), radius: b.site?.radius ?? p.theme.radius } }));
+      }
+      let photosNow = photosRef.current;
+      if (owner && b.site && (b.site.logo || b.site.images?.length)) {
+        setAutoStep('Import du logo et des visuels…');
+        photosNow = await importSite({ logo: b.site.logo, images: b.site.images ?? [] });
+      }
+      setAutoStep('Création de la pub par le directeur de création IA…');
+      setTab('ia');
+      await askAi('Crée la meilleure pub possible pour cette entreprise en t’appuyant sur toutes ses données (registre, fiche marque, site web, couleurs, visuels).', { fresh: true, brand: b, photos: photosNow });
+    } finally {
+      setAutoStep(null);
+    }
   };
 
   /** Voix-off réelle intégrée à la vidéo (musique baissée de 12 dB pendant qu'elle parle). */
@@ -517,7 +570,9 @@ export function MotionStudio() {
     rec.start();
   };
 
-  const askAi = async (text: string, opts: { fresh?: boolean; voice?: boolean } = {}) => {
+  const askAi = async (text: string, opts: { fresh?: boolean; voice?: boolean; brand?: BrandProfile; photos?: Photo[] } = {}) => {
+    const photos = opts.photos ?? photosRef.current;
+    const brand = opts.brand ?? brandRef.current;
     const value = text.trim();
     if (!value || aiBusy) return;
     if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour utiliser l’IA du Studio.'); return; }
@@ -873,7 +928,9 @@ export function MotionStudio() {
                   const light = parseInt(pal.background.slice(1, 3), 16) * 0.299 + parseInt(pal.background.slice(3, 5), 16) * 0.587 + parseInt(pal.background.slice(5, 7), 16) * 0.114 > 160;
                   return { ...p, theme: { ...p.theme, primary: pal.primary, accent: pal.accent, background: pal.background, text: light ? '#101225' : '#ffffff' } };
                 })}
-                onImportSite={importSite}
+                onImportSite={(a) => { void importSite(a); }}
+                onAutoAd={autoAd}
+                autoStep={autoStep}
                 onCreateAd={(idea) => { setTab('ia'); void askAi(`Crée cette pub pour ma marque : ${idea}`, { fresh: true }); }}
               />
             ) : null}
