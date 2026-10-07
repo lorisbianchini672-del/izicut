@@ -1,7 +1,6 @@
-import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
 import { NextResponse } from 'next/server';
 
+import { safeUrl } from '@/lib/net/safe-url';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 /**
@@ -12,31 +11,6 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
  * limitée à 1,5 Mo et 8 s.
  */
 export const runtime = 'nodejs';
-
-function privateIp(ip: string): boolean {
-  if (ip.includes(':')) {
-    const v = ip.toLowerCase();
-    return v === '::1' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe80') || v === '::' || v.startsWith('::ffff:127.') || v.startsWith('::ffff:10.') || v.startsWith('::ffff:192.168.');
-  }
-  const [a, b] = ip.split('.').map(Number);
-  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
-}
-
-async function safeUrl(raw: string): Promise<URL | null> {
-  let u: URL;
-  try {
-    u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
-  } catch {
-    return null;
-  }
-  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) return null;
-  if (u.port && !['80', '443'].includes(u.port)) return null;
-  const host = u.hostname;
-  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) return null;
-  const ips = isIP(host) ? [host] : (await lookup(host, { all: true }).catch(() => [])).map((r) => r.address);
-  if (!ips.length || ips.some(privateIp)) return null;
-  return u;
-}
 
 const meta = (html: string, name: string) =>
   html.match(new RegExp(`<meta[^>]+(?:name|property)=["']${name}["'][^>]*content=["']([^"']{1,400})["']`, 'i'))?.[1] ??
@@ -114,6 +88,34 @@ export async function GET(request: Request) {
       )
     ].slice(0, 4);
     const colors = colorsOf(html);
+    // Logo et visuels du site (utilisables seulement par le titulaire de la marque).
+    const base = res.url || url.toString();
+    const abs = (v?: string | null) => { if (!v) return undefined; try { const u = new URL(v.replace(/&amp;/g, '&'), base); return /^https?:$/.test(u.protocol) ? u.toString().slice(0, 400) : undefined; } catch { return undefined; } };
+    const attr = (tag: string, name: string) => tag.match(new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, 'i'))?.[1];
+    const logoCandidates: string[] = [];
+    for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
+      const tag = m[0];
+      if (/logo/i.test(`${attr(tag, 'class') ?? ''} ${attr(tag, 'alt') ?? ''} ${attr(tag, 'src') ?? ''} ${attr(tag, 'id') ?? ''}`)) {
+        const src = abs(attr(tag, 'src'));
+        if (src) logoCandidates.push(src);
+      }
+    }
+    for (const m of html.matchAll(/<link\b[^>]*rel=["'][^"']*(apple-touch-icon|icon)[^"']*["'][^>]*>/gi)) {
+      const href = abs(attr(m[0], 'href'));
+      if (href) logoCandidates.push(href);
+    }
+    const images: string[] = [];
+    const og = abs(image);
+    if (og) images.push(og);
+    for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
+      const tag = m[0];
+      const src = abs(attr(tag, 'src') ?? attr(tag, 'data-src'));
+      if (!src || /logo|icon|sprite|pixel|tracking|\.svg(\?|$)/i.test(src)) continue;
+      const w = Number(attr(tag, 'width') ?? 0);
+      if (w && w < 300) continue;
+      if (!images.includes(src)) images.push(src);
+      if (images.length >= 8) break;
+    }
     if (themeColor && /^#[0-9a-f]{6}$/i.test(themeColor) && !colors.includes(themeColor.toLowerCase())) colors.unshift(themeColor.toLowerCase());
     return NextResponse.json({
       site: {
@@ -122,7 +124,9 @@ export async function GET(request: Request) {
         description,
         colors: colors.slice(0, 6),
         fonts,
-        image: image && /^https?:\/\//.test(image) ? image.slice(0, 300) : undefined
+        image: image && /^https?:\/\//.test(image) ? image.slice(0, 300) : undefined,
+        logo: [...new Set(logoCandidates)][0],
+        images: images.slice(0, 8)
       }
     });
   } catch {

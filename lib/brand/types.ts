@@ -36,7 +36,9 @@ export const SiteSchema = z.object({
   description: z.string().max(300),
   colors: z.array(z.string().max(7)).max(6),
   fonts: z.array(z.string().max(40)).max(4),
-  image: z.string().max(300).optional()
+  image: z.string().max(300).optional(),
+  logo: z.string().max(400).optional(),
+  images: z.array(z.string().max(400)).max(8).optional()
 });
 export type SiteDna = z.infer<typeof SiteSchema>;
 

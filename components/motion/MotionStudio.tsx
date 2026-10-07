@@ -414,6 +414,25 @@ export function MotionStudio() {
       setNotice(`${added.length} photo${added.length > 1 ? 's' : ''} ajoutée${added.length > 1 ? 's' : ''} ✓ Cliquez sur « Créer une pub avec mes médias » : l’IA regarde vos photos et construit la pub autour.`);
     };
   };
+  /** Logo + visuels du site du client (via le serveur, pour que l'export reste possible). */
+  const importSite = ({ logo, images }: { logo?: string; images: string[] }) => {
+    const load = (u: string) =>
+      new Promise<HTMLImageElement | null>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img.naturalWidth > 1 ? img : null);
+        img.onerror = () => resolve(null);
+        img.src = `/api/brand/image?url=${encodeURIComponent(u)}`;
+      });
+    const maxPhotos = (isPaid ? MAX_PHOTOS : FREE_LIMITS.photos) - photosRef.current.length;
+    void (async () => {
+      const logoImg = logo ? await load(logo) : null;
+      if (logoImg) setAssets((a) => ({ ...a, logo: logoImg }));
+      const imgs = (await Promise.all(images.slice(0, Math.max(0, maxPhotos)).map(load))).filter((x): x is HTMLImageElement => Boolean(x));
+      if (imgs.length) setPhotos((prev) => [...prev, ...imgs.map((img, i) => ({ name: `Visuel du site ${prev.length + i + 1}`, url: img.src, img }))]);
+      setNotice(`${logoImg ? 'Logo' : 'Aucun logo'} et ${imgs.length} visuel${imgs.length > 1 ? 's' : ''} importé${imgs.length > 1 ? 's' : ''} depuis votre site ✓ Demandez maintenant une pub à l’IA.`);
+    })();
+  };
+
   const removePhoto = (index: number) => {
     setPhotos((list) => list.filter((_, i) => i !== index));
     setProject((p) => {
@@ -768,6 +787,7 @@ export function MotionStudio() {
                   const light = parseInt(pal.background.slice(1, 3), 16) * 0.299 + parseInt(pal.background.slice(3, 5), 16) * 0.587 + parseInt(pal.background.slice(5, 7), 16) * 0.114 > 160;
                   return { ...p, theme: { ...p.theme, primary: pal.primary, accent: pal.accent, background: pal.background, text: light ? '#101225' : '#ffffff' } };
                 })}
+                onImportSite={importSite}
                 onCreateAd={(idea) => { setTab('ia'); void askAi(`Crée cette pub pour ma marque : ${idea}`, { fresh: true }); }}
               />
             ) : null}

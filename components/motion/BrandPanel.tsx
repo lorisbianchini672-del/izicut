@@ -42,13 +42,15 @@ export function BrandPanel({
   onChange,
   loggedIn,
   onApplyPalette,
-  onCreateAd
+  onCreateAd,
+  onImportSite
 }: {
   profile: BrandProfile;
   onChange: (next: BrandProfile) => void;
   loggedIn: boolean | null;
   onApplyPalette: (palette: NonNullable<BrandBrief['palette']>) => void;
   onCreateAd: (idea: string) => void;
+  onImportSite?: (assets: { logo?: string; images: string[] }) => void;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Company[]>([]);
@@ -57,6 +59,8 @@ export function BrandPanel({
   const [error, setError] = useState<string | null>(null);
   const [siteUrl, setSiteUrl] = useState(profile.site?.url ?? '');
   const [siteBusy, setSiteBusy] = useState(false);
+  const [owner, setOwner] = useState(false);
+  const proxied = (u: string) => `/api/brand/image?url=${encodeURIComponent(u)}`;
 
   const analyzeSite = async () => {
     if (!loggedIn) { setError('Connectez-vous (gratuit) pour analyser votre site.'); return; }
@@ -216,6 +220,33 @@ export function BrandPanel({
                 </button>
               ) : null}
             </div>
+            {profile.site.logo || profile.site.images?.length ? (
+              <div className="mt-2.5 border-t border-white/10 pt-2.5">
+                <p className="mb-1.5 text-[11px] font-semibold text-fg-muted">Logo et visuels trouvés sur le site</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {profile.site.logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={proxied(profile.site.logo)} alt="Logo" className="h-12 w-12 rounded-lg border border-neon/40 bg-white object-contain p-1" />
+                  ) : null}
+                  {(profile.site.images ?? []).slice(0, 6).map((src) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={src} src={proxied(src)} alt="" className="h-12 w-12 rounded-lg border border-white/10 object-cover" />
+                  ))}
+                </div>
+                <label className="mt-2 flex cursor-pointer items-start gap-2 text-[11px] text-fg-muted">
+                  <input type="checkbox" checked={owner} onChange={(e) => setOwner(e.target.checked)} className="mt-0.5 accent-[var(--color-neon)]" />
+                  <span>Je suis le titulaire de cette marque (ou j’ai son autorisation écrite) et j’ai le droit d’utiliser son logo et ses visuels dans une publicité.</span>
+                </label>
+                <button
+                  type="button"
+                  disabled={!owner}
+                  onClick={() => profile.site && onImportSite?.({ logo: profile.site.logo, images: profile.site.images ?? [] })}
+                  className="izi-cta mt-2 w-full cursor-pointer rounded-full px-3 py-1.5 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Utiliser ce logo et ces visuels dans ma pub
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
