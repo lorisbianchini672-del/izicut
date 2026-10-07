@@ -194,7 +194,6 @@ export function MotionStudio() {
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [voiceGender, setVoiceGender] = useState<'femme' | 'homme'>('femme');
   const [listening, setListening] = useState(false);
-  const [spoken, setSpoken] = useState(false);
   const recRef = useRef<{ stop: () => void } | null>(null);
   const [soundOn, setSoundOn] = useState(false);
   const soundOnRef = useRef(false);
@@ -562,7 +561,7 @@ export function MotionStudio() {
     rec.onend = () => {
       setListening(false);
       recRef.current = null;
-      if (finalText.trim()) { setSpoken(true); void askAi(finalText.trim(), { voice: true }); }
+      if (finalText.trim()) void askAi(finalText.trim());
     };
     rec.onerror = () => setListening(false);
     recRef.current = rec;
@@ -605,7 +604,6 @@ export function MotionStudio() {
         try { window.localStorage.setItem(CONCEPT_KEY, JSON.stringify(json.concept)); } catch { /* rien */ }
       }
       const aiSays = [typeof json.message === 'string' ? json.message : '', typeof json.question === 'string' ? json.question : ''].filter(Boolean).join(' ');
-      if (aiSays && (spoken || opts.voice)) speak([{ text: aiSays }]);
       if (json.concept) setVoiceTrack(null);
       setMessages((m) => [...m, {
         role: 'ai',
@@ -908,7 +906,7 @@ export function MotionStudio() {
                     onClick={toggleListening}
                     className={cn('grid h-[52px] w-12 shrink-0 cursor-pointer place-items-center rounded-xl border transition', listening ? 'animate-pulse border-rec bg-rec/20 text-rec' : 'border-white/10 text-fg-muted hover:text-fg')}
                     aria-label={listening ? 'Arrêter la dictée' : 'Parler à l’IA'}
-                    title={listening ? 'Arrêter' : 'Parler à l’IA (réponse vocale)'}
+                    title={listening ? 'Arrêter' : 'Dicter à l’IA'}
                   >
                     {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                   </button>
@@ -1189,18 +1187,6 @@ function MagicFields({ magic, duration, onChange }: { magic: Magic[]; duration: 
   );
 }
 
-function speak(lines: { text: string }[]) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
-  const voice = window.speechSynthesis.getVoices().find((v) => v.lang.startsWith('fr'));
-  for (const l of lines) {
-    const u = new SpeechSynthesisUtterance(l.text);
-    u.lang = 'fr-FR';
-    u.rate = 1.08;
-    if (voice) u.voice = voice;
-    window.speechSynthesis.speak(u);
-  }
-}
 
 type SpeechRec = {
   lang: string;
@@ -1250,7 +1236,6 @@ function ConceptCard({ concept, onVoice, voiceBusy, hasVoice, gender, onGender, 
             <div className="space-y-1 border-t border-white/10 pt-2">
               <div className="flex items-center justify-between">
                 <p className="font-semibold text-fg">Voix-off</p>
-                <button type="button" onClick={() => speak(concept.voiceover ?? [])} className="cursor-pointer rounded-full border border-neon/40 px-2 py-0.5 text-[10px] text-neon">▶ Écouter</button>
               </div>
               {concept.voiceover.map((v, i) => (
                 <p key={i} className="text-fg-muted"><span className="font-code text-[10px] text-neon">{v.time}</span> {v.text} {v.sfx ? <span className="text-fg-subtle">{v.sfx}</span> : null}</p>
