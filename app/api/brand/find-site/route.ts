@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { chatJson } from '@/lib/ai/chat';
 import { safeUrl } from '@/lib/net/safe-url';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -23,10 +24,14 @@ function candidates(name: string, city?: string): string[] {
   const dashed = words.join('-');
   const first = words[0];
   const c = city ? norm(city).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '';
-  const stems = [...new Set([joined, dashed, ...(words.length > 2 ? [words.slice(0, 2).join(''), words.slice(0, 2).join('-')] : []), ...(first.length >= 4 ? [first] : []), ...(c ? [`${joined}-${c}`, `${dashed}-${c}`] : [])])].filter((s) => s.length >= 3 && s.length <= 50);
+  // Sigle (Basket Charpennes Croix Luizet → bccl) et mot d'activité (basket, club…).
+  const sig = words.filter((w) => !/^(de|du|des|la|le|les|et|d|l|en)$/.test(w)).map((w) => w[0]).join('');
+  const activity = words.find((w) => /^(basket|foot|football|rugby|handball|tennis|judo|danse|boxe|club|asso|cabinet|boulangerie|garage|salon|restaurant)$/.test(w));
+  const sigStems = sig.length >= 3 && sig.length <= 6 ? [sig, ...(activity ? [`${sig}-${activity}`, `${activity}-${sig}`, `${sig}${activity}`] : []), ...(c ? [`${sig}-${c}`] : [])] : [];
+  const stems = [...new Set([joined, dashed, ...sigStems, ...(words.length > 2 ? [words.slice(0, 2).join(''), words.slice(0, 2).join('-')] : []), ...(first.length >= 4 ? [first] : []), ...(c ? [`${joined}-${c}`, `${dashed}-${c}`] : [])])].filter((s) => s.length >= 3 && s.length <= 50);
   const out: string[] = [];
   for (const s of stems) for (const tld of ['fr', 'com']) out.push(`${s}.${tld}`);
-  return out.slice(0, 14);
+  return out.slice(0, 24);
 }
 
 async function probe(host: string, tokens: string[], city?: string): Promise<{ url: string; score: number } | null> {
@@ -54,7 +59,7 @@ async function probe(host: string, tokens: string[], city?: string): Promise<{ u
         else if (html.includes(t)) score += 1;
       }
       if (city && html.includes(norm(city))) score += 2;
-      if (score >= Math.max(3, tokens.length)) return { url: target.toString(), score };
+      if (score >= Math.max(3, Math.ceil(tokens.length * 0.75))) return { url: target.toString(), score };
     } catch {
       /* site muet : candidat suivant */
     }
@@ -72,7 +77,25 @@ export async function GET(request: Request) {
   if (name.trim().length < 2) return NextResponse.json({ error: 'Nom manquant.' }, { status: 400 });
   const tokens = norm(name).replace(LEGAL, ' ').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((t) => t.length >= 3).slice(0, 4);
   const list = candidates(name, city);
-  const results = (await Promise.all(list.map((h) => probe(h, tokens, city)))).filter((r): r is { url: string; score: number } => Boolean(r));
+  // L'IA propose aussi l'adresse officielle qu'elle connaît : elle est vérifiée comme les autres.
+  try {
+    const ai = (await chatJson({
+      system: 'Tu connais les sites web des entreprises, clubs et associations français. Réponds UNIQUEMENT en JSON {"domains":["domaine1.fr","domaine2.com"]} (domaines sans https, 3 au maximum, chaîne vide si tu ne sais pas).',
+      user: `Site officiel de « ${name} »${city ? ` (${city})` : ''} ?`,
+      maxTokens: 120,
+      temperature: 0
+    })) as { domains?: unknown };
+    for (const d of Array.isArray(ai.domains) ? ai.domains : []) {
+      const host = typeof d === 'string' ? d.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].toLowerCase() : '';
+      if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(host) && !list.includes(host)) list.unshift(host);
+    }
+  } catch {
+    /* IA indisponible */
+  }
+  // Les sigles identifient aussi la page (BCCL dans le titre).
+  const sigToken = norm(name).split(/[^a-z0-9]+/).filter((w) => w && !/^(de|du|des|la|le|les|et|d|l|en)$/.test(w)).map((w) => w[0]).join('');
+  const allTokens = sigToken.length >= 3 ? [...tokens, sigToken] : tokens;
+  const results = (await Promise.all(list.map((h) => probe(h, allTokens, city)))).filter((r): r is { url: string; score: number } => Boolean(r));
   results.sort((a, b) => b.score - a.score);
   return NextResponse.json({ url: results[0]?.url ?? null, tried: list.length });
 }
