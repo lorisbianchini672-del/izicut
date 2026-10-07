@@ -130,7 +130,15 @@ export async function GET(request: Request) {
       collect(pg.html, pg.url.toString(), 0);
       texts.push(`[${decode(pg.html.match(/<title[^>]*>([^<]{1,120})<\/title>/i)?.[1] ?? href)}] ${visibleText(pg.html).slice(0, 2500)}`);
     }));
-    const images = [...scored.entries()].sort((a, b) => b[1] - a[1]).map(([u]) => u).slice(0, 12);
+    // Miniatures WordPress / CMS (« photo-380x270-c-center.jpg ») → image originale en haute définition.
+    const original = (u: string) => u.replace(/-\d{1,4}x\d{1,4}(-c-[a-z]+)?(?=\.(jpe?g|png|webp)(\?|$))/i, '').replace(/([?&])(w|width|h|height|resize|fit)=[^&]+/gi, '$1').replace(/[?&]+$/, '');
+    const hd = new Map<string, number>();
+    for (const [u, sc] of scored) {
+      const o = original(u);
+      const boosted = o !== u ? sc + 1500 : sc; // une originale vaut mieux qu'une miniature
+      hd.set(o, Math.max(hd.get(o) ?? 0, boosted));
+    }
+    const images = [...hd.entries()].sort((a, b) => b[1] - a[1]).map(([u]) => u).slice(0, 12);
     const text = texts.join('\n\n').slice(0, 9000);
     if (themeColor && /^#[0-9a-f]{6}$/i.test(themeColor) && !colors.includes(themeColor.toLowerCase())) colors.unshift(themeColor.toLowerCase());
     return NextResponse.json({
