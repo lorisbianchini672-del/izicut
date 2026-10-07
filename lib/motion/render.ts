@@ -3,7 +3,7 @@
  * drawFrame() dessine l'image exacte à l'instant t : le même code sert à
  * l'aperçu en direct et à l'export MP4 (enregistrement du canvas).
  */
-import { FORMAT_SIZE, TRANSITION, type MotionProject, type Scene } from './types';
+import { FORMAT_SIZE, TRANSITION, type Magic, type MotionProject, type Scene } from './types';
 
 export type MotionAssets = {
   logo?: HTMLImageElement | null;
@@ -790,6 +790,264 @@ function placeholder(c: Ctx, x: number, y: number, w: number, h: number, label =
   ctx.restore();
 }
 
+// ---------- Apparitions magiques ----------
+const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+
+/** Hauteur de référence selon la position, dans la zone sûre (15 % haut / 20 % bas). */
+function magicY(c: Ctx, m: Magic, k: number): number {
+  const pos = m.pos ?? (m.kind === 'notification' || m.kind === 'emoji' ? 'top' : 'bottom');
+  const H = c.H;
+  if (pos === 'top') return H * (m.kind === 'emoji' ? (c.vertical ? 0.27 : 0.26) : c.vertical ? 0.19 : 0.2) + k * c.U * 0.02;
+  if (pos === 'bottom') return H * (c.vertical ? 0.72 : 0.74);
+  return H * 0.5;
+}
+
+function textFit(c: Ctx, text: string, weight: number, size: number, max: number): number {
+  let fs = size;
+  setFont(c, weight, fs);
+  while (c.ctx.measureText(text).width > max && fs > size * 0.5) { fs *= 0.92; setFont(c, weight, fs); }
+  return fs;
+}
+
+/**
+ * Éléments qui « surgissent » par-dessus la scène : notification façon
+ * smartphone, sticker « lien en bio », badge tampon, bouton qui se fait
+ * cliquer, objet / emoji en 3D, avis client.
+ */
+function drawMagic(c: Ctx, m: Magic, lt: number, d: number, k: number) {
+  const { ctx, W, U, theme } = c;
+  const t = lt - m.at;
+  if (t < 0) return;
+  const pIn = easeOutBack(clamp(t / 0.45));
+  const out = clamp((lt - (d - 0.25)) / 0.25);
+  const alpha = clamp(t / 0.2) * (1 - out);
+  if (alpha <= 0) return;
+  const y = magicY(c, m, k);
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  switch (m.kind) {
+    case 'notification': {
+      const w = Math.min(W * 0.86, U * 0.9);
+      const h = U * 0.15;
+      const x = (W - w) / 2;
+      const yy = y - h / 2 - (1 - pIn) * U * 0.25;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = U * 0.05;
+      ctx.shadowOffsetY = U * 0.015;
+      ctx.fillStyle = 'rgba(250,250,255,0.94)';
+      roundRect(ctx, x, yy, w, h, U * 0.04);
+      ctx.fill();
+      ctx.restore();
+      // Icône d'appli aux couleurs de la marque.
+      const ic = h * 0.6;
+      ctx.fillStyle = theme.primary;
+      roundRect(ctx, x + h * 0.2, yy + (h - ic) / 2, ic, ic, ic * 0.24);
+      ctx.fill();
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      if (m.emoji) { ctx.font = `${Math.round(ic * 0.6)}px ${EMOJI_FONT}`; ctx.fillText(m.emoji, x + h * 0.2 + ic / 2, yy + h / 2 + ic * 0.04); }
+      else { setFont(c, 900, ic * 0.5); ctx.fillStyle = isLight(theme.primary) ? '#111' : '#fff'; ctx.fillText((c.brand || 'I').slice(0, 1).toUpperCase(), x + h * 0.2 + ic / 2, yy + h / 2); }
+      ctx.textAlign = 'left';
+      const tx = x + h * 0.2 + ic + U * 0.03;
+      const maxW = w - (tx - x) - U * 0.13;
+      ctx.fillStyle = '#111225';
+      textFit(c, m.text, 800, U * 0.036, maxW);
+      ctx.fillText(m.text, tx, yy + h * (m.sub ? 0.36 : 0.5));
+      if (m.sub) { ctx.fillStyle = '#4b4d63'; textFit(c, m.sub, 800, U * 0.03, maxW); ctx.fillText(m.sub, tx, yy + h * 0.66); }
+      setFont(c, 800, U * 0.022);
+      ctx.fillStyle = '#8a8ca3';
+      ctx.textAlign = 'right';
+      ctx.fillText('maintenant', x + w - U * 0.03, yy + h * 0.3);
+      break;
+    }
+    case 'sticker': {
+      // Sticker blanc légèrement penché qui gigote + flèche qui pointe vers le bas.
+      const fs = textFit(c, m.text, 900, U * 0.055, W * 0.7);
+      const tw = ctx.measureText(m.text).width;
+      const w = tw + U * 0.09 + (m.emoji ? fs * 1.2 : 0);
+      const h = fs * 1.9;
+      ctx.translate(W / 2, y);
+      ctx.rotate(-0.06 + Math.sin(lt * 5) * 0.025);
+      ctx.scale(pIn, pIn);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = U * 0.03;
+      ctx.fillStyle = '#ffffff';
+      roundRect(ctx, -w / 2, -h / 2, w, h, h * 0.28);
+      ctx.fill();
+      ctx.restore();
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#0b0b14';
+      setFont(c, 900, fs);
+      const sx = -w / 2 + U * 0.045;
+      ctx.fillText(m.text, sx, U * 0.003);
+      if (m.emoji) { ctx.font = `${Math.round(fs)}px ${EMOJI_FONT}`; ctx.fillText(m.emoji, sx + tw + fs * 0.25, U * 0.003); }
+      // Flèche animée.
+      const bounce = Math.sin(lt * 7) * U * 0.012;
+      ctx.strokeStyle = theme.primary;
+      ctx.lineWidth = U * 0.012;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(0, h * 0.75 + bounce);
+      ctx.lineTo(0, h * 1.35 + bounce);
+      ctx.moveTo(-U * 0.03, h * 1.1 + bounce);
+      ctx.lineTo(0, h * 1.35 + bounce);
+      ctx.lineTo(U * 0.03, h * 1.1 + bounce);
+      ctx.stroke();
+      break;
+    }
+    case 'badge': {
+      // Tampon étoilé qui tourne doucement.
+      const r = U * 0.13;
+      const bx = W * 0.75;
+      const by = y;
+      ctx.translate(bx, by);
+      ctx.rotate(lt * 0.6 - 0.3);
+      ctx.scale(pIn, pIn);
+      ctx.beginPath();
+      for (let i = 0; i < 32; i++) {
+        const a = (i / 32) * Math.PI * 2;
+        const rr = i % 2 ? r * 0.86 : r;
+        ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      }
+      ctx.closePath();
+      ctx.fillStyle = theme.accent;
+      ctx.shadowColor = rgba(theme.accent, 0.6);
+      ctx.shadowBlur = U * 0.04;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.rotate(-(lt * 0.6 - 0.3));
+      ctx.fillStyle = isLight(theme.accent) ? '#111' : '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const words = m.text.toUpperCase().split(/\s+/).slice(0, 3);
+      const fs = textFit(c, words.reduce((a, b) => (a.length > b.length ? a : b), ''), 900, U * 0.04, r * 1.4);
+      words.forEach((wd, i) => ctx.fillText(wd, 0, (i - (words.length - 1) / 2) * fs * 1.05));
+      break;
+    }
+    case 'button': {
+      // Bouton d'action qui pulse, puis un doigt / curseur vient cliquer.
+      const fs = textFit(c, m.text, 900, U * 0.05, W * 0.62);
+      const tw = ctx.measureText(m.text).width;
+      const w = tw + U * 0.14;
+      const h = fs * 2.2;
+      const click = clamp((t - 0.9) / 0.25);
+      const press = click > 0 && click < 1 ? 0.94 : 1;
+      const pulse = 1 + Math.sin(lt * 6) * 0.025;
+      ctx.translate(W / 2, y);
+      ctx.scale(pIn * press * pulse, pIn * press * pulse);
+      ctx.save();
+      ctx.shadowColor = rgba(theme.primary, 0.7);
+      ctx.shadowBlur = U * 0.06;
+      ctx.fillStyle = theme.primary;
+      roundRect(ctx, -w / 2, -h / 2, w, h, h / 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = isLight(theme.primary) ? '#0b0b14' : '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      setFont(c, 900, fs);
+      ctx.fillText(m.text, 0, U * 0.003);
+      if (m.sub) { setFont(c, 800, U * 0.026); ctx.fillStyle = rgba(theme.text, 0.75); ctx.fillText(m.sub, 0, h * 0.95); }
+      // Curseur qui arrive et clique (onde).
+      const cur = easeOutCubic(clamp((t - 0.35) / 0.55));
+      if (cur > 0) {
+        const cx = w * 0.32 + (1 - cur) * U * 0.25;
+        const cy = h * 0.25 + (1 - cur) * U * 0.2;
+        if (click > 0) {
+          ctx.strokeStyle = rgba('#ffffff', 0.7 * (1 - click));
+          ctx.lineWidth = U * 0.006;
+          ctx.beginPath(); ctx.arc(cx, cy, U * 0.02 + click * U * 0.08, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.font = `${Math.round(U * 0.07)}px ${EMOJI_FONT}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText('👆', cx - U * 0.02, cy - U * 0.01);
+      }
+      break;
+    }
+    case 'emoji': {
+      // Objet qui surgit en « 3D » : rebond, rotation, ombre portée, halo.
+      const size = U * 0.26;
+      const bob = Math.sin(lt * 2.4) * U * 0.015;
+      const ex = W / 2 + (k % 2 ? 1 : 0) * W * 0.24;
+      const ey = y + bob + (1 - pIn) * U * 0.4;
+      ctx.save();
+      const g = ctx.createRadialGradient(ex, ey, 0, ex, ey, size * 0.9);
+      g.addColorStop(0, rgba(theme.primary, 0.45));
+      g.addColorStop(1, rgba(theme.primary, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(ex - size, ey - size, size * 2, size * 2);
+      ctx.restore();
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath(); ctx.ellipse(ex, ey + size * 0.55, size * 0.35 * pIn, size * 0.07, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.translate(ex, ey);
+      ctx.rotate(Math.sin(lt * 1.8) * 0.12 + (1 - pIn) * 0.8);
+      ctx.scale(pIn, pIn);
+      ctx.font = `${Math.round(size)}px ${EMOJI_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.4)';
+      ctx.shadowBlur = U * 0.03;
+      ctx.shadowOffsetY = U * 0.02;
+      ctx.fillText(m.emoji || '✨', 0, 0);
+      ctx.shadowBlur = 0;
+      if (m.text) {
+        setFont(c, 900, U * 0.04);
+        ctx.fillStyle = theme.text;
+        ctx.fillText(m.text, 0, size * 0.75);
+      }
+      break;
+    }
+    case 'review': {
+      // Carte d'avis (uniquement des avis fournis par le client).
+      const w = Math.min(W * 0.84, U * 0.86);
+      const fs = U * 0.036;
+      setFont(c, 800, fs);
+      const lines = wrap(ctx, parseRich(`« ${m.text} »`), w - U * 0.1).slice(0, 3);
+      const h = U * 0.12 + lines.length * fs * 1.3 + (m.sub ? U * 0.05 : 0);
+      ctx.translate(W / 2, y);
+      ctx.scale(0.9 + 0.1 * pIn, 0.9 + 0.1 * pIn);
+      ctx.translate(0, (1 - pIn) * U * 0.1);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = U * 0.05;
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      roundRect(ctx, -w / 2, -h / 2, w, h, U * 0.035);
+      ctx.fill();
+      ctx.restore();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const x0 = -w / 2 + U * 0.05;
+      // Étoiles qui s'allument une à une.
+      for (let i = 0; i < 5; i++) {
+        const on = clamp((t - 0.25 - i * 0.08) / 0.12);
+        ctx.fillStyle = on > 0 ? '#ffb400' : '#e3e3ea';
+        drawStar(ctx, x0 + i * U * 0.05 + U * 0.02, -h / 2 + U * 0.06, U * 0.022 * (0.6 + 0.4 * easeOutBack(on || 0.001)));
+      }
+      ctx.fillStyle = '#16172a';
+      setFont(c, 800, fs);
+      lines.forEach((ln, i) => ctx.fillText(ln.words.map((w2) => w2.text).join(' '), x0, -h / 2 + U * 0.12 + i * fs * 1.3));
+      if (m.sub) { setFont(c, 800, U * 0.026); ctx.fillStyle = '#6b6d84'; ctx.fillText(m.sub, x0, h / 2 - U * 0.04); }
+      break;
+    }
+  }
+  ctx.restore();
+}
+
+function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 ? r * 0.45 : r;
+    ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
 /** Position dans le projet : scène courante + temps local. */
 export function locate(project: MotionProject, t: number): { index: number; lt: number; start: number } {
   let start = 0;
@@ -842,6 +1100,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
     case 'video': sceneVideo(c, scene, lt); break;
     case 'photo': scenePhoto(c, scene, lt, index); break;
   }
+  if (scene.magic?.length) for (const [k, m] of scene.magic.entries()) drawMagic(c, m, lt, d, k);
   ctx.restore();
 
   // Effet de coupe entre deux scènes.

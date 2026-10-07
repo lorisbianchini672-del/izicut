@@ -30,9 +30,23 @@ export const BrandBriefSchema = z.object({
 });
 export type BrandBrief = z.infer<typeof BrandBriefSchema>;
 
+export const SiteSchema = z.object({
+  url: z.string().max(200),
+  title: z.string().max(120),
+  description: z.string().max(300),
+  colors: z.array(z.string().max(7)).max(6),
+  fonts: z.array(z.string().max(40)).max(4),
+  image: z.string().max(300).optional()
+});
+export type SiteDna = z.infer<typeof SiteSchema>;
+
 export type BrandProfile = {
   company: Company | null;
   /** Ce que le client dit lui-même de son activité (le plus précieux). */
   notes: string;
   brief: BrandBrief | null;
+  /** ADN visuel du site web du client (facultatif). */
+  site?: SiteDna | null;
+  /** Lien vers lequel la pub renvoie (site, réservation, boutique…). */
+  link?: string;
 };

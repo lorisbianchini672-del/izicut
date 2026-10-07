@@ -37,10 +37,10 @@ const SECTORS: Sector[] = [
     transition: 'slide',
     sound: { music: 'acoustic', bpm: 100 },
     scenes: (n) => [
-      { type: 'title', duration: 2.6, title: 'Le vrai pain, *chaque matin*', subtitle: n },
-      { type: 'bullets', duration: 3.6, title: 'Fait *maison*', items: ['Levain naturel', 'Viennoiseries du jour', 'Sandwichs le midi'] },
+      { type: 'title', duration: 2.6, title: 'Le vrai pain, *chaque matin*', subtitle: n, magic: [{ kind: 'emoji', text: '', emoji: '🥖', at: 0.3 }] },
+      { type: 'bullets', duration: 3.6, title: 'Fait *maison*', items: ['Levain naturel', 'Viennoiseries du jour', 'Sandwichs le midi'], magic: [{ kind: 'badge', text: 'Fait maison', at: 0.6 }] },
       { type: 'stat', duration: 2.6, value: 6, suffix: 'h', label: 'le four est chaud dès' },
-      { type: 'cta', duration: 2.8, title: 'On vous attend *ce matin*', button: n }
+      { type: 'cta', duration: 2.8, title: 'On vous attend *ce matin*', button: n, magic: [{ kind: 'sticker', text: 'Lien en bio', emoji: '👇', at: 0.6 }] }
     ]
   },
   {
@@ -51,10 +51,10 @@ const SECTORS: Sector[] = [
     transition: 'flash',
     sound: { music: 'pop', bpm: 118 },
     scenes: (n) => [
-      { type: 'title', duration: 2.6, title: 'Ensemble, on va *plus loin*', subtitle: n },
+      { type: 'title', duration: 2.6, title: 'Ensemble, on va *plus loin*', subtitle: n, magic: [{ kind: 'emoji', text: '', emoji: '🤝', at: 0.3 }] },
       { type: 'stat', duration: 2.8, value: 250, suffix: '+', label: 'bénévoles engagés' },
       { type: 'bullets', duration: 3.6, title: 'Rejoignez-*nous*', items: ['Événements chaque mois', 'Aide aux familles', 'Ouvert à tous'] },
-      { type: 'cta', duration: 2.8, title: 'Devenez *bénévole*', button: 'Adhérer' }
+      { type: 'cta', duration: 2.8, title: 'Devenez *bénévole*', button: 'Adhérer', magic: [{ kind: 'sticker', text: 'Lien en bio', emoji: '👇', at: 0.6 }] }
     ]
   },
   {
@@ -65,10 +65,10 @@ const SECTORS: Sector[] = [
     transition: 'wipe',
     sound: { music: 'chill', bpm: 88 },
     scenes: (n) => [
-      { type: 'title', duration: 2.6, title: 'Votre style, *sublimé*', subtitle: n },
-      { type: 'quote', duration: 3.4, text: 'Je ressors à chaque fois avec *le sourire*.', author: 'Une cliente fidèle' },
+      { type: 'title', duration: 2.6, title: 'Votre style, *sublimé*', subtitle: n, magic: [{ kind: 'emoji', text: '', emoji: '💇‍♀️', at: 0.3 }] },
+      { type: 'quote', duration: 3.4, text: 'Je ressors à chaque fois avec *le sourire*.', author: 'Exemple d’avis client' },
       { type: 'stat', duration: 2.6, value: -20, suffix: '%', label: 'sur votre 1re visite' },
-      { type: 'cta', duration: 2.8, title: 'Réservez *en ligne*', button: n }
+      { type: 'cta', duration: 2.8, title: 'Réservez *en ligne*', button: n, magic: [{ kind: 'notification', text: 'Rendez-vous confirmé', sub: n, emoji: '✂️', at: 0.4 }] }
     ]
   },
   {
@@ -79,10 +79,10 @@ const SECTORS: Sector[] = [
     transition: 'zoom',
     sound: { music: 'hiphop', bpm: 92 },
     scenes: (n) => [
-      { type: 'title', duration: 2.6, title: 'Une cuisine *de saison*', subtitle: n },
+      { type: 'title', duration: 2.6, title: 'Une cuisine *de saison*', subtitle: n, magic: [{ kind: 'emoji', text: '', emoji: '🍝', at: 0.3 }] },
       { type: 'bullets', duration: 3.6, title: 'Au menu', items: ['Produits locaux', 'Plat du jour à 14 €', 'Terrasse ensoleillée'] },
-      { type: 'quote', duration: 3.2, text: 'Le meilleur *déjeuner* du quartier.', author: 'Avis Google' },
-      { type: 'cta', duration: 2.8, title: 'Réservez *votre table*', button: n }
+      { type: 'quote', duration: 3.2, text: 'Le meilleur *déjeuner* du quartier.', author: 'Exemple d’avis client' },
+      { type: 'cta', duration: 2.8, title: 'Réservez *votre table*', button: n, magic: [{ kind: 'notification', text: 'Table réservée', sub: n, emoji: '🍽️', at: 0.4 }] }
     ]
   }
 ];

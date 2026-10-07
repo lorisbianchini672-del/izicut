@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { AiNotConfiguredError, chatJson } from '@/lib/ai/chat';
-import { BrandBriefSchema, CompanySchema } from '@/lib/brand/types';
+import { BrandBriefSchema, CompanySchema, SiteSchema } from '@/lib/brand/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 /**
@@ -13,7 +13,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 export const maxDuration = 60;
 
-const BodySchema = z.object({ company: CompanySchema.nullable(), notes: z.string().max(2000) });
+const BodySchema = z.object({ company: CompanySchema.nullable(), notes: z.string().max(2000), site: SiteSchema.nullable().optional() });
 
 export async function POST(request: Request) {
   const supabase = await createServerSupabaseClient();
@@ -23,12 +23,12 @@ export async function POST(request: Request) {
   if (!parsed.success || (!parsed.data.company && parsed.data.notes.trim().length < 5)) {
     return NextResponse.json({ error: 'Choisissez votre entreprise ou décrivez votre activité.' }, { status: 400 });
   }
-  const { company, notes } = parsed.data;
+  const { company, notes, site } = parsed.data;
   try {
     const raw = await chatJson({
       system: `Tu es directrice de communication pour les TPE, PME, commerçants, artisans, indépendants et associations en France. À partir des informations officielles (registre SIRENE) et de ce que le client dit, tu rédiges une fiche marque concrète, crédible et locale. Tu n'inventes pas de faits vérifiables (prix, récompenses, chiffres) : si tu n'en es pas sûre, formule de façon générale. Réponds UNIQUEMENT en JSON :
 {"pitch":"1 à 2 phrases","audience":"la cible","tone":"le ton conseillé","strengths":["3 à 5 points forts probables"],"slogans":["3 slogans courts"],"adIdeas":["3 idées de pubs vidéo pour les réseaux, UNE phrase de 120 caractères max chacune"],"palette":{"primary":"#RRGGBB","accent":"#RRGGBB","background":"#RRGGBB"}}`,
-      user: `Registre officiel : ${company ? JSON.stringify(company) : '(non renseigné)'}\nCe que le client dit de son activité : ${notes || '(rien)'}`,
+      user: `Registre officiel : ${company ? JSON.stringify(company) : '(non renseigné)'}\nCe que le client dit de son activité : ${notes || '(rien)'}${site ? `\nSite web du client : ${JSON.stringify(site)} (reprends ses couleurs dans la palette)` : ''}`,
       maxTokens: 1200,
       temperature: 0.6
     });

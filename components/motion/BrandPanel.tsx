@@ -7,10 +7,10 @@
  * couleurs). Toutes les pubs générées ensuite s'appuient sur cette fiche.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Building2, Check, Loader2, Search, Sparkles, X } from 'lucide-react';
+import { Building2, Check, Globe, Loader2, Search, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import type { BrandBrief, BrandProfile, Company } from '@/lib/brand/types';
+import type { BrandBrief, BrandProfile, Company, SiteDna } from '@/lib/brand/types';
 import { cn } from '@/lib/utils';
 
 export const BRAND_STORAGE_KEY = 'izicut-brand-v1';
@@ -21,7 +21,7 @@ export function loadBrand(): BrandProfile {
     const raw = window.localStorage.getItem(BRAND_STORAGE_KEY);
     if (!raw) return EMPTY_BRAND;
     const v = JSON.parse(raw) as BrandProfile;
-    return { company: v.company ?? null, notes: typeof v.notes === 'string' ? v.notes : '', brief: v.brief ?? null };
+    return { company: v.company ?? null, notes: typeof v.notes === 'string' ? v.notes : '', brief: v.brief ?? null, site: v.site ?? null, link: typeof v.link === 'string' ? v.link : '' };
   } catch {
     return EMPTY_BRAND;
   }
@@ -55,6 +55,34 @@ export function BrandPanel({
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [siteUrl, setSiteUrl] = useState(profile.site?.url ?? '');
+  const [siteBusy, setSiteBusy] = useState(false);
+
+  const analyzeSite = async () => {
+    if (!loggedIn) { setError('Connectez-vous (gratuit) pour analyser votre site.'); return; }
+    if (siteUrl.trim().length < 4) return;
+    setSiteBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/brand/site?url=${encodeURIComponent(siteUrl.trim())}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.site) throw new Error(json.error ?? 'Analyse impossible.');
+      const site = json.site as SiteDna;
+      onChange({ ...profile, site, link: profile.link || site.url.replace(/^https?:\/\//, '').replace(/\/$/, '') });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Analyse impossible.');
+    } finally {
+      setSiteBusy(false);
+    }
+  };
+
+  const siteColors = (site: SiteDna) => {
+    const lum = (h: string) => { const n = parseInt(h.slice(1), 16); return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114; };
+    const sat = (h: string) => { const n = parseInt(h.slice(1), 16); const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255; return Math.max(r, g, b) - Math.min(r, g, b); };
+    const vivid = [...site.colors].sort((a, b) => sat(b) - sat(a));
+    const dark = [...site.colors].sort((a, b) => lum(a) - lum(b))[0];
+    return { primary: vivid[0] ?? '#a990ff', accent: vivid[1] ?? vivid[0] ?? '#ffbe76', background: dark && lum(dark) < 60 ? dark : '#0b0920' };
+  };
   const timer = useRef<number | null>(null);
 
   // Recherche dans le registre au fil de la frappe (anti-rebond 350 ms).
@@ -87,7 +115,7 @@ export function BrandPanel({
       const res = await fetch('/api/brand/brief', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company: profile.company, notes: profile.notes })
+        body: JSON.stringify({ company: profile.company, notes: profile.notes, site: profile.site ?? null })
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.brief) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
@@ -163,6 +191,39 @@ export function BrandPanel({
           className={cn(inputCls, 'resize-none')}
         />
       </div>
+
+      <div>
+        <p className="mb-1.5 text-xs font-semibold text-fg-muted">Votre site web (facultatif) — l’IA reprend sa charte</p>
+        <div className="flex gap-1.5">
+          <div className="relative flex-1">
+            <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
+            <input value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void analyzeSite(); }} placeholder="monsite.fr" className={cn(inputCls, 'pl-9')} />
+          </div>
+          <button type="button" onClick={analyzeSite} disabled={siteBusy} className="cursor-pointer rounded-xl border border-neon/40 px-3 text-xs font-semibold text-neon disabled:opacity-50">
+            {siteBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Analyser'}
+          </button>
+        </div>
+        {profile.site ? (
+          <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+            <p className="truncate text-xs font-semibold text-fg">{profile.site.title || profile.site.url}</p>
+            {profile.site.description ? <p className="mt-0.5 line-clamp-2 text-[11px] text-fg-muted">{profile.site.description}</p> : null}
+            <div className="mt-1.5 flex items-center gap-1.5">
+              {profile.site.colors.map((col) => <span key={col} title={col} className="h-5 w-5 rounded-full border border-white/20" style={{ background: col }} />)}
+              {profile.site.fonts.length ? <span className="ml-1 truncate text-[10px] text-fg-subtle">{profile.site.fonts.join(', ')}</span> : null}
+              {profile.site.colors.length ? (
+                <button type="button" onClick={() => profile.site && onApplyPalette(siteColors(profile.site))} className="ml-auto shrink-0 cursor-pointer rounded-lg border border-white/10 px-2 py-0.5 text-[10px] text-fg-muted hover:text-fg">
+                  Couleurs du site
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-semibold text-fg-muted">Lien de l’appel à l’action (réservation, boutique, site…)</span>
+        <input value={profile.link ?? ''} maxLength={200} onChange={(e) => onChange({ ...profile, link: e.target.value })} placeholder="ex. monsite.fr/reserver" className={inputCls} />
+      </label>
 
       <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={busy || (!c && profile.notes.trim().length < 5)} onClick={generate}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}

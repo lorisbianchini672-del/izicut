@@ -5,7 +5,7 @@
  * de fin). Rendue hors ligne en un AudioBuffer, elle sert à l'aperçu et à
  * l'export, parfaitement synchronisée avec l'animation.
  */
-import { totalDuration, type MotionProject, type Music, type Sfx } from './types';
+import { totalDuration, type MagicKind, type MotionProject, type Music, type Sfx } from './types';
 
 type Chord = [number, 'M' | 'm' | 'M7' | 'm7'];
 type Genre = {
@@ -41,8 +41,10 @@ const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 /** Effet sonore joué par défaut à chaque coupe, selon la transition. */
 const DEFAULT_CUT: Record<NonNullable<MotionProject['transition']>, Sfx> = { flash: 'whoosh', slide: 'swipe', zoom: 'whoosh', wipe: 'swipe', glitch: 'glitch' };
 
+const MAGIC_SFX: Record<MagicKind, Sfx> = { notification: 'chime', sticker: 'pop', badge: 'pop', button: 'pop', emoji: 'pop', review: 'chime' };
+
 export function hasSound(p: MotionProject): boolean {
-  return Boolean(p.sound) || p.scenes.some((s) => s.sfx);
+  return Boolean(p.sound) || p.scenes.some((s) => s.sfx || s.magic?.length);
 }
 
 const cache = new Map<string, Promise<AudioBuffer | null>>();
@@ -50,7 +52,7 @@ const cache = new Map<string, Promise<AudioBuffer | null>>();
 /** Bande-son complète du projet (mise en cache tant que le projet sonore ne change pas). */
 export function renderSoundtrack(project: MotionProject): Promise<AudioBuffer | null> {
   if (typeof window === 'undefined' || typeof OfflineAudioContext === 'undefined' || !hasSound(project)) return Promise.resolve(null);
-  const key = JSON.stringify([project.sound, project.transition, project.scenes.map((s) => [s.duration, s.sfx, s.type])]);
+  const key = JSON.stringify([project.sound, project.transition, project.scenes.map((s) => [s.duration, s.sfx, s.type, s.magic?.map((m) => [m.kind, m.at, m.sfx])])]);
   const hit = cache.get(key);
   if (hit) return hit;
   const job = render(project).catch(() => null);
@@ -98,6 +100,13 @@ async function render(project: MotionProject): Promise<AudioBuffer> {
     const isLast = i === project.scenes.length - 1 && i > 0;
     const sfx: Sfx | undefined = scene.sfx ?? (project.sound ? (i === 0 ? 'impact' : isLast ? 'impact' : cut) : undefined);
     if (sfx) playSfx(ctx, sfxBus, noise, sfx, Math.max(0, i === 0 ? 0.02 : start - 0.05));
+    // Chaque apparition magique a son bruitage.
+    for (const m of scene.magic ?? []) {
+      const at = start + m.at;
+      if (at >= total - 0.1) continue;
+      playSfx(ctx, sfxBus, noise, m.sfx ?? MAGIC_SFX[m.kind], at);
+      if (m.kind === 'button' && at + 0.9 < total) playSfx(ctx, sfxBus, noise, 'click', at + 0.9);
+    }
     // Jingle de fin : petite signature mélodique sur la dernière scène.
     if (isLast && project.sound) jingle(ctx, sfxBus, start + 0.25, project.sound.music === 'none' ? 60 : GENRES[project.sound.music].key);
     start += scene.duration;

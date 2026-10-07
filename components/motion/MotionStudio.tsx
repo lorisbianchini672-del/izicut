@@ -36,6 +36,7 @@ import {
 import { BrandPanel, EMPTY_BRAND, loadBrand, saveBrand } from '@/components/motion/BrandPanel';
 import { Button } from '@/components/ui/button';
 import type { BrandProfile } from '@/lib/brand/types';
+import { FREE_LIMITS, FREE_MOTION_CREATIONS, type MotionQuota } from '@/lib/motion/plan';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { drawFrame, locate, type MotionAssets } from '@/lib/motion/render';
 import { SoundPlayer, renderSoundtrack } from '@/lib/motion/sound';
@@ -51,7 +52,11 @@ import {
   SFX_LABELS,
   TRANSITIONS,
   TRANSITION_LABELS,
+  MAGIC_KINDS,
+  MAGIC_LABELS,
   type Concept,
+  type Magic,
+  type MagicKind,
   type Sfx,
   SCENE_LABELS,
   TEMPLATES,
@@ -169,6 +174,8 @@ export function MotionStudio() {
   const [exporting, setExporting] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [concept, setConcept] = useState<Concept | null>(null);
+  const [hooks, setHooks] = useState<Scene[]>([]);
+  const [quota, setQuota] = useState<MotionQuota | null>(null);
   const [soundOn, setSoundOn] = useState(false);
   const soundOnRef = useRef(false);
   soundOnRef.current = soundOn;
@@ -208,6 +215,7 @@ export function MotionStudio() {
       if (!data.user) return;
       const { data: profile } = await supabase.from('profiles').select('plan, subscription_status').eq('id', data.user.id).maybeSingle();
       setIsPaid(resolvePlanTier(profile?.plan, profile?.subscription_status) !== 'free');
+      fetch('/api/motion/quota').then((r) => (r.ok ? r.json() : null)).then((q) => q && setQuota(q as MotionQuota)).catch(() => undefined);
     });
   }, [supabase]);
 
@@ -307,6 +315,8 @@ export function MotionStudio() {
     draw(timeRef.current);
   };
 
+  const proOnly = () => setNotice('Cette option fait partie de l’offre Pro (toutes les musiques, textures et transitions, pubs illimitées, sans filigrane).');
+
   const replaceProject = (next: MotionProject) => {
     setProject(next);
     timeRef.current = 0;
@@ -340,7 +350,8 @@ export function MotionStudio() {
   const addVideo = (file: File | undefined) => {
     if (!file) return;
     if (!file.type.startsWith('video/') && !/\.(mov|mp4|webm|m4v|mkv)$/i.test(file.name)) { setNotice('Choisissez une vidéo (MP4, MOV, WebM).'); return; }
-    if (mediaRef.current.length >= 3) { setNotice('3 vidéos maximum par projet.'); return; }
+    const maxVideos = isPaid ? 3 : FREE_LIMITS.videos;
+    if (mediaRef.current.length >= maxVideos) { setNotice(isPaid ? '3 vidéos maximum par projet.' : `Offre Free : ${FREE_LIMITS.videos} vidéo par pub. Passez en Pro pour en ajouter jusqu’à 3.`); return; }
     const url = URL.createObjectURL(file);
     const el = document.createElement('video');
     el.src = url;
@@ -372,8 +383,9 @@ export function MotionStudio() {
 
   const addPhotos = (files: FileList | null) => {
     if (!files?.length) return;
-    const room = MAX_PHOTOS - photosRef.current.length;
-    if (room <= 0) { setNotice(`${MAX_PHOTOS} photos maximum par projet.`); return; }
+    const maxPhotos = isPaid ? MAX_PHOTOS : FREE_LIMITS.photos;
+    const room = maxPhotos - photosRef.current.length;
+    if (room <= 0) { setNotice(isPaid ? `${MAX_PHOTOS} photos maximum par projet.` : `Offre Free : ${FREE_LIMITS.photos} photos par pub. Passez en Pro pour en ajouter jusqu’à ${MAX_PHOTOS}.`); return; }
     const list = Array.from(files).filter((f) => f.type.startsWith('image/')).slice(0, room);
     if (!list.length) { setNotice('Choisissez des images (JPG, PNG, WebP, HEIC converti).'); return; }
     let loaded = 0;
@@ -430,12 +442,14 @@ export function MotionStudio() {
           media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 })),
           photos: photos.map((ph, i) => ({ index: i, name: ph.name })),
           ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
-          brand: brand.company || brand.notes.trim() || brand.brief ? brand : undefined
+          brand: brand.company || brand.notes.trim() || brand.brief || brand.site || brand.link ? { ...brand, site: brand.site ?? null, link: brand.link || undefined } : undefined
         })
       });
       const json = await res.json().catch(() => ({}));
       if (typeof json.photoNotes === 'string' && json.photoNotes) photoNotesRef.current = { key: photoKey, notes: json.photoNotes };
+      if (json.quota) setQuota(json.quota as MotionQuota);
       if (!res.ok || !json.project) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
+      if (!(opts.fresh || !messages.length) || !json.concept) { /* retouche : on garde les accroches */ } else setHooks(Array.isArray(json.hooks) ? (json.hooks as Scene[]) : []);
       replaceProject(json.project as MotionProject);
       if (json.concept) {
         setConcept(json.concept as Concept);
@@ -546,6 +560,18 @@ export function MotionStudio() {
             <Sparkles className="h-3.5 w-3.5" /> Nouveau
           </p>
           <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">Studio Motion</h1>
+          {quota ? (
+            <p className="izi-glass-pill mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs text-fg-muted">
+              {quota.limit === null ? (
+                <><Sparkles className="h-3.5 w-3.5 text-neon" /> Offre {quota.tier === 'agency' ? 'Agence' : 'Pro'} · pubs illimitées</>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5 text-neon" /> Essai gratuit · {Math.max(0, quota.limit - quota.used)}/{quota.limit} pubs restantes
+                  <Link href="/#pricing" className="font-semibold text-neon underline">Passer en Pro</Link>
+                </>
+              )}
+            </p>
+          ) : null}
           <p className="mt-1 max-w-xl text-sm text-fg-muted">
             Décrivez votre vidéo, l’IA crée l’animation. Modifiez-la en lui parlant, puis téléchargez-la.
           </p>
@@ -652,6 +678,28 @@ export function MotionStudio() {
                   </p>
                 ) : null}
                 {concept ? <ConceptCard concept={concept} /> : null}
+                {hooks.length ? (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                    <p className="mb-1.5 text-xs font-semibold text-fg">Accroches A/B — testez celle qui retient le plus</p>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {hooks.map((h, i) => {
+                        const label = ['A · Problème', 'B · Bénéfice', 'C · Curiosité'][i] ?? `Accroche ${i + 1}`;
+                        const active = JSON.stringify(project.scenes[0]) === JSON.stringify(h);
+                        const text = h.type === 'title' ? h.title : h.type === 'stat' ? `${h.prefix ?? ''}${h.value}${h.suffix ?? ''} ${h.label}` : h.type === 'quote' ? h.text : '';
+                        return (
+                          <button key={i} type="button" title={text.replace(/\*/g, '')} onClick={() => { setProject((p) => ({ ...p, scenes: [h, ...p.scenes.slice(1)] })); seek(0); setPlaying(true); }} className={cn('cursor-pointer rounded-lg border px-2 py-1.5 text-left text-[11px] transition', active ? 'border-neon bg-neon/15 text-neon' : 'border-white/10 text-fg-muted hover:text-fg')}>
+                            <span className="block font-semibold">{label}</span>
+                            <span className="line-clamp-2 opacity-80">{text.replace(/\*/g, '')}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : !isPaid && concept ? (
+                  <p className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] text-fg-muted">
+                    <Lock className="mr-1 inline h-3 w-3" /> En Pro : 3 accroches A/B au choix et le script de voix-off. <Link href="/#pricing" className="text-neon underline">Voir l’offre</Link>
+                  </p>
+                ) : null}
                 <div className="flex-1 space-y-2">
                   {messages.length === 0 ? (
                     <div className="space-y-2">
@@ -794,6 +842,7 @@ export function MotionStudio() {
                       </div>
                     </div>
                     <SceneFields scene={scene} media={media} photos={photos} onChange={(patch) => updateScene(i, patch)} />
+                    <MagicFields magic={scene.magic ?? []} duration={scene.duration} onChange={(magic) => updateScene(i, { magic: magic.length ? magic : undefined })} />
                     <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
                       Son d’entrée
                       <select value={scene.sfx ?? ''} onChange={(e) => updateScene(i, { sfx: (e.target.value || undefined) as Sfx | undefined })} className="flex-1 cursor-pointer rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-fg outline-none">
@@ -867,21 +916,21 @@ export function MotionStudio() {
                 <Field label="Texture signature">
                   <div className="grid grid-cols-4 gap-1.5">
                     {MOTIFS.map((m) => (
-                      <Choice key={m} active={(project.theme.motif ?? 'particles') === m} onClick={() => setProject((p) => ({ ...p, theme: { ...p.theme, motif: m } }))}>{MOTIF_LABELS[m]}</Choice>
+                      <Choice key={m} locked={!isPaid && !FREE_LIMITS.motifs.includes(m)} active={(project.theme.motif ?? 'particles') === m} onClick={() => (!isPaid && !FREE_LIMITS.motifs.includes(m) ? proOnly() : setProject((p) => ({ ...p, theme: { ...p.theme, motif: m } })))}>{MOTIF_LABELS[m]}</Choice>
                     ))}
                   </div>
                 </Field>
                 <Field label="Transitions">
                   <div className="grid grid-cols-5 gap-1.5">
                     {TRANSITIONS.map((tr) => (
-                      <Choice key={tr} active={(project.transition ?? 'flash') === tr} onClick={() => setProject((p) => ({ ...p, transition: tr }))}>{TRANSITION_LABELS[tr]}</Choice>
+                      <Choice key={tr} locked={!isPaid && !FREE_LIMITS.transitions.includes(tr)} active={(project.transition ?? 'flash') === tr} onClick={() => (!isPaid && !FREE_LIMITS.transitions.includes(tr) ? proOnly() : setProject((p) => ({ ...p, transition: tr })))}>{TRANSITION_LABELS[tr]}</Choice>
                     ))}
                   </div>
                 </Field>
                 <Field label="Musique (générée, libre de droits)">
                   <div className="grid grid-cols-4 gap-1.5">
                     {MUSIC.map((mu) => (
-                      <Choice key={mu} active={(project.sound?.music ?? 'none') === mu} onClick={() => { void playerRef.current?.unlock(); setSoundOn(mu !== 'none'); setProject((p) => ({ ...p, sound: mu === 'none' && !p.sound ? undefined : { bpm: p.sound?.bpm ?? 110, volume: p.sound?.volume, music: mu } })); }}>{MUSIC_LABELS[mu]}</Choice>
+                      <Choice key={mu} locked={!isPaid && !FREE_LIMITS.music.includes(mu)} active={(project.sound?.music ?? 'none') === mu} onClick={() => { if (!isPaid && !FREE_LIMITS.music.includes(mu)) { proOnly(); return; } void playerRef.current?.unlock(); setSoundOn(mu !== 'none'); setProject((p) => ({ ...p, sound: mu === 'none' && !p.sound ? undefined : { bpm: p.sound?.bpm ?? 110, volume: p.sound?.volume, music: mu } })); }}>{MUSIC_LABELS[mu]}</Choice>
                     ))}
                   </div>
                   {project.sound ? (
@@ -911,13 +960,70 @@ export function MotionStudio() {
               Offre Free : petite mention « Réalisé avec IziCut ». <Link href="/#pricing" className="text-neon underline">Passer en Pro</Link> pour la retirer.
             </p>
           ) : null}
-          <button type="button" onClick={() => { replaceProject(TEMPLATES[0].project); setMessages([]); setAssets({}); setPhotos([]); setConcept(null); try { window.localStorage.removeItem(CONCEPT_KEY); } catch { /* rien */ } }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
+          <button type="button" onClick={() => { replaceProject(TEMPLATES[0].project); setMessages([]); setAssets({}); setPhotos([]); setConcept(null); setHooks([]); try { window.localStorage.removeItem(CONCEPT_KEY); } catch { /* rien */ } }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
             <RotateCcw className="h-3 w-3" /> Repartir de zéro
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+const MAGIC_DEFAULTS: Record<MagicKind, Magic> = {
+  notification: { kind: 'notification', text: 'Réservation confirmée', sub: 'À tout à l’heure !', emoji: '✅', at: 0.4 },
+  sticker: { kind: 'sticker', text: 'Lien en bio', emoji: '👇', at: 0.5 },
+  badge: { kind: 'badge', text: 'Nouveau', at: 0.4 },
+  button: { kind: 'button', text: 'Réserver', at: 0.3 },
+  emoji: { kind: 'emoji', text: '', emoji: '✨', at: 0.3 },
+  review: { kind: 'review', text: 'Collez ici un vrai avis client', sub: 'Prénom', at: 0.4 }
+};
+
+/** Apparitions magiques d'une scène : ajouter, modifier, retirer. */
+function MagicFields({ magic, duration, onChange }: { magic: Magic[]; duration: number; onChange: (m: Magic[]) => void }) {
+  const set = (k: number, patch: Partial<Magic>) => onChange(magic.map((m, i) => (i === k ? { ...m, ...patch } : m)));
+  return (
+    <div className="mt-2 space-y-1.5">
+      {magic.map((m, k) => (
+        <div key={k} className="rounded-lg border border-neon/20 bg-neon/[0.04] p-2">
+          <div className="mb-1 flex items-center justify-between text-[11px] font-semibold text-neon">
+            ✨ {MAGIC_LABELS[m.kind]}
+            <button type="button" onClick={() => onChange(magic.filter((_, i) => i !== k))} className="cursor-pointer text-fg-subtle hover:text-fg" aria-label="Retirer">×</button>
+          </div>
+          <div className="grid grid-cols-[1fr_48px] gap-1">
+            <input className={inputCls} value={m.text} maxLength={60} onChange={(e) => set(k, { text: e.target.value || ' ' })} placeholder="Texte" />
+            <input className={cn(inputCls, 'text-center')} value={m.emoji ?? ''} maxLength={8} onChange={(e) => set(k, { emoji: e.target.value || undefined })} placeholder="😀" aria-label="Emoji" />
+          </div>
+          {m.kind === 'notification' || m.kind === 'button' || m.kind === 'review' || m.kind === 'sticker' ? (
+            <input className={cn(inputCls, 'mt-1')} value={m.sub ?? ''} maxLength={60} onChange={(e) => set(k, { sub: e.target.value || undefined })} placeholder={m.kind === 'review' ? 'Prénom du client' : 'Sous-texte / lien (facultatif)'} />
+          ) : null}
+          <label className="mt-1 flex items-center gap-2 text-[11px] text-fg-muted">
+            Apparaît à
+            <input type="range" min={0} max={Math.max(0, duration - 0.6)} step={0.1} value={m.at} onChange={(e) => set(k, { at: Number(e.target.value) })} className="flex-1 accent-[var(--color-neon)]" />
+            <span className="w-8 text-right font-code">{m.at.toFixed(1)}s</span>
+          </label>
+        </div>
+      ))}
+      {magic.length < 3 ? (
+        <select value="" onChange={(e) => { const k = e.target.value as MagicKind; if (k) onChange([...magic, { ...MAGIC_DEFAULTS[k], at: Math.min(MAGIC_DEFAULTS[k].at, Math.max(0, duration - 0.6)) }]); }} className="w-full cursor-pointer rounded-lg border border-dashed border-white/15 bg-transparent px-2 py-1 text-xs text-fg-muted outline-none">
+          <option value="">+ Apparition magique…</option>
+          {MAGIC_KINDS.map((k) => <option key={k} value={k}>{MAGIC_LABELS[k]}</option>)}
+        </select>
+      ) : null}
+    </div>
+  );
+}
+
+function speak(lines: { text: string }[]) {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const voice = window.speechSynthesis.getVoices().find((v) => v.lang.startsWith('fr'));
+  for (const l of lines) {
+    const u = new SpeechSynthesisUtterance(l.text);
+    u.lang = 'fr-FR';
+    u.rate = 1.08;
+    if (voice) u.voice = voice;
+    window.speechSynthesis.speak(u);
+  }
 }
 
 function ConceptCard({ concept }: { concept: Concept }) {
@@ -932,6 +1038,13 @@ function ConceptCard({ concept }: { concept: Concept }) {
       <p className="mt-1.5 text-xs text-fg-muted">{concept.creative_concept}</p>
       {open ? (
         <div className="mt-3 space-y-2.5 text-xs">
+          {concept.strategy ? (
+            <div className="grid grid-cols-2 gap-1.5">
+              {([['Valeur', concept.strategy.value], ['Cible', concept.strategy.audience], ['Émotion', concept.strategy.emotion], ['Levier', concept.strategy.lever]] as const).map(([k, v]) => (
+                <div key={k} className="rounded-lg bg-white/[0.04] p-1.5"><p className="text-[10px] font-semibold uppercase tracking-wide text-fg-subtle">{k}</p><p className="text-fg-muted">{v}</p></div>
+              ))}
+            </div>
+          ) : null}
           <p><span className="font-semibold text-fg">Univers visuel : </span><span className="text-fg-muted">{ad.visual_theme}</span></p>
           {concept.signatures?.length ? (
             <div>
@@ -944,6 +1057,18 @@ function ConceptCard({ concept }: { concept: Concept }) {
           {ad.color_palette.length ? (
             <div className="flex flex-wrap gap-1.5">
               {ad.color_palette.map((col) => <span key={col} className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-fg-muted">{col}</span>)}
+            </div>
+          ) : null}
+          {concept.voiceover?.length ? (
+            <div className="space-y-1 border-t border-white/10 pt-2">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-fg">Voix-off</p>
+                <button type="button" onClick={() => speak(concept.voiceover ?? [])} className="cursor-pointer rounded-full border border-neon/40 px-2 py-0.5 text-[10px] text-neon">▶ Écouter</button>
+              </div>
+              {concept.voiceover.map((v, i) => (
+                <p key={i} className="text-fg-muted"><span className="font-code text-[10px] text-neon">{v.time}</span> {v.text} {v.sfx ? <span className="text-fg-subtle">{v.sfx}</span> : null}</p>
+              ))}
+              <p className="text-[10px] text-fg-subtle">À enregistrer avec votre voix ou une voix de synthèse ; la vidéo exportée contient la musique et les bruitages.</p>
             </div>
           ) : null}
           <div className="space-y-1.5 border-t border-white/10 pt-2">
@@ -979,10 +1104,11 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Choice({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+function Choice({ active, onClick, children, locked }: { active: boolean; onClick: () => void; children: ReactNode; locked?: boolean }) {
   return (
-    <button type="button" onClick={onClick} className={cn('cursor-pointer rounded-lg border px-2 py-2 text-xs transition', active ? 'border-neon bg-neon/15 text-neon' : 'border-white/10 text-fg-muted hover:text-fg')}>
+    <button type="button" onClick={onClick} className={cn('relative cursor-pointer rounded-lg border px-2 py-2 text-xs transition', active ? 'border-neon bg-neon/15 text-neon' : 'border-white/10 text-fg-muted hover:text-fg', locked && 'opacity-60')}>
       {children}
+      {locked ? <Lock className="absolute right-1 top-1 h-2.5 w-2.5" aria-label="Pro" /> : null}
     </button>
   );
 }

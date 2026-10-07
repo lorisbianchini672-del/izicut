@@ -23,30 +23,48 @@ export type Transition = (typeof TRANSITIONS)[number];
 export const MUSIC = ['pop', 'electro', 'chill', 'epic', 'acoustic', 'hiphop', 'none'] as const;
 export type Music = (typeof MUSIC)[number];
 
+/** « Apparitions magiques » : éléments qui surgissent par-dessus une scène. */
+export const MAGIC_KINDS = ['notification', 'sticker', 'badge', 'button', 'emoji', 'review'] as const;
+export type MagicKind = (typeof MAGIC_KINDS)[number];
+export const MagicSchema = z.object({
+  kind: z.enum(MAGIC_KINDS),
+  text: z.string().trim().min(1).max(60),
+  sub: z.string().trim().max(60).optional(),
+  emoji: z.string().max(8).optional(),
+  /** Seconde d'apparition, à partir du début de la scène. */
+  at: z.number().min(0).max(8),
+  pos: z.enum(['top', 'center', 'bottom']).optional(),
+  sfx: z.enum(['whoosh', 'pop', 'click', 'impact', 'riser', 'chime', 'fizz', 'bubble', 'swipe', 'glitch']).optional()
+});
+export type Magic = z.infer<typeof MagicSchema>;
+export const MAGIC_LABELS: Record<MagicKind, string> = {
+  notification: 'Notification', sticker: 'Sticker « lien en bio »', badge: 'Badge', button: 'Bouton cliqué', emoji: 'Objet / emoji 3D', review: 'Avis client (réel)'
+};
+
 /** Nombre maximum de scènes dans une vidéo. */
 export const MAX_SCENES = 12;
 /** Nombre maximum de photos importées. */
 export const MAX_PHOTOS = 12;
 
 export const SceneSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('title'), duration, sfx: z.enum(SFX).optional(), title: txt(90), subtitle: z.string().trim().max(120).optional() }),
-  z.object({ type: z.literal('bullets'), duration, sfx: z.enum(SFX).optional(), title: txt(60), items: z.array(txt(60)).min(1).max(4) }),
+  z.object({ type: z.literal('title'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), title: txt(90), subtitle: z.string().trim().max(120).optional() }),
+  z.object({ type: z.literal('bullets'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), title: txt(60), items: z.array(txt(60)).min(1).max(4) }),
   z.object({
     type: z.literal('stat'),
     duration,
-    sfx: z.enum(SFX).optional(),
+    sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(),
     value: z.number().min(-1e9).max(1e9),
     prefix: z.string().max(4).optional(),
     suffix: z.string().max(6).optional(),
     label: txt(70)
   }),
-  z.object({ type: z.literal('screenshot'), duration, sfx: z.enum(SFX).optional(), caption: txt(80) }),
-  z.object({ type: z.literal('quote'), duration, sfx: z.enum(SFX).optional(), text: txt(160), author: z.string().trim().max(50).optional() }),
-  z.object({ type: z.literal('cta'), duration, sfx: z.enum(SFX).optional(), title: txt(70), button: txt(30) }),
+  z.object({ type: z.literal('screenshot'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), caption: txt(80) }),
+  z.object({ type: z.literal('quote'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), text: txt(160), author: z.string().trim().max(50).optional() }),
+  z.object({ type: z.literal('cta'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), title: txt(70), button: txt(30) }),
   z.object({
     type: z.literal('video'),
     duration: z.number().min(1.5).max(15),
-    sfx: z.enum(SFX).optional(),
+    sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(),
     /** Index de la vidéo importée par le client (0, 1 ou 2). */
     media: z.number().int().min(0).max(2),
     /** Seconde de départ dans la vidéo importée. */
@@ -57,7 +75,7 @@ export const SceneSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('photo'),
     duration,
-    sfx: z.enum(SFX).optional(),
+    sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(),
     /** Index de la photo importée par le client (0 à 11). */
     photo: z.number().int().min(0).max(11),
     caption: z.string().trim().max(80).optional(),
@@ -101,17 +119,23 @@ export const ConceptSchema = z.object({
     brand_signature_sfx: z.array(z.string().max(80)).max(5)
   }),
   signatures: z.array(z.string().max(160)).max(3).optional(),
+  /** Analyse : proposition de valeur, cible, émotion, levier de conversion. */
+  strategy: z
+    .object({ value: z.string().max(240), audience: z.string().max(240), emotion: z.string().max(120), lever: z.string().max(160) })
+    .optional(),
+  /** Script de voix-off chronométré avec marqueurs de bruitages. */
+  voiceover: z.array(z.object({ time: z.string().max(20), text: z.string().max(240), sfx: z.string().max(80).optional() })).max(8).optional(),
   scenes: z
     .array(
       z.object({
-        timeframe: z.string().max(20),
+        timeframe: z.string().max(40),
         idea: z.string().max(300).optional(),
         visual_motion_description: z.string().max(500),
         text_on_screen: z.string().max(160),
         sound_design: z.string().max(300)
       })
     )
-    .max(4)
+    .max(5)
 });
 export type Concept = z.infer<typeof ConceptSchema>;
 export type SceneType = Scene['type'];
