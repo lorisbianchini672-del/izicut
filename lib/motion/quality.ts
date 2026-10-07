@@ -39,13 +39,16 @@ function sceneText(s: Scene): string {
 }
 const words = (t: string) => t.replace(/\*/g, '').split(/\s+/).filter(Boolean).length;
 const isMedia = (s: Scene) => s.type === 'video' || s.type === 'photo';
+/** Vitesse de lecture maximale à l'écran (mots par seconde). */
+const MAX_WPS = 4.2;
+const maxDur = (s: Scene) => (isMedia(s) ? 15 : 4.5);
 
 export function checkQuality(p: MotionProject, opts: { hasLogo?: boolean } = {}): QualityReport {
   const total = totalDuration(p);
   const first = p.scenes[0];
   const last = p.scenes[p.scenes.length - 1];
   const vertical = p.format === '9:16';
-  const tooFast = p.scenes.filter((s) => words(sceneText(s)) / Math.max(0.8, s.duration - 0.4) > 3.6);
+  const tooFast = p.scenes.filter((s) => words(sceneText(s)) / Math.max(0.8, s.duration - 0.4) > MAX_WPS);
   const tooLong = p.scenes.filter((s) => !isMedia(s) && s.duration > 4.5);
   const hasCta = last?.type === 'cta' || p.scenes.some((s) => s.magic?.some((m) => m.kind === 'button' || m.kind === 'sticker'));
   const hasLink = p.scenes.some((s) => s.magic?.some((m) => (m.kind === 'button' || m.kind === 'sticker') && Boolean(m.sub)));
@@ -73,13 +76,29 @@ export function autoFix(p: MotionProject, opts: { link?: string } = {}): MotionP
   let scenes = p.scenes.map((s) => ({ ...s })) as Scene[];
   // Rythme : on raccourcit les scènes trop longues (hors photos / vidéos).
   scenes = scenes.map((s) => (!isMedia(s) && s.duration > 4.5 ? ({ ...s, duration: 4 } as Scene) : s));
-  // Lisibilité : on donne le temps de lire (≈ 3,2 mots / s).
-  scenes = scenes.map((s) => {
-    const need = Math.min(isMedia(s) ? 15 : 4.5, Math.max(s.duration, words(sceneText(s)) / 3.2 + 0.5));
+  // Accroche : 1re scène courte et dense (on retire le sous-titre si trop de mots).
+  if (scenes[0]) {
+    let h = scenes[0];
+    if (h.type === 'title' && h.subtitle && words(sceneText(h)) > 9) h = { ...h, subtitle: undefined };
+    if (h.duration > 3.2) h = { ...h, duration: 2.8 } as Scene;
+    scenes[0] = h;
+  }
+  // Lisibilité : on allège les textes trop longs pour la durée maximale d'une scène…
+  scenes = scenes.map((s, i) => {
+    let x = s;
+    const limit = i === 0 ? 3.2 : maxDur(x);
+    const tooMuch = () => words(sceneText(x)) / Math.max(0.8, limit - 0.4) > MAX_WPS;
+    if (tooMuch() && x.type === 'title' && x.subtitle) x = { ...x, subtitle: undefined };
+    while (tooMuch() && x.type === 'bullets' && x.items.length > 2) x = { ...x, items: x.items.slice(0, -1) };
+    if (tooMuch() && x.type === 'quote' && x.author) x = { ...x, author: undefined };
+    return x;
+  });
+  // … puis on donne le temps de lire.
+  scenes = scenes.map((s, i) => {
+    const limit = i === 0 ? 3.2 : maxDur(s);
+    const need = Math.min(limit, Math.max(s.duration, words(sceneText(s)) / (MAX_WPS - 0.6) + 0.4));
     return need > s.duration ? ({ ...s, duration: Math.round(need * 10) / 10 } as Scene) : s;
   });
-  // Accroche : 1re scène courte.
-  if (scenes[0] && scenes[0].duration > 3.2) scenes[0] = { ...scenes[0], duration: 2.8 } as Scene;
   // Appel à l'action.
   const last = scenes[scenes.length - 1];
   if (last?.type !== 'cta' && !scenes.some((s) => s.magic?.some((m) => m.kind === 'button' || m.kind === 'sticker'))) {
@@ -97,7 +116,7 @@ export function autoFix(p: MotionProject, opts: { link?: string } = {}): MotionP
   const sum = scenes.reduce((n, s) => n + s.duration, 0);
   if (p.format === '9:16' && (sum < 10 || sum > 20.5)) {
     const k = 15 / sum;
-    scenes = scenes.map((s) => ({ ...s, duration: Math.round(Math.min(isMedia(s) ? 15 : 4.5, Math.max(1.5, s.duration * k)) * 10) / 10 }) as Scene);
+    scenes = scenes.map((s, i) => ({ ...s, duration: Math.round(Math.min(i === 0 ? 3.2 : maxDur(s), Math.max(1.5, s.duration * k)) * 10) / 10 }) as Scene);
   }
   // Contraste.
   let theme = p.theme;

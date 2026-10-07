@@ -49,7 +49,9 @@ export function CertificationPanel({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const failing = report.checks.filter((c) => !c.ok);
-  const fixable = failing.some((c) => c.fixable);
+  const fixed = useMemo(() => autoFix(project, { link }), [project, link]);
+  // Le bouton n'apparaît que si la correction change vraiment quelque chose.
+  const fixable = failing.some((c) => c.fixable) && JSON.stringify(fixed) !== JSON.stringify(project);
 
   const R = 34;
   const C = 2 * Math.PI * R;
@@ -103,7 +105,7 @@ export function CertificationPanel({
               : `${failing.length} point${failing.length > 1 ? 's' : ''} à améliorer pour obtenir la certification (${CERTIFIED_SCORE}/100).`}
           </p>
           {fixable ? (
-            <button type="button" onClick={() => onFix(autoFix(project, { link }))} className="izi-cta mt-2 inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold">
+            <button type="button" onClick={() => onFix(fixed)} className="izi-cta mt-2 inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold">
               <Wand2 className="h-3.5 w-3.5" /> Corriger automatiquement
             </button>
           ) : null}
