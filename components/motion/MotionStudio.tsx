@@ -1409,6 +1409,30 @@ function SceneFields({ scene, media, photos, onChange }: { scene: Scene; media: 
           </div>
         </div>
       );
+    case 'free': {
+      // Création libre de l'IA : on peut retoucher chaque texte ici, le reste se modifie en parlant à l'IA.
+      const texts: { path: [number, number | null]; text: string }[] = [];
+      scene.layers.forEach((l, i) => {
+        if (l.kind === 'text') texts.push({ path: [i, null], text: l.text });
+        if (l.kind === 'group') l.children.forEach((ch, j) => { if (ch.kind === 'text') texts.push({ path: [i, j], text: ch.text }); });
+      });
+      const setText = (path: [number, number | null], text: string) => onChange({
+        layers: scene.layers.map((l, i) => {
+          if (i !== path[0]) return l;
+          if (path[1] === null && l.kind === 'text') return { ...l, text };
+          if (path[1] !== null && l.kind === 'group') return { ...l, children: l.children.map((ch, j) => (j === path[1] && ch.kind === 'text' ? { ...ch, text } : ch)) };
+          return l;
+        })
+      } as Partial<Scene>);
+      return (
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-fg-subtle">Création libre de l’IA : {scene.layers.length} calque{scene.layers.length > 1 ? 's' : ''} animé{scene.layers.length > 1 ? 's' : ''}{scene.name ? ` — « ${scene.name} »` : ''}. Retouchez les textes ici ; pour le reste (couleurs, mouvements, formes, style), dites-le à l’IA : « cette scène plus néon », « fais tourner le logo »…</p>
+          {texts.map((t) => (
+            <input key={t.path.join('-')} className={inputCls} value={t.text} maxLength={120} onChange={(e) => setText(t.path, e.target.value || ' ')} />
+          ))}
+        </div>
+      );
+    }
     case 'logo':
       return (
         <div className="space-y-1.5">

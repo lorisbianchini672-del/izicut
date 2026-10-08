@@ -51,7 +51,98 @@ export const MAX_SCENES = 12;
 /** Nombre maximum de photos importées. */
 export const MAX_PHOTOS = 12;
 
+// ---------- Scène libre : le motion designer IA dessine ce qu'il veut ----------
+/** Courbes d'animation disponibles pour les images clés. */
+export const EASES = ['linear', 'in', 'out', 'inOut', 'back', 'elastic', 'bounce', 'expo'] as const;
+const num = z.number().min(-10000).max(10000);
+/** Valeur animée : un nombre / une couleur fixe, ou des images clés [{ t (s), v, e (courbe) }]. */
+const keyed = <T extends z.ZodTypeAny>(v: T) => z.union([v, z.array(z.object({ t: z.number().min(0).max(15), v, e: z.enum(EASES).optional() })).min(1).max(12)]);
+const anum = keyed(num);
+const acol = keyed(hex);
+const paint = z.union([hex, z.object({ from: hex, to: hex, angle: z.number().min(-360).max(360).optional(), radial: z.boolean().optional() })]);
+export const LAYER_KINDS = ['text', 'rect', 'ellipse', 'path', 'image', 'particles', 'glow', 'flow', 'group'] as const;
+const layerBase = {
+  /** Position du centre en fraction de l'écran (0 = gauche / haut, 1 = droite / bas). */
+  x: anum.optional(), y: anum.optional(),
+  scale: anum.optional(), sx: anum.optional(), sy: anum.optional(),
+  /** Rotation en degrés ; ry = pivot 3D autour de l'axe vertical (−80 à 80). */
+  rotate: anum.optional(), ry: anum.optional(),
+  opacity: anum.optional(),
+  /** Flou en px (toutes les tailles sont en px sur un écran dont le petit côté fait 1080). */
+  blur: anum.optional(),
+  glow: z.object({ color: hex, size: z.number().min(0).max(200) }).optional(),
+  shadow: z.boolean().optional(),
+  blend: z.enum(['normal', 'add', 'screen', 'multiply', 'overlay']).optional(),
+  /** Traînée de flou de mouvement quand le calque bouge vite. */
+  motionBlur: z.boolean().optional(),
+  /** Fenêtre de visibilité dans la scène (s). */
+  from: z.number().min(0).max(15).optional(), to: z.number().min(0).max(15).optional()
+};
+const TextLayer = z.object({
+  kind: z.literal('text'), ...layerBase,
+  text: z.string().trim().min(1).max(120),
+  /** Taille du texte en px (90 ≈ gros titre, 40 ≈ sous-titre). */
+  size: z.number().min(8).max(500).optional(),
+  weight: z.number().min(100).max(900).optional(),
+  color: acol.optional(),
+  fill: paint.optional(),
+  align: z.enum(['left', 'center', 'right']).optional(),
+  /** Largeur max en fraction de la largeur de l'écran (retour à la ligne). */
+  maxWidth: z.number().min(0.1).max(1).optional(),
+  tracking: z.number().min(-0.2).max(1).optional(),
+  upper: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  serif: z.boolean().optional(),
+  stroke: z.object({ color: hex, width: z.number().min(0.5).max(20) }).optional(),
+  /** Révélation lettre par lettre ou mot par mot. */
+  reveal: z.enum(['none', 'type', 'rise', 'blur', 'curve', 'split', 'mask', 'scale', 'wave']).optional(),
+  revealBy: z.enum(['char', 'word', 'line']).optional(),
+  revealAt: z.number().min(0).max(15).optional(),
+  revealDur: z.number().min(0.1).max(8).optional()
+});
+const RectLayer = z.object({ kind: z.literal('rect'), ...layerBase, w: anum, h: anum, radius: z.number().min(0).max(1000).optional(), fill: paint.optional(), color: acol.optional(), stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional(), progress: anum.optional() });
+const EllipseLayer = z.object({ kind: z.literal('ellipse'), ...layerBase, w: anum, h: anum.optional(), fill: paint.optional(), color: acol.optional(), stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional(), progress: anum.optional() });
+const PathLayer = z.object({
+  kind: z.literal('path'), ...layerBase,
+  /** Tracé SVG dans un repère 0–1000 × 0–1000 centré sur (x, y) ; "w" = largeur affichée en px. */
+  d: z.string().max(3000),
+  w: anum.optional(),
+  color: acol.optional(), width: z.number().min(0.5).max(80).optional(),
+  fill: paint.optional(),
+  /** Part du tracé dessinée (0 → 1 = le trait se dessine). */
+  progress: anum.optional(),
+  cap: z.enum(['round', 'butt', 'square']).optional()
+});
+const ImageLayer = z.object({ kind: z.literal('image'), ...layerBase, src: z.string().regex(/^(logo|photo:\d{1,2})$/), w: anum, h: anum.optional(), fit: z.enum(['cover', 'contain']).optional(), radius: z.number().min(0).max(1000).optional() });
+const ParticlesLayer = z.object({ kind: z.literal('particles'), ...layerBase, mode: z.enum(['float', 'burst', 'rain', 'orbit', 'sparkle', 'converge']), count: z.number().int().min(1).max(160), color: hex, color2: hex.optional(), size: z.number().min(1).max(80).optional(), spread: z.number().min(0.01).max(1.5).optional(), speed: z.number().min(0).max(5).optional(), at: z.number().min(0).max(15).optional() });
+const GlowLayer = z.object({ kind: z.literal('glow'), ...layerBase, color: acol, size: anum });
+const FlowLayer = z.object({ kind: z.literal('flow'), ...layerBase, colors: z.array(hex).min(1).max(4), intensity: z.number().min(0).max(2).optional() });
+type LayerIn = z.infer<typeof TextLayer> | z.infer<typeof RectLayer> | z.infer<typeof EllipseLayer> | z.infer<typeof PathLayer> | z.infer<typeof ImageLayer> | z.infer<typeof ParticlesLayer> | z.infer<typeof GlowLayer> | z.infer<typeof FlowLayer> | ({ kind: 'group'; children: LayerIn[] } & Partial<Record<keyof typeof layerBase, unknown>>);
+export const LeafLayer = z.discriminatedUnion('kind', [TextLayer, RectLayer, EllipseLayer, PathLayer, ImageLayer, ParticlesLayer, GlowLayer, FlowLayer]);
+export const GroupLayer = z.object({ kind: z.literal('group'), ...layerBase, children: z.array(LeafLayer).min(1).max(24) });
+export const LayerSchema = z.union([LeafLayer, GroupLayer]);
+export type Layer = z.infer<typeof LayerSchema>;
+export type LeafLayerT = z.infer<typeof LeafLayer>;
+export type Keyed<T> = T | { t: number; v: T; e?: (typeof EASES)[number] }[];
+void (null as unknown as LayerIn);
+
+export const FreeSceneSchema = z.object({
+  type: z.literal('free'),
+  duration,
+  sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(),
+  /** Nom de la scène dans l'éditeur. */
+  name: z.string().trim().max(40).optional(),
+  /** Fond : "theme" (fond animé de la marque), une couleur, ou un dégradé. */
+  bg: z.union([z.literal('theme'), paint]).optional(),
+  /** Caméra : zoom, déplacement (fraction d'écran), rotation (degrés). */
+  camera: z.object({ zoom: anum.optional(), x: anum.optional(), y: anum.optional(), rotate: anum.optional(), shake: z.number().min(0).max(1).optional() }).optional(),
+  layers: z.array(LayerSchema).min(1).max(40),
+  /** Bruitages placés dans la scène. */
+  cues: z.array(z.object({ at: z.number().min(0).max(15), sfx: z.enum(SFX) })).max(12).optional()
+});
+
 export const SceneSchema = z.discriminatedUnion('type', [
+  FreeSceneSchema,
   z.object({ type: z.literal('title'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), title: txt(90), subtitle: z.string().trim().max(120).optional() }),
   z.object({ type: z.literal('bullets'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), title: txt(60), items: z.array(txt(60)).min(1).max(4) }),
   z.object({
@@ -199,7 +290,8 @@ export const SCENE_LABELS: Record<SceneType, string> = {
   logo: 'Révélation du logo',
   chips: 'Boutons + clic',
   prompt: 'Demande tapée (assistant)',
-  mockup: 'Maquette 3D du site'
+  mockup: 'Maquette 3D du site',
+  free: 'Création libre (IA)'
 };
 
 export const TRANSITION = 0.45;
@@ -232,6 +324,16 @@ export function defaultScene(type: SceneType): Scene {
       return { type, duration: 3, items: ['Découvrir', 'Réserver', 'Contact'], pick: 1 };
     case 'prompt':
       return { type, duration: 3.5, text: 'Je veux un rendez-vous cette semaine', label: 'Votre marque' };
+    case 'free':
+      return {
+        type, duration: 3, name: 'Création libre', bg: 'theme',
+        camera: { zoom: [{ t: 0, v: 1.15, e: 'expo' }, { t: 1.2, v: 1 }] },
+        layers: [
+          { kind: 'glow', x: 0.5, y: 0.5, color: '#a990ff', size: [{ t: 0, v: 0 }, { t: 0.8, v: 700, e: 'out' }], blend: 'add' },
+          { kind: 'path', x: 0.5, y: 0.5, w: 700, d: 'M 100 500 C 300 100, 700 900, 900 500', color: '#ffffff', width: 10, progress: [{ t: 0.1, v: 0 }, { t: 1.1, v: 1, e: 'inOut' }], glow: { color: '#a990ff', size: 30 } },
+          { kind: 'text', x: 0.5, y: 0.5, text: 'Votre *idée*', size: 110, weight: 800, reveal: 'blur', revealAt: 0.5 }
+        ]
+      };
     case 'mockup':
       return { type, duration: 3.5, title: 'Votre *savoir-faire* en ligne', nav: ['Accueil', 'Offres', 'Contact'], button: 'Réserver' };
   }
@@ -264,6 +366,12 @@ export const TEMPLATES: { id: string; name: string; description: string; project
         { type: 'title', duration: 2.5, anim: 'curve', title: 'Réservez *en 1 clic*.' }
       ]
     }
+  },
+  {
+    id: 'libre',
+    name: 'Création libre IA',
+    description: 'Tout dessiné et animé par l’IA : tracé néon, typo brutaliste, cartes 3D. Demandez n’importe quel style',
+    project: {"format": "9:16", "brand": "Volt", "theme": {"background": "#05040a", "primary": "#7c5cff", "accent": "#22d3ee", "text": "#ffffff", "style": "neon", "motif": "none", "anim": "blur"}, "transition": "blur", "scenes": [{"type": "free", "duration": 3, "bg": {"from": "#0a0620", "to": "#000000", "radial": true}, "camera": {"zoom": [{"t": 0, "v": 1.3}, {"t": 1.4, "v": 1, "e": "expo"}], "shake": 0.2}, "layers": [{"kind": "glow", "x": 0.5, "y": 0.42, "color": "#7c5cff", "size": [{"t": 0, "v": 0}, {"t": 0.9, "v": 650, "e": "out"}], "blend": "add"}, {"kind": "path", "x": 0.5, "y": 0.42, "w": 420, "d": "M 560 60 L 260 560 L 500 560 L 420 940 L 760 380 L 520 380 Z", "color": "#ffffff", "width": 14, "progress": [{"t": 0.1, "v": 0}, {"t": 1.1, "v": 1, "e": "inOut"}], "glow": {"color": "#22d3ee", "size": 40}}, {"kind": "path", "x": 0.5, "y": 0.42, "w": 420, "d": "M 560 60 L 260 560 L 500 560 L 420 940 L 760 380 L 520 380 Z", "fill": {"from": "#22d3ee", "to": "#7c5cff", "angle": 90}, "opacity": [{"t": 1.0, "v": 0}, {"t": 1.4, "v": 1}]}, {"kind": "particles", "x": 0.5, "y": 0.42, "mode": "burst", "count": 70, "color": "#22d3ee", "color2": "#ffffff", "size": 8, "spread": 0.6, "at": 1.1}, {"kind": "text", "x": 0.5, "y": 0.68, "text": "VOLT", "size": 190, "weight": 900, "tracking": 0.25, "reveal": "blur", "revealBy": "char", "revealAt": 1.2, "fill": {"from": "#ffffff", "to": "#22d3ee", "angle": 90}}, {"kind": "text", "x": 0.5, "y": 0.75, "text": "L'énergie *qui se recharge*", "size": 46, "weight": 500, "reveal": "rise", "revealAt": 1.7}], "cues": [{"at": 0.1, "sfx": "riser"}, {"at": 1.1, "sfx": "impact"}]}, {"type": "free", "duration": 3, "bg": "#f3eee6", "layers": [{"kind": "rect", "x": [{"t": 0, "v": -0.6}, {"t": 0.5, "v": 0.5, "e": "expo"}], "y": 0.3, "w": 1300, "h": 330, "color": "#ff4d2e", "rotate": -6, "motionBlur": true}, {"kind": "rect", "x": [{"t": 0.15, "v": 1.6}, {"t": 0.65, "v": 0.5, "e": "expo"}], "y": 0.52, "w": 1300, "h": 330, "color": "#111111", "rotate": 4, "motionBlur": true}, {"kind": "text", "x": 0.5, "y": 0.3, "text": "FAIT", "size": 250, "weight": 900, "color": "#111111", "rotate": -6, "reveal": "mask", "revealBy": "word", "revealAt": 0.45}, {"kind": "text", "x": 0.5, "y": 0.52, "text": "MAIN", "size": 250, "weight": 900, "color": "#f3eee6", "rotate": 4, "reveal": "mask", "revealBy": "word", "revealAt": 0.6}, {"kind": "text", "x": 0.5, "y": 0.71, "text": "Atelier ouvert du mardi au samedi", "size": 44, "weight": 600, "color": "#111111", "reveal": "type", "revealAt": 1.0}, {"kind": "ellipse", "x": 0.78, "y": 0.15, "w": [{"t": 0.9, "v": 0}, {"t": 1.4, "v": 220, "e": "back"}], "stroke": {"color": "#ff4d2e", "width": 8}, "progress": [{"t": 0.9, "v": 0}, {"t": 1.6, "v": 1, "e": "out"}]}], "cues": [{"at": 0.05, "sfx": "swipe"}, {"at": 0.2, "sfx": "swipe"}, {"at": 0.5, "sfx": "impact"}]}, {"type": "free", "duration": 3.2, "bg": "theme", "camera": {"zoom": [{"t": 0, "v": 1}, {"t": 3.2, "v": 1.08, "e": "linear"}]}, "layers": [{"kind": "flow", "colors": ["#7c5cff", "#ff4d8d"], "intensity": 0.9}, {"kind": "group", "x": 0.5, "y": [{"t": 0, "v": 0.62}, {"t": 1, "v": 0.5, "e": "expo"}], "rotate": [{"t": 0, "v": -12}, {"t": 1.2, "v": 0, "e": "back"}], "children": [{"kind": "rect", "x": 0.5, "y": 0.5, "w": 620, "h": 820, "radius": 48, "fill": {"from": "#2a1b5e", "to": "#7c5cff", "angle": 120}, "rotate": [{"t": 0.2, "v": 0}, {"t": 1.2, "v": -10, "e": "back"}], "opacity": 0.7}, {"kind": "rect", "x": 0.5, "y": 0.5, "w": 620, "h": 820, "radius": 48, "fill": {"from": "#3b1f63", "to": "#ff4d8d", "angle": 120}, "rotate": [{"t": 0.2, "v": 0}, {"t": 1.2, "v": 7, "e": "back"}], "opacity": 0.8}, {"kind": "rect", "x": 0.5, "y": 0.5, "w": 620, "h": 820, "radius": 48, "fill": {"from": "#0d0b1a", "to": "#1c1240", "angle": 90}, "stroke": {"color": "#ffffff", "width": 3}, "shadow": true}, {"kind": "text", "x": 0.5, "y": 0.44, "text": "Nouvelle *collection*", "size": 82, "weight": 800, "maxWidth": 0.5, "reveal": "curve", "revealAt": 0.8}, {"kind": "rect", "x": 0.5, "y": 0.58, "w": [{"t": 1.5, "v": 0}, {"t": 2, "v": 300, "e": "back"}], "h": 90, "radius": 45, "color": "#ffffff"}, {"kind": "text", "x": 0.5, "y": 0.58, "text": "Découvrir", "size": 38, "weight": 700, "color": "#111111", "opacity": [{"t": 1.8, "v": 0}, {"t": 2.1, "v": 1}]}]}, {"kind": "particles", "x": 0.5, "y": 0.5, "mode": "sparkle", "count": 24, "color": "#ffffff", "size": 14, "spread": 0.55}], "cues": [{"at": 0.1, "sfx": "whoosh"}, {"at": 1.6, "sfx": "pop"}]}]} as MotionProject
   },
   {
     id: 'product',

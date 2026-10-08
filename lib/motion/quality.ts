@@ -40,6 +40,7 @@ function sceneText(s: Scene): string {
     // La demande tapée se lit au rythme de la frappe : elle compte peu dans la charge de lecture.
     case 'prompt': return s.text.split(/\s+/).slice(0, 4).join(' ');
     case 'mockup': return `${s.title} ${s.button ?? ''}`;
+    case 'free': return s.layers.flatMap((l) => (l.kind === 'text' ? [l.text] : l.kind === 'group' ? l.children.flatMap((ch) => (ch.kind === 'text' ? [ch.text] : [])) : [])).join(' ');
   }
 }
 const words = (t: string) => t.replace(/\*/g, '').split(/\s+/).filter(Boolean).length;

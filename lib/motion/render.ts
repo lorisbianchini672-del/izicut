@@ -5,7 +5,7 @@
  */
 import { chipsClickAt, promptTiming } from './cues';
 import { makeQr } from './qr';
-import { FORMAT_SIZE, TRANSITION, type Magic, type MotionProject, type Scene, type TextAnim } from './types';
+import { EASES, FORMAT_SIZE, TRANSITION, type Keyed, type Layer, type LeafLayerT, type Magic, type MotionProject, type Scene, type TextAnim } from './types';
 
 const qrCache = new Map<string, boolean[][] | null>();
 function qrFor(text: string): boolean[][] | null {
@@ -1939,6 +1939,421 @@ function sceneMockup(c: Ctx, s: Extract<Scene, { type: 'mockup' }>, lt: number) 
   }
 }
 
+// ---------- Scène libre : calques + images clés (le « After Effects » de l'IA) ----------
+// Toutes les tailles sont en px sur un écran dont le petit côté fait 1080 ;
+// x / y sont des fractions de l'écran (0,5 = centre), ce qui rend chaque
+// création valable en 9:16, 16:9 et 1:1.
+
+type EaseName = (typeof EASES)[number];
+const EASE_FN: Record<EaseName, (x: number) => number> = {
+  linear: (x) => clamp(x),
+  in: easeInCubic,
+  out: easeOutCubic,
+  inOut: easeInOut,
+  back: easeOutBack,
+  expo: (x) => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * clamp(x))),
+  elastic: (x) => { const c = clamp(x); return c === 0 || c === 1 ? c : Math.pow(2, -10 * c) * Math.sin((c * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1; },
+  bounce: (x) => {
+    let c = clamp(x);
+    const n = 7.5625, d = 2.75;
+    if (c < 1 / d) return n * c * c;
+    if (c < 2 / d) { c -= 1.5 / d; return n * c * c + 0.75; }
+    if (c < 2.5 / d) { c -= 2.25 / d; return n * c * c + 0.9375; }
+    c -= 2.625 / d; return n * c * c + 0.984375;
+  }
+};
+
+/** Valeur d'une propriété animée à l'instant t (nombre ou couleur). */
+function kv(k: Keyed<number> | undefined, t: number, def: number): number;
+function kv(k: Keyed<string> | undefined, t: number, def: string): string;
+function kv(k: Keyed<number> | Keyed<string> | undefined, t: number, def: number | string): number | string {
+  if (k === undefined || k === null) return def;
+  if (!Array.isArray(k)) return k;
+  const keys = k as { t: number; v: number | string; e?: EaseName }[];
+  if (!keys.length) return def;
+  if (t <= keys[0].t) return keys[0].v;
+  const last = keys[keys.length - 1];
+  if (t >= last.t) return last.v;
+  for (let i = 1; i < keys.length; i++) {
+    const b = keys[i];
+    if (t <= b.t) {
+      const a = keys[i - 1];
+      const p = EASE_FN[b.e ?? 'inOut']((t - a.t) / Math.max(1e-6, b.t - a.t));
+      if (typeof a.v === 'number' && typeof b.v === 'number') return a.v + (b.v - a.v) * p;
+      if (typeof a.v === 'string' && typeof b.v === 'string') return mixHex(a.v, b.v, clamp(p));
+      return p < 0.5 ? a.v : b.v;
+    }
+  }
+  return last.v;
+}
+
+type Paint = string | { from: string; to: string; angle?: number; radial?: boolean };
+function paintStyle(ctx: CanvasRenderingContext2D, p: Paint, w: number, h: number): string | CanvasGradient {
+  if (typeof p === 'string') return p;
+  if (p.radial) {
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(w, h) / 2);
+    g.addColorStop(0, p.from);
+    g.addColorStop(1, p.to);
+    return g;
+  }
+  const a = ((p.angle ?? 90) * Math.PI) / 180;
+  const dx = (Math.cos(a) * w) / 2, dy = (Math.sin(a) * h) / 2;
+  const g = ctx.createLinearGradient(-dx, -dy, dx, dy);
+  g.addColorStop(0, p.from);
+  g.addColorStop(1, p.to);
+  return g;
+}
+
+// Longueur approximative d'un tracé SVG (pour l'effet « le trait se dessine »).
+const pathLenCache = new Map<string, number>();
+function svgLength(d: string): number {
+  const hit = pathLenCache.get(d);
+  if (hit !== undefined) return hit;
+  const tok = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g) ?? [];
+  let i = 0, cmd = 'M', x = 0, y = 0, sx = 0, sy = 0, len = 0, lcx = 0, lcy = 0;
+  const n = () => Number(tok[i++] ?? 0);
+  const seg = (pts: [number, number][]) => {
+    // Longueur d'une courbe de Bézier (échantillonnée).
+    let px = pts[0][0], py = pts[0][1];
+    for (let s = 1; s <= 16; s++) {
+      const u = s / 16;
+      let qx: number, qy: number;
+      if (pts.length === 4) {
+        const m = 1 - u;
+        qx = m * m * m * pts[0][0] + 3 * m * m * u * pts[1][0] + 3 * m * u * u * pts[2][0] + u * u * u * pts[3][0];
+        qy = m * m * m * pts[0][1] + 3 * m * m * u * pts[1][1] + 3 * m * u * u * pts[2][1] + u * u * u * pts[3][1];
+      } else {
+        const m = 1 - u;
+        qx = m * m * pts[0][0] + 2 * m * u * pts[1][0] + u * u * pts[2][0];
+        qy = m * m * pts[0][1] + 2 * m * u * pts[1][1] + u * u * pts[2][1];
+      }
+      len += Math.hypot(qx - px, qy - py);
+      px = qx; py = qy;
+    }
+  };
+  let guard = 0;
+  while (i < tok.length && guard++ < 4000) {
+    if (/[a-zA-Z]/.test(tok[i])) cmd = tok[i++];
+    const rel = cmd === cmd.toLowerCase();
+    const C = cmd.toUpperCase();
+    const ox = rel ? x : 0, oy = rel ? y : 0;
+    if (C === 'Z') { len += Math.hypot(sx - x, sy - y); x = sx; y = sy; continue; }
+    if (C === 'M') { x = ox + n(); y = oy + n(); sx = x; sy = y; cmd = rel ? 'l' : 'L'; continue; }
+    if (C === 'L' || C === 'T') { const nx = ox + n(), ny = oy + n(); len += Math.hypot(nx - x, ny - y); x = nx; y = ny; continue; }
+    if (C === 'H') { const nx = ox + n(); len += Math.abs(nx - x); x = nx; continue; }
+    if (C === 'V') { const ny = oy + n(); len += Math.abs(ny - y); y = ny; continue; }
+    if (C === 'C') { const a1 = ox + n(), b1 = oy + n(), a2 = ox + n(), b2 = oy + n(), nx = ox + n(), ny = oy + n(); seg([[x, y], [a1, b1], [a2, b2], [nx, ny]]); lcx = a2; lcy = b2; x = nx; y = ny; continue; }
+    if (C === 'S') { const a2 = ox + n(), b2 = oy + n(), nx = ox + n(), ny = oy + n(); seg([[x, y], [2 * x - lcx, 2 * y - lcy], [a2, b2], [nx, ny]]); lcx = a2; lcy = b2; x = nx; y = ny; continue; }
+    if (C === 'Q') { const a1 = ox + n(), b1 = oy + n(), nx = ox + n(), ny = oy + n(); seg([[x, y], [a1, b1], [nx, ny]]); x = nx; y = ny; continue; }
+    if (C === 'A') { n(); n(); n(); n(); n(); const nx = ox + n(), ny = oy + n(); len += Math.hypot(nx - x, ny - y) * 1.3; x = nx; y = ny; continue; }
+    i++;
+  }
+  pathLenCache.set(d, len || 1000);
+  if (pathLenCache.size > 200) pathLenCache.delete(pathLenCache.keys().next().value as string);
+  return len || 1000;
+}
+
+const path2dCache = new Map<string, Path2D | null>();
+function path2d(d: string): Path2D | null {
+  if (!path2dCache.has(d)) {
+    let p: Path2D | null = null;
+    try { p = typeof Path2D !== 'undefined' ? new Path2D(d) : null; } catch { p = null; }
+    path2dCache.set(d, p);
+    if (path2dCache.size > 200) path2dCache.delete(path2dCache.keys().next().value as string);
+  }
+  return path2dCache.get(d) ?? null;
+}
+
+function imageOf(c: Ctx, src: string): HTMLImageElement | null {
+  const img = src === 'logo' ? c.assets.logo : c.assets.photos?.[Number(src.slice(6))];
+  return img && img.complete && img.naturalWidth ? img : null;
+}
+
+/** Texte libre : retour à la ligne, *accents*, dégradé, contour, révélation lettre / mot / ligne. */
+function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: number) {
+  const { ctx, W } = c;
+  const size = L.size ?? 80;
+  const weight = L.weight ?? 800;
+  const family = L.serif ? 'Georgia, "Times New Roman", serif' : c.font;
+  ctx.font = `${L.italic ? 'italic ' : ''}${weight} ${Math.round(size)}px ${family}`;
+  const words = parseRich(L.upper ? L.text.toUpperCase() : L.text);
+  const lines = wrap(ctx, words, (L.maxWidth ?? 0.9) * W);
+  const track = (L.tracking ?? 0) * size;
+  const lh = size * 1.12;
+  const align = L.align ?? 'center';
+  const space = ctx.measureText(' ').width + track;
+  // Mise en page caractère par caractère (pour l'espacement et les révélations).
+  type U = { ch: string; x: number; y: number; w: number; accent: boolean; word: number; line: number; idx: number };
+  const units: U[] = [];
+  let maxW = 0;
+  const widths = lines.map((ln) => {
+    let w = 0;
+    ln.words.forEach((wd, k) => { for (const ch of Array.from(wd.text)) w += ctx.measureText(ch).width + track; if (k < ln.words.length - 1) w += space; });
+    maxW = Math.max(maxW, w);
+    return w;
+  });
+  const totalH = lines.length * lh;
+  let idx = 0;
+  lines.forEach((ln, li) => {
+    let x = align === 'left' ? 0 : align === 'right' ? -widths[li] : -widths[li] / 2;
+    const y = -totalH / 2 + li * lh + lh / 2;
+    ln.words.forEach((wd, k) => {
+      for (const ch of Array.from(wd.text)) {
+        const w = ctx.measureText(ch).width;
+        units.push({ ch, x, y, w, accent: wd.accent, word: wd.index, line: li, idx: idx++ });
+        x += w + track;
+      }
+      if (k < ln.words.length - 1) x += space;
+    });
+  });
+  const mode = L.reveal ?? 'none';
+  const by = L.revealBy ?? (mode === 'type' || mode === 'split' || mode === 'curve' || mode === 'wave' ? 'char' : 'word');
+  const groups = by === 'char' ? units.length : by === 'word' ? new Set(units.map((u) => u.word)).size : lines.length;
+  const at = L.revealAt ?? 0;
+  const dur = L.revealDur ?? Math.min(1.6, 0.25 + groups * (by === 'char' ? 0.035 : 0.12));
+  const step = groups > 1 ? dur / groups : 0;
+  const unitDur = Math.max(0.25, Math.min(0.7, dur * 0.6));
+  const fillBase = L.fill ? paintStyle(ctx, L.fill as Paint, maxW, totalH) : kv(L.color as Keyed<string> | undefined, lt, c.theme.text);
+  const accent = readableAccent(c);
+  const wordOrder = [...new Set(units.map((u) => u.word))];
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  for (const u of units) {
+    const g = by === 'char' ? u.idx : by === 'word' ? wordOrder.indexOf(u.word) : u.line;
+    const t0 = at + g * step;
+    let p = mode === 'none' ? 1 : progress(lt, t0, mode === 'type' ? 0.001 : unitDur);
+    if (p <= 0) continue;
+    const e = easeOutCubic(p);
+    ctx.save();
+    let tx = u.x, ty = u.y, sc = 1, rot = 0, alpha = 1, bl = 0;
+    switch (mode) {
+      case 'rise': ty += (1 - easeOutBack(p)) * size * 0.6; alpha = clamp(p * 1.6); break;
+      case 'blur': bl = (1 - e) * size * 0.3; sc = 1.25 - 0.25 * e; alpha = clamp(p * 1.5); break;
+      case 'scale': sc = easeOutBack(p); alpha = clamp(p * 2); break;
+      case 'split': { const r1 = rand(u.idx * 31 + 3), r2 = rand(u.idx * 17 + 5); const k = 1 - easeOutBack(p); tx += k * (r1 - 0.5) * size * 3; ty += k * (r2 - 0.5) * size * 3; rot = k * (r1 - 0.5) * 2; alpha = clamp(p * 2); break; }
+      case 'curve': { const k = 1 - e; tx += k * size * 1.6; ty += k * k * size * 4.2 + k * size * 0.6; rot = k * 1.1; alpha = clamp(p * 3); break; }
+      case 'wave': ty += (1 - easeOutBack(p)) * size * 0.5 + Math.sin(lt * 4 + u.idx * 0.45) * size * 0.06 * e; alpha = clamp(p * 1.6); break;
+      case 'mask': {
+        ctx.beginPath();
+        ctx.rect(u.x - size * 0.1, u.y - lh * 0.56, u.w + size * 0.2 + track, lh * 1.12);
+        ctx.clip();
+        ty += (1 - (1 - Math.pow(1 - p, 4))) * lh;
+        break;
+      }
+      case 'type': p = 1; break;
+    }
+    ctx.globalAlpha *= alpha;
+    if (bl > 0.4) setBlur(ctx, bl);
+    ctx.translate(tx + u.w / 2, ty);
+    if (rot) ctx.rotate(rot);
+    if (sc !== 1) ctx.scale(sc, sc);
+    ctx.fillStyle = u.accent ? accent : fillBase;
+    if (L.stroke) {
+      ctx.lineWidth = L.stroke.width;
+      ctx.strokeStyle = L.stroke.color;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(u.ch, -u.w / 2, 0);
+      if (L.fill || L.color) ctx.fillText(u.ch, -u.w / 2, 0);
+    } else ctx.fillText(u.ch, -u.w / 2, 0);
+    ctx.restore();
+  }
+  // Curseur de machine à écrire.
+  if (mode === 'type') {
+    const shown = units.filter((u) => lt >= at + (by === 'char' ? u.idx : u.word) * step).length;
+    if (shown < units.length || Math.floor(lt * 2.5) % 2 === 0) {
+      const lastU = units[Math.max(0, shown - 1)];
+      if (lastU) { ctx.fillStyle = accent; ctx.fillRect(lastU.x + (shown ? lastU.w : 0) + size * 0.05, lastU.y - size * 0.45, size * 0.07, size * 0.9); }
+    }
+  }
+}
+
+function drawParticles(c: Ctx, L: Extract<LeafLayerT, { kind: 'particles' }>, lt: number) {
+  const { ctx, W, H, U } = c;
+  const n = L.count;
+  const size = L.size ?? 6;
+  const spread = (L.spread ?? 0.5) * U;
+  const speed = L.speed ?? 1;
+  const at = L.at ?? 0;
+  for (let i = 0; i < n; i++) {
+    const r1 = rand(i * 7 + 1), r2 = rand(i * 13 + 2), r3 = rand(i * 19 + 3);
+    let px = 0, py = 0, a = 1, sz = size * (0.4 + r3 * 0.9);
+    const col = L.color2 && i % 2 ? L.color2 : L.color;
+    switch (L.mode) {
+      case 'float': px = (r1 - 0.5) * spread * 2 + Math.sin(lt * 0.7 * speed + i) * U * 0.01; py = (((r2 - lt * 0.03 * speed * (0.5 + r3)) % 1) + 1) % 1 * spread * 2 - spread; a = 0.35 + 0.65 * Math.abs(Math.sin(lt * 1.5 + i)); break;
+      case 'burst': { const k = lt - at; if (k < 0) continue; const ang = r1 * Math.PI * 2; const dist = spread * (0.3 + 0.7 * r2) * easeOutCubic(k * speed / 1.1); px = Math.cos(ang) * dist; py = Math.sin(ang) * dist + k * k * U * 0.05; a = clamp(1 - k / 1.4); break; }
+      case 'rain': px = (r1 - 0.5) * W * 1.1; py = ((((r2 + lt * 0.35 * speed * (0.6 + r3)) % 1) + 1) % 1) * H * 1.2 - H * 0.6; a = 0.6; break;
+      case 'orbit': { const ang = r1 * Math.PI * 2 + lt * speed * (0.4 + r3 * 0.6) * (i % 2 ? 1 : -1); const rr = spread * (0.35 + 0.65 * r2); px = Math.cos(ang) * rr; py = Math.sin(ang) * rr * 0.55; a = 0.5 + 0.5 * Math.sin(ang); break; }
+      case 'sparkle': px = (r1 - 0.5) * spread * 2; py = (r2 - 0.5) * spread * 2; a = Math.max(0, Math.sin(lt * 3 * speed + i * 2.1)); sz *= 1.6; break;
+      case 'converge': { const k = easeInOut(clamp((lt - at) * speed / 1.2)); const ang = r1 * Math.PI * 2; const far = spread * (1 + r2); px = Math.cos(ang) * far * (1 - k); py = Math.sin(ang) * far * (1 - k); a = 0.3 + 0.7 * k; if (k >= 1) a = Math.max(0, 1 - (lt - at - 1.2 / speed) * 2); break; }
+    }
+    if (a <= 0.01) continue;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = col;
+    if (L.mode === 'rain') {
+      ctx.fillRect(px, py, Math.max(1, sz * 0.3), sz * 6);
+    } else if (L.mode === 'sparkle') {
+      ctx.beginPath();
+      ctx.moveTo(px, py - sz); ctx.quadraticCurveTo(px, py, px + sz, py); ctx.quadraticCurveTo(px, py, px, py + sz); ctx.quadraticCurveTo(px, py, px - sz, py); ctx.quadraticCurveTo(px, py, px, py - sz);
+      ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.arc(px, py, sz / 2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
+  const { ctx, W, H } = c;
+  switch (L.kind) {
+    case 'text': drawFreeText(c, L, lt); return;
+    case 'rect':
+    case 'ellipse': {
+      const w = kv(L.w, lt, 200);
+      const h = kv(L.kind === 'rect' ? L.h : L.h ?? L.w, lt, w);
+      const prog = L.progress === undefined ? 1 : clamp(kv(L.progress, lt, 1));
+      ctx.beginPath();
+      if (L.kind === 'rect') roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(L.radius ?? 0, Math.min(w, h) / 2));
+      else ctx.ellipse(0, 0, Math.max(0.1, w / 2), Math.max(0.1, h / 2), 0, 0, Math.PI * 2);
+      const fill = L.fill ?? (L.color !== undefined ? kv(L.color as Keyed<string>, lt, '#ffffff') : L.stroke ? undefined : '#ffffff');
+      if (fill) { ctx.fillStyle = paintStyle(ctx, fill as Paint, w, h); ctx.fill(); }
+      if (L.stroke && prog > 0) {
+        ctx.shadowColor = 'transparent';
+        ctx.lineWidth = L.stroke.width;
+        ctx.strokeStyle = L.stroke.color;
+        if (prog < 1) { const per = L.kind === 'rect' ? 2 * (w + h) : Math.PI * (w + h) / 2; ctx.setLineDash([per * prog, per]); }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      return;
+    }
+    case 'path': {
+      const p = path2d(L.d);
+      if (!p) return;
+      const k = kv(L.w, lt, 600) / 1000;
+      const prog = L.progress === undefined ? 1 : clamp(kv(L.progress, lt, 1));
+      ctx.scale(k, k);
+      ctx.translate(-500, -500);
+      if (L.fill) { ctx.fillStyle = paintStyle(ctx, L.fill as Paint, 1000, 1000); ctx.fill(p); }
+      if (prog > 0.001 && (L.color !== undefined || !L.fill)) {
+        ctx.lineWidth = (L.width ?? 8) / k;
+        ctx.lineCap = L.cap ?? 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = kv(L.color as Keyed<string> | undefined, lt, '#ffffff');
+        if (prog < 1) { const len = svgLength(L.d); ctx.setLineDash([len * prog, len + 10]); }
+        ctx.stroke(p);
+        ctx.setLineDash([]);
+      }
+      return;
+    }
+    case 'image': {
+      const img = imageOf(c, L.src);
+      const w = kv(L.w, lt, 600);
+      const ratio = img ? img.naturalHeight / img.naturalWidth : 1;
+      const h = L.h !== undefined ? kv(L.h, lt, w) : w * ratio;
+      ctx.save();
+      if (L.radius) { roundRect(ctx, -w / 2, -h / 2, w, h, L.radius); ctx.clip(); }
+      if (img) {
+        const fit = L.fit ?? (L.src === 'logo' ? 'contain' : 'cover');
+        const k = fit === 'cover' ? Math.max(w / img.naturalWidth, h / img.naturalHeight) : Math.min(w / img.naturalWidth, h / img.naturalHeight);
+        const iw = img.naturalWidth * k, ih = img.naturalHeight * k;
+        if (fit === 'cover') { ctx.beginPath(); ctx.rect(-w / 2, -h / 2, w, h); ctx.clip(); }
+        ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+      } else if (L.src !== 'logo') {
+        ctx.fillStyle = rgba(c.theme.primary, 0.25);
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+      }
+      ctx.restore();
+      return;
+    }
+    case 'particles': drawParticles(c, L, lt); return;
+    case 'glow': {
+      const r = Math.max(1, kv(L.size, lt, 400));
+      const col = kv(L.color as Keyed<string>, lt, c.theme.primary);
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+      g.addColorStop(0, rgba(col, 0.9));
+      g.addColorStop(0.35, rgba(col, 0.35));
+      g.addColorStop(1, rgba(col, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(-r, -r, r * 2, r * 2);
+      return;
+    }
+    case 'flow': {
+      // Rubans de lumière plein écran, aux couleurs choisies.
+      ctx.translate(-W / 2, -H / 2);
+      const cols = L.colors;
+      drawFlow({ ...c, theme: { ...c.theme, primary: cols[0], accent: cols[1] ?? cols[0] }, flowDim: L.intensity ?? 1 }, lt + 3, false);
+      return;
+    }
+  }
+}
+
+const BLENDS: Record<string, GlobalCompositeOperation> = { add: 'lighter', screen: 'screen', multiply: 'multiply', overlay: 'overlay', normal: 'source-over' };
+
+function drawFreeLayer(c: Ctx, L: Layer, lt: number, ghost = false) {
+  const { ctx, W, H } = c;
+  if (L.from !== undefined && lt < L.from) return;
+  if (L.to !== undefined && lt > L.to) return;
+  const op = kv(L.opacity, lt, 1);
+  if (op <= 0.002) return;
+  // Flou de mouvement : copies fantômes là où le calque était quelques millisecondes avant.
+  if (L.motionBlur && !ghost) {
+    const dx = (kv(L.x, lt, 0.5) - kv(L.x, lt - 0.04, 0.5)) * W;
+    const dy = (kv(L.y, lt, 0.5) - kv(L.y, lt - 0.04, 0.5)) * H;
+    const ds = Math.abs(kv(L.scale, lt, 1) - kv(L.scale, lt - 0.04, 1));
+    if (Math.hypot(dx, dy) > 6 || ds > 0.03) {
+      for (let g = 3; g >= 1; g--) { ctx.save(); ctx.globalAlpha *= 0.18; drawFreeLayer(c, L, lt - g * 0.014, true); ctx.restore(); }
+    }
+  }
+  ctx.save();
+  ctx.globalAlpha *= clamp(op);
+  if (L.blend && L.blend !== 'normal') ctx.globalCompositeOperation = BLENDS[L.blend];
+  const x = kv(L.x, lt, 0.5) * W;
+  const y = kv(L.y, lt, 0.5) * H;
+  ctx.translate(x, y);
+  const rot = kv(L.rotate, lt, 0);
+  if (rot) ctx.rotate((rot * Math.PI) / 180);
+  const s = kv(L.scale, lt, 1);
+  const ry = (clamp(kv(L.ry, lt, 0), -85, 85) * Math.PI) / 180;
+  const sx = s * kv(L.sx, lt, 1) * Math.cos(ry);
+  const sy = s * kv(L.sy, lt, 1);
+  if (ry) ctx.transform(1, Math.sin(ry) * 0.12, 0, 1, 0, 0);
+  if (sx !== 1 || sy !== 1) ctx.scale(sx || 0.0001, sy || 0.0001);
+  const bl = kv(L.blur, lt, 0);
+  if (bl > 0.4) setBlur(ctx, bl);
+  if (L.glow) { ctx.shadowColor = rgba(L.glow.color, 0.95); ctx.shadowBlur = L.glow.size; }
+  else if (L.shadow) { ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 14; }
+  if (L.kind === 'group') {
+    ctx.translate(-W / 2, -H / 2);
+    for (const ch of L.children) drawFreeLayer(c, ch, lt);
+  } else drawFreeLeaf(c, L, lt);
+  ctx.restore();
+}
+
+function sceneFree(c: Ctx, s: Extract<Scene, { type: 'free' }>, lt: number) {
+  const { ctx, W, H, U } = c;
+  if (s.bg && s.bg !== 'theme') {
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.fillStyle = paintStyle(ctx, s.bg as Paint, W, H);
+    ctx.fillRect(-W / 2, -H / 2, W, H);
+    ctx.restore();
+  }
+  ctx.save();
+  const cam = s.camera;
+  if (cam) {
+    const z = kv(cam.zoom, lt, 1);
+    const cx = kv(cam.x, lt, 0) * W;
+    const cy = kv(cam.y, lt, 0) * H;
+    const r = (kv(cam.rotate, lt, 0) * Math.PI) / 180;
+    ctx.translate(W / 2, H / 2);
+    if (cam.shake) ctx.translate((Math.sin(lt * 37) + Math.sin(lt * 23)) * cam.shake * U * 0.006, (Math.cos(lt * 31) + Math.sin(lt * 19)) * cam.shake * U * 0.006);
+    if (r) ctx.rotate(r);
+    ctx.scale(z, z);
+    ctx.translate(-W / 2 - cx, -H / 2 - cy);
+  }
+  for (const L of s.layers) drawFreeLayer(c, L, lt);
+  ctx.restore();
+}
+
 /** Position dans le projet : scène courante + temps local. */
 export function locate(project: MotionProject, t: number): { index: number; lt: number; start: number } {
   let start = 0;
@@ -2027,6 +2442,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
     case 'chips': sceneChips(c, scene, lt); break;
     case 'prompt': scenePrompt(c, scene, lt); break;
     case 'mockup': sceneMockup(c, scene, lt); break;
+    case 'free': sceneFree(c, scene, lt); break;
   }
   if (scene.magic?.length) for (const [k, m] of scene.magic.entries()) drawMagic(c, m, lt, d, k);
   ctx.restore();

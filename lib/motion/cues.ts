@@ -3,7 +3,7 @@
  * (render.ts) et le moteur de son (sound.ts) pour que chaque clic, chaque
  * frappe de clavier tombe exactement sur l'image.
  */
-import type { Scene } from './types';
+import type { Scene, Sfx } from './types';
 
 /** Instant du clic du curseur sur le bouton choisi. */
 export function chipsClickAt(s: Extract<Scene, { type: 'chips' }>): number {
@@ -21,7 +21,7 @@ export function promptTiming(s: Extract<Scene, { type: 'prompt' }>): { start: nu
 }
 
 /** Moments sonores propres à une scène (en secondes depuis son début). */
-export function sceneCues(s: Scene): { at: number; kind: 'click' | 'key' | 'whoosh' | 'pop' | 'chime' }[] {
+export function sceneCues(s: Scene): { at: number; kind: Sfx | 'key' }[] {
   switch (s.type) {
     case 'chips':
       return [{ at: 0.1, kind: 'pop' }, { at: chipsClickAt(s), kind: 'click' }];
@@ -38,6 +38,8 @@ export function sceneCues(s: Scene): { at: number; kind: 'click' | 'key' | 'whoo
       return [{ at: 0.02, kind: 'whoosh' }];
     case 'logo':
       return [{ at: 0.45, kind: 'chime' }];
+    case 'free':
+      return (s.cues ?? []).filter((q) => q.at < s.duration).map((q) => ({ at: q.at, kind: q.sfx }));
     default:
       return [];
   }

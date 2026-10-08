@@ -8,7 +8,7 @@ import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, isAdminEmail } from '@
 import { trialsUsedEmail } from '@/lib/email/messages';
 import { sendEmail } from '@/lib/email/send';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
+import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, EASES, FreeSceneSchema, GroupLayer, LeafLayer, MotionProjectSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 /**
@@ -70,11 +70,35 @@ const FORMAT = `{
     { "type": "logo", "duration": 2-3, "title": "nom de la marque, max 32", "subtitle": "optionnel, signature max 80" },
     { "type": "chips", "duration": 2.5-3.5, "title": "optionnel, question max 60", "items": ["2 à 5 boutons de max 22 car."], "pick": index du bouton cliqué par le curseur },
     { "type": "prompt", "duration": 3-4.5, "text": "la demande du client final tapée lettre par lettre, max 120", "label": "optionnel, max 24 (ex. nom de la marque)" },
+    { "type": "free", "duration": 1.5-8, "name": "nom court", "bg": "theme" | "#RRGGBB" | { "from": "#hex", "to": "#hex", "angle": degrés, "radial": bool },
+      "camera": { "zoom": anim, "x": anim, "y": anim, "rotate": anim, "shake": 0-1 },
+      "layers": [ 1 à 40 calques dessinés dans l'ordre (le premier est au fond) ],
+      "cues": [ { "at": seconde, "sfx": "whoosh" | "pop" | "click" | "impact" | "riser" | "chime" | "fizz" | "bubble" | "swipe" | "glitch" } ] },
     { "type": "mockup", "duration": 3-4.5, "title": "titre de la page, max 60", "nav": ["0 à 4 entrées de menu, max 14"], "button": "optionnel max 24", "photo": "optionnel, index d'une photo du client en fond", "recolor": "optionnel #RRGGBB : la maquette change de couleur en direct" }
   ]
 }`;
 
-const RULES = `Règles techniques :
+/** Le langage de la scène libre : l'IA y dessine n'importe quel visuel. */
+const FREE_DOC = `SCÈNE LIBRE "free" — TU ES LE MOTION DESIGNER : tu dessines et animes CE QUE TU VEUX, comme dans After Effects.
+Repère : "x" et "y" = position du CENTRE du calque en fraction de l'écran (0,5 ; 0,5 = centre ; marche en 9:16, 16:9 et 1:1). Toutes les tailles sont en px sur un écran dont le petit côté fait 1080 (largeur en 9:16, hauteur en 16:9).
+Valeur animée ("anim") = un nombre / une couleur fixe OU des images clés [{ "t": seconde dans la scène, "v": valeur, "e": "linear" | "in" | "out" | "inOut" | "back" | "elastic" | "bounce" | "expo" }] (la courbe "e" s'applique pour ARRIVER à cette clé ; "expo" et "back" = mouvements pros).
+Propriétés communes animables : x, y, scale, sx, sy, rotate (degrés), ry (pivot 3D −80…80), opacity (0-1), blur (px). Options : "glow": { "color", "size" px }, "shadow": true, "blend": "add" | "screen" | "multiply" | "overlay", "motionBlur": true (traînée quand ça bouge vite), "from"/"to" (secondes de visibilité).
+Calques ("kind") :
+- "text" : "text" (max 120, *mot* = couleur d'accent), "size" px (gros titre 120-220, titre 80-110, texte 40-55), "weight" 100-900, "color" anim ou "fill" dégradé, "align", "maxWidth" (fraction de largeur), "tracking" (-0.1…0.6), "upper", "italic", "serif", "stroke": { "color", "width" } (texte détouré), "reveal": "none" | "type" | "rise" | "blur" | "curve" | "split" | "mask" | "scale" | "wave", "revealBy": "char" | "word" | "line", "revealAt", "revealDur".
+- "rect" : "w", "h" (anim, px), "radius", "fill" (couleur ou dégradé) ou "color" (anim), "stroke": { "color", "width" }, "progress" (anim 0→1 : le contour se dessine).
+- "ellipse" : "w", "h", mêmes options (cercle si h absent).
+- "path" : "d" = tracé SVG dans un carré 0-1000 × 0-1000 (centre 500,500), "w" = largeur affichée en px, "color" + "width" (trait), "fill", "progress" (anim 0→1 : le trait se dessine), "cap". Pour dessiner : logos simplifiés, pictos (éclair, cœur, maison, étoile, flèche, goutte, feuille, ballon…), courbes, soulignés, cadres, graphiques.
+- "image" : "src": "logo" ou "photo:N" (photos du client), "w", "h", "fit": "cover" | "contain", "radius".
+- "particles" : "mode": "float" | "burst" | "rain" | "orbit" | "sparkle" | "converge", "count" ≤160, "color", "color2", "size", "spread" (fraction), "speed", "at" (départ).
+- "glow" : halo lumineux, "color" (anim), "size" (rayon anim).
+- "flow" : rubans de lumière liquide plein écran, "colors": [1 à 4 couleurs], "intensity".
+- "group" : "children": [calques] qui bougent ensemble (les enfants gardent leurs x / y d'écran ; déplacer le groupe les déplace tous).
+EXEMPLE (signature néon qui se dessine) : { "type": "free", "duration": 3, "bg": { "from": "#0a0620", "to": "#000000", "radial": true }, "camera": { "zoom": [{ "t": 0, "v": 1.3 }, { "t": 1.4, "v": 1, "e": "expo" }] }, "layers": [ { "kind": "glow", "x": 0.5, "y": 0.42, "color": "#7c5cff", "size": [{ "t": 0, "v": 0 }, { "t": 0.9, "v": 650, "e": "out" }], "blend": "add" }, { "kind": "path", "x": 0.5, "y": 0.42, "w": 420, "d": "M 560 60 L 260 560 L 500 560 L 420 940 L 760 380 L 520 380 Z", "color": "#ffffff", "width": 14, "progress": [{ "t": 0.1, "v": 0 }, { "t": 1.1, "v": 1 }], "glow": { "color": "#22d3ee", "size": 40 } }, { "kind": "particles", "x": 0.5, "y": 0.42, "mode": "burst", "count": 70, "color": "#22d3ee", "spread": 0.6, "at": 1.1 }, { "kind": "text", "x": 0.5, "y": 0.68, "text": "VOLT", "size": 190, "weight": 900, "tracking": 0.25, "reveal": "blur", "revealAt": 1.2 } ], "cues": [{ "at": 1.1, "sfx": "impact" }] }
+DIRECTION : tu n'es limité par AUCUN modèle. Invente l'esthétique qui sert la marque et la demande du client : néon, luxe minimal, brutalisme / Swiss (aplats, typo géante, blocs qui claquent), Y2K / chrome, papier découpé, éditorial magazine, glassmorphism, rétro 80's, organique (formes douces, couleurs naturelles), data / infographie (barres, courbes et compteurs qui se dessinent), kinetic typography pure, 3D cartes empilées, collage photo… Si le client décrit ou montre un style, REPRODUIS-LE fidèlement avec les calques. Composition pro : hiérarchie claire, 1 idée par scène, marges (rien d'important à moins de 0,08 des bords, zones sûres 9:16), contrastes forts, 2 à 3 couleurs, mouvements avec anticipation et amorti (expo, back), décalages (stagger) entre éléments, caméra qui vit (léger zoom continu), et un bruitage sur chaque impact.`;
+
+const RULES = `${FREE_DOC}
+
+Règles techniques :
 - Textes COURTS, contrastés, percutants (pub TikTok / Reels). 1 ou 2 mots clés entre *astérisques* pour les colorer.
 - SAFE ZONES 9:16 : rien d'important dans les 15 % du haut ni les 20 % du bas (interfaces TikTok / Reels) — le moteur s'en charge si tu utilises "pos".
 - "motif" = texture signature : bubbles (boissons, bain, lessive), grain (boulangerie, artisan, bois, café, vintage), waves (eau, mer, bien-être, mode fluide), confetti (événement, fête, association, promo), sparkles (beauté, bijoux, luxe, mariage), lines (sport, auto, livraison, tech), particles (tech/startup), none (minimaliste).
@@ -103,7 +127,8 @@ const RULES = `Règles techniques :
 - Ne recopie jamais un slogan déposé ou une campagne existante d'une marque : invente une création originale, même pour une grande marque.
 - Sans nom de marque fourni, n'invente pas de nom : utilise un nom générique lié à l'activité (« Votre salon », « Votre boulangerie »…).
 - Texte sur photo / vidéo : JAMAIS sur le visage ni sur le produit. "captionPos" = la zone vide, à l'opposé du sujet décrit dans les notes des photos (sujet en bas → "top"). Le moteur ajoute un calque d'assombrissement calculé selon la luminosité.
-- STYLE « DÉMO PRODUIT CINÉMATIQUE » (le niveau des pubs motion design qui cartonnent sur TikTok) : fond noir profond "motif": "flow" (rubans de lumière liquide aux couleurs de la marque), "transition": "blur" (mouvements de caméra rapides avec flou de mouvement), "anim": "blur" (mise au point flou → net) et "curve" pour la phrase finale (lettres qui arrivent en ruban). Enchaînement type : "logo" (le signe et le nom se révèlent) → "chips" (les services / publics de la marque, le curseur clique sur le bon) → "prompt" (la vraie demande d'un client, ex. « Je cherche un club de basket pour mon fils à Villeurbanne ») → "mockup" (la page du site du client qui pivote en 3D, avec sa vraie photo en fond si fournie) → "photo" pour les preuves → "title" ou "cta" final en "curve". À utiliser pour les sites, applis, services en ligne, réservations, et dès que le client veut un rendu premium / « Apple ». Les textes de "chips" et "mockup" reprennent ses vraies rubriques et offres (site web fourni) ; "recolor" seulement pour montrer une personnalisation (avant / après).
+- Scènes "free" : utilise-les dans CHAQUE pub (au moins 2, jusqu'à toutes) pour les moments forts — accroche, révélation du logo, chiffres, signature — et dès que le client demande un style, un effet ou un visuel particulier. Les autres types de scènes sont des raccourcis prêts à l'emploi ; la scène libre est ton vrai pinceau.
+- STYLE « DÉMO PRODUIT CINÉMATIQUE » (un exemple parmi d'autres) (le niveau des pubs motion design qui cartonnent sur TikTok) : fond noir profond "motif": "flow" (rubans de lumière liquide aux couleurs de la marque), "transition": "blur" (mouvements de caméra rapides avec flou de mouvement), "anim": "blur" (mise au point flou → net) et "curve" pour la phrase finale (lettres qui arrivent en ruban). Enchaînement type : "logo" (le signe et le nom se révèlent) → "chips" (les services / publics de la marque, le curseur clique sur le bon) → "prompt" (la vraie demande d'un client, ex. « Je cherche un club de basket pour mon fils à Villeurbanne ») → "mockup" (la page du site du client qui pivote en 3D, avec sa vraie photo en fond si fournie) → "photo" pour les preuves → "title" ou "cta" final en "curve". À utiliser pour les sites, applis, services en ligne, réservations, et dès que le client veut un rendu premium / « Apple ». Les textes de "chips" et "mockup" reprennent ses vraies rubriques et offres (site web fourni) ; "recolor" seulement pour montrer une personnalisation (avant / après).
 - "theme.radius" : reprends le style de boutons du site du client s'il est fourni (carré, arrondi, pilule).
 - Format : "9:16" par défaut ; "16:9" si le client parle de YouTube (vidéo classique) ; "1:1" pour un post carré.`;
 
@@ -213,6 +238,83 @@ function repairConcept(raw: unknown): Concept | undefined {
   return res.success && res.data.creative_concept ? res.data : undefined;
 }
 
+/**
+ * Corrige automatiquement un objet presque valide : textes et listes trop longs
+ * coupés, nombres ramenés dans leurs bornes, champs facultatifs invalides retirés.
+ * Renvoie null si l'objet reste inutilisable.
+ */
+function coerce<T>(schema: z.ZodTypeAny, value: unknown, tries = 14): T | null {
+  let v: unknown;
+  try { v = JSON.parse(JSON.stringify(value)); } catch { return null; }
+  for (let i = 0; i < tries; i++) {
+    const r = schema.safeParse(v);
+    if (r.success) return r.data as T;
+    let changed = false;
+    for (const iss of r.error.issues) {
+      const path = iss.path as (string | number)[];
+      if (!path.length) return null;
+      let parent: unknown = v;
+      for (const k of path.slice(0, -1)) parent = parent && typeof parent === 'object' ? (parent as Record<string | number, unknown>)[k] : undefined;
+      if (!parent || typeof parent !== 'object') continue;
+      const key = path[path.length - 1];
+      const box = parent as Record<string | number, unknown>;
+      const cur = box[key];
+      const info = iss as unknown as { code: string; maximum?: number | bigint; minimum?: number | bigint };
+      if (info.code === 'too_big' && typeof cur === 'string') box[key] = cur.slice(0, Number(info.maximum));
+      else if (info.code === 'too_big' && typeof cur === 'number') box[key] = Number(info.maximum);
+      else if (info.code === 'too_small' && typeof cur === 'number') box[key] = Number(info.minimum);
+      else if (info.code === 'too_big' && Array.isArray(cur)) box[key] = cur.slice(0, Number(info.maximum));
+      else if (Array.isArray(parent)) { (parent as unknown[]).splice(Number(key), 1); changed = true; break; }
+      else delete box[key];
+      changed = true;
+    }
+    if (!changed) return null;
+  }
+  return null;
+}
+
+/** Scène libre écrite par l'IA : chaque calque est réparé un par un, les irrécupérables sont retirés. */
+const NAMED: Record<string, string> = { white: '#ffffff', blanc: '#ffffff', black: '#000000', noir: '#000000', red: '#ff3b30', rouge: '#ff3b30', blue: '#2f6bff', bleu: '#2f6bff', green: '#22c55e', vert: '#22c55e', yellow: '#ffd23d', jaune: '#ffd23d', orange: '#ff7a1a', pink: '#ff4d8d', rose: '#ff4d8d', purple: '#7c5cff', violet: '#7c5cff', gold: '#e6c375', or: '#e6c375', grey: '#8a8f98', gray: '#8a8f98', gris: '#8a8f98', cyan: '#22d3ee' };
+/** Petites fautes fréquentes des IA : courbe inconnue, couleur en toutes lettres ou en #abc. */
+function normalizeFree(v: unknown, key = ''): unknown {
+  if (Array.isArray(v)) return v.map((x) => normalizeFree(x, key));
+  if (v && typeof v === 'object') {
+    const o: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      if (k === 'e' && !pick(EASES, x)) continue;
+      o[k] = normalizeFree(x, k === 'v' ? key : k);
+    }
+    return o;
+  }
+  if (typeof v === 'string' && /^(color|color2|from|to|bg|colors)$/.test(key)) {
+    const t = v.trim().toLowerCase();
+    if (NAMED[t]) return NAMED[t];
+    const m = t.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/);
+    if (m) return `#${m[1]}${m[1]}${m[2]}${m[2]}${m[3]}${m[3]}`;
+  }
+  return v;
+}
+
+function repairFree(raw: Record<string, unknown>): Record<string, unknown> | null {
+  const sc = normalizeFree(raw) as Record<string, unknown>;
+  const fixLayer = (l: unknown): unknown => {
+    if (!l || typeof l !== 'object') return null;
+    const o = l as Record<string, unknown>;
+    if (o.kind === 'group') {
+      const children = (Array.isArray(o.children) ? o.children : []).map((ch) => coerce(LeafLayer, ch)).filter(Boolean).slice(0, 24);
+      if (!children.length) return null;
+      return coerce(GroupLayer, { ...o, children });
+    }
+    if (o.kind === 'image' && typeof o.src === 'string' && /^photo\s*\d/.test(o.src)) o.src = 'photo:' + o.src.replace(/\D/g, '');
+    return coerce(LeafLayer, o);
+  };
+  const layers = (Array.isArray(sc.layers) ? sc.layers : []).map(fixLayer).filter(Boolean).slice(0, 40);
+  if (!layers.length) return null;
+  if (sc.bg !== undefined && sc.bg !== 'theme' && !coerce(z.union([z.string().regex(/^#[0-9a-fA-F]{6}$/), z.object({ from: z.string(), to: z.string() }).passthrough()]), sc.bg)) sc.bg = 'theme';
+  if (Array.isArray(sc.cues)) sc.cues = sc.cues.filter((q) => q && typeof q === 'object' && pick(SFX, (q as Record<string, unknown>).sfx)).slice(0, 12);
+  return coerce(FreeSceneSchema, { ...sc, layers });
+}
+
 /** Nettoie une réponse presque correcte (durées hors bornes, textes trop longs…). */
 function repair(raw: unknown, fallback?: MotionProject): unknown {
   if (!raw || typeof raw !== 'object') return raw;
@@ -278,6 +380,7 @@ function repair(raw: unknown, fallback?: MotionProject): unknown {
         if (list.length) sc.magic = list; else delete sc.magic;
       }
       for (const k of Object.keys(sc)) if (sc[k] === null) delete sc[k];
+      if (sc.type === 'free') return repairFree(sc);
       return sc;
     }).filter((s) => SceneSchema.safeParse(s).success);
   }
@@ -385,7 +488,7 @@ export async function POST(request: Request) {
       const raw = await chatJson({
         system: project ? EDITOR : DIRECTOR(free),
         user: attempt === 0 ? userMsg : `${userMsg}\n\nATTENTION : ta réponse précédente était invalide (${lastError}). Respecte exactement le format JSON.`,
-        maxTokens: project ? 3500 : free ? 6000 : 8000,
+        maxTokens: project ? 9000 : free ? 9000 : 14000,
         temperature: project ? 0.4 : 0.85
       });
       const wrapped = Boolean(raw && typeof raw === 'object' && 'project' in (raw as Record<string, unknown>));
