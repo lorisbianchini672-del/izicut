@@ -140,6 +140,12 @@ export async function GET(request: Request) {
     }
     const images = [...hd.entries()].sort((a, b) => b[1] - a[1]).map(([u]) => u).slice(0, 12);
     const text = texts.join('\n\n').slice(0, 9000);
+    // Menu du site : les vraies rubriques (reprises dans la maquette 3D de la pub).
+    const navHtml = html.match(/<nav\b[\s\S]{0,20000}?<\/nav>/i)?.[0] ?? html.match(/<header\b[\s\S]{0,20000}?<\/header>/i)?.[0] ?? '';
+    const nav = [...new Set([...navHtml.matchAll(/<a\b[^>]*>([\s\S]{0,160}?)<\/a>/gi)]
+      .map((m) => decode(m[1].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim())
+      .filter((t) => t.length >= 2 && t.length <= 18 && t.split(' ').length <= 3 && !/^(menu|fermer|close|search|rechercher|panier|cart|fr|en|×|\W+)$/i.test(t)))]
+      .slice(0, 6);
     if (themeColor && /^#[0-9a-f]{6}$/i.test(themeColor) && !colors.includes(themeColor.toLowerCase())) colors.unshift(themeColor.toLowerCase());
     return NextResponse.json({
       site: {
@@ -152,6 +158,7 @@ export async function GET(request: Request) {
         logo: [...new Set(logoCandidates)][0],
         images,
         text,
+        nav: nav.length >= 2 ? nav : undefined,
         radius
       }
     });

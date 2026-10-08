@@ -1404,16 +1404,17 @@ function drawBurst(c: Ctx, x: number, y: number, r: number, t: number, p: number
   ctx.shadowColor = rgba(color, 1);
   ctx.shadowBlur = r * 0.9;
   const n = 11;
+  // Un seul tracé pour toutes les branches : une seule ombre lumineuse à calculer.
+  ctx.beginPath();
   for (let i = 0; i < n; i++) {
     const pk = easeOutBack(clamp(p * 1.6 - i * 0.04));
     if (pk <= 0) continue;
     const len = r * (0.62 + 0.38 * rand(i + 5)) * pk;
     const a = (i / n) * Math.PI * 2 + (rand(i) - 0.5) * 0.25;
-    ctx.beginPath();
     ctx.moveTo(Math.cos(a) * r * 0.12, Math.sin(a) * r * 0.12);
     ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
-    ctx.stroke();
   }
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -1477,11 +1478,11 @@ function sceneLogo(c: Ctx, s: Extract<Scene, { type: 'logo' }>, lt: number, t: n
     const p = progress(lt, 1.1, 0.6);
     ctx.save();
     ctx.globalAlpha *= easeOutCubic(p) * 0.8;
-    setFont(c, 500, textFit(c, s.subtitle, 500, U * 0.035, W * 0.8));
+    setFont(c, 500, textFit(c, s.subtitle, 500, U * 0.04, W * 0.84));
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = c.theme.text;
-    ctx.fillText(s.subtitle, W / 2, y + fs * 1.05 + (1 - easeOutCubic(p)) * U * 0.02);
+    ctx.fillText(s.subtitle, W / 2, y + fs * 1.55 + (1 - easeOutCubic(p)) * U * 0.02);
     ctx.restore();
   }
 }
@@ -1843,7 +1844,8 @@ function project3d(x: number, y: number, ay: number, ax: number, dist: number): 
 
 /** Dessine une image plane en perspective par bandes verticales (chaque bande = transformation affine). */
 function drawPerspective(ctx: CanvasRenderingContext2D, src: CanvasImageSource, w: number, h: number, cx: number, cy: number, scale: number, ay: number, ax: number) {
-  const N = 40;
+  // Autant de bandes que nécessaire : 1 seule quand la carte est presque à plat, 36 quand elle pivote fort.
+  const N = Math.abs(ay) + Math.abs(ax) < 0.09 ? 1 : 36;
   const dist = Math.max(w, h) * 1.6;
   for (let i = 0; i < N; i++) {
     const sx = (i / N) * w;
@@ -1893,17 +1895,30 @@ function sceneMockup(c: Ctx, s: Extract<Scene, { type: 'mockup' }>, lt: number) 
     ctx.save();
     ctx.globalAlpha *= gk === 0 ? 1 : 0.22 * fast;
     if (gk === 0) {
-      // Halo coloré derrière la carte.
-      ctx.save();
-      const tl = project3d(-cw / 2, -chh / 2, q.ay, q.ax, Math.max(cw, chh) * 1.6);
-      const br = project3d(cw / 2, chh / 2, q.ay, q.ax, Math.max(cw, chh) * 1.6);
-      ctx.translate(q.x, q.y);
-      ctx.scale(q.sc, q.sc);
-      ctx.shadowColor = rgba(color, 0.75);
-      ctx.shadowBlur = c.U * 0.09;
-      ctx.fillStyle = rgba(color, 0.35);
-      ctx.fillRect(tl[0] + 8, tl[1] + 8, br[0] - tl[0] - 16, br[1] - tl[1] - 16);
-      ctx.restore();
+      // Halo coloré derrière la carte : dessiné en petit puis agrandi (flou gratuit, pas d'ombre coûteuse).
+      const halo = offscreen('mockup-halo', W / 30, H / 30);
+      if (halo) {
+        const hg = halo.ctx;
+        const hw = halo.canvas.width;
+        const hh = halo.canvas.height;
+        hg.setTransform(1, 0, 0, 1, 0, 0);
+        hg.clearRect(0, 0, hw, hh);
+        hg.setTransform(hw / W, 0, 0, hh / H, 0, 0);
+        hg.translate(q.x, q.y);
+        hg.scale(q.sc, q.sc);
+        const dist = Math.max(cw, chh) * 1.6;
+        const corners = [project3d(-cw / 2, -chh / 2, q.ay, q.ax, dist), project3d(cw / 2, -chh / 2, q.ay, q.ax, dist), project3d(cw / 2, chh / 2, q.ay, q.ax, dist), project3d(-cw / 2, chh / 2, q.ay, q.ax, dist)];
+        hg.beginPath();
+        corners.forEach(([px, py], ci) => (ci ? hg.lineTo(px, py) : hg.moveTo(px, py)));
+        hg.closePath();
+        hg.fillStyle = rgba(color, 0.8);
+        hg.fill();
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha *= 0.6;
+        ctx.drawImage(halo.canvas as CanvasImageSource, -W * 0.03, -H * 0.03, W * 1.06, H * 1.06);
+        ctx.restore();
+      }
     }
     drawPerspective(ctx, off.canvas as CanvasImageSource, off.canvas.width, off.canvas.height, q.x, q.y, q.sc, q.ay, q.ax);
     ctx.restore();

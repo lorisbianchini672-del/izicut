@@ -43,7 +43,9 @@ export const SiteSchema = z.object({
   images: z.array(z.string().max(400)).max(12).optional(),
   /** Texte réel du site (accueil + pages internes), pour que l'IA parle de faits précis. */
   text: z.string().max(9000).optional(),
-  radius: z.enum(['square', 'rounded', 'pill']).optional()
+  radius: z.enum(['square', 'rounded', 'pill']).optional(),
+  /** Rubriques du menu du site (Accueil, Équipes, Contact…). */
+  nav: z.array(z.string().max(20)).max(6).optional()
 });
 export type SiteDna = z.infer<typeof SiteSchema>;
 

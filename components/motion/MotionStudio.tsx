@@ -40,7 +40,8 @@ import { BrandPanel, EMPTY_BRAND, loadBrand, saveBrand } from '@/components/moti
 import { CertificationPanel } from '@/components/motion/CertificationPanel';
 import { Button } from '@/components/ui/button';
 import type { BrandProfile } from '@/lib/brand/types';
-import { FREE_LIMITS, FREE_MOTION_CREATIONS, type MotionQuota } from '@/lib/motion/plan';
+import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, type MotionQuota } from '@/lib/motion/plan';
+import { buildCinematicAd } from '@/lib/motion/autoad';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { drawFrame, locate, type MotionAssets } from '@/lib/motion/render';
 import { SoundPlayer, renderSoundtrack, type VoiceTrack } from '@/lib/motion/sound';
@@ -511,9 +512,14 @@ export function MotionStudio() {
         setAutoStep('Import du logo et des visuels…');
         photosNow = await importSite({ logo: b.site.logo, images: b.site.images ?? [] });
       }
-      setAutoStep('Création de la pub par le directeur de création IA…');
+      // 1) Pub « démo cinématique » montée tout de suite à partir des vraies données (aucune attente, aucun échec possible).
+      const quick = buildCinematicAd(b, { photos: photosNow.length, format: project.format });
+      replaceProject(isPaid ? quick : clampToFree(quick));
+      setNotice('Votre pub est prête ✓ Le directeur de création IA la peaufine avec vos données…');
+      // 2) Le directeur de création IA l'affine (textes, faits, rythme) en gardant ce style.
+      setAutoStep('Le directeur de création IA peaufine la pub…');
       setTab('ia');
-      await askAi('Crée la meilleure pub possible pour cette entreprise en t’appuyant sur toutes ses données (registre, fiche marque, site web, couleurs, visuels).', { fresh: true, brand: b, photos: photosNow });
+      await askAi('Crée la meilleure pub possible pour cette entreprise en t’appuyant sur toutes ses données (registre, fiche marque, site web, couleurs, visuels). Utilise le STYLE « DÉMO PRODUIT CINÉMATIQUE » (motif "flow", transition "blur") : "logo" avec son vrai nom et son activité, "prompt" avec la vraie demande que ferait un de ses clients dans sa ville, "chips" avec ses vraies offres ou publics, "mockup" de son site avec ses vraies rubriques et sa meilleure photo en fond, puis ses photos en héros avec ses vrais faits, et une phrase finale en "curve". Adapte chaque mot à son secteur.', { fresh: true, brand: b, photos: photosNow });
     } finally {
       setAutoStep(null);
     }
