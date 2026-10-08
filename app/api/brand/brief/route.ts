@@ -11,7 +11,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
  * et palette, à partir du registre officiel + ce que le client en dit.
  */
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const BodySchema = z.object({ company: CompanySchema.nullable(), notes: z.string().max(2000), site: SiteSchema.nullable().optional() });
 

@@ -19,7 +19,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
  * La réponse est validée par le même schéma que l'éditeur.
  */
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const BodySchema = z.object({
   prompt: z.string().trim().min(2).max(1200),
@@ -49,11 +49,13 @@ const FORMAT = `{
     "background": "#RRGGBB", "primary": "#RRGGBB", "accent": "#RRGGBB", "text": "#RRGGBB",
     "style": "neon" | "clean" | "bold",
     "motif": "particles" | "bubbles" | "grain" | "waves" | "confetti" | "sparkles" | "lines" | "none",
-    "radius": "square" | "rounded" | "pill" (style des boutons de la marque)
+    "radius": "square" | "rounded" | "pill" (style des boutons de la marque),
+    "anim": "rise" | "slam" | "mask" | "split" | "type" (animation de texte par défaut)
   },
   "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch",
   "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop" | "none", "bpm": 60-170, "volume": 0-1 },
   "scenes": [ 1 à 12 scènes. Chaque scène peut avoir :
+      "anim" = animation du texte de la scène : "rise" | "slam" | "mask" | "split" | "type"
       "sfx" = son à son entrée : "whoosh" | "pop" | "click" | "impact" | "riser" | "chime" | "fizz" | "bubble" | "swipe" | "glitch"
       "magic" = 0 à 2 apparitions magiques : [{ "kind": "notification" | "sticker" | "badge" | "button" | "emoji" | "review" | "qr", "text": "max 60 car.", "sub": "optionnel max 60", "emoji": "optionnel, 1 emoji", "at": seconde d'apparition dans la scène, "pos": "top" | "center" | "bottom", "sfx": "optionnel" }]
     Types de scènes :
@@ -72,6 +74,8 @@ const RULES = `Règles techniques :
 - Textes COURTS, contrastés, percutants (pub TikTok / Reels). 1 ou 2 mots clés entre *astérisques* pour les colorer.
 - SAFE ZONES 9:16 : rien d'important dans les 15 % du haut ni les 20 % du bas (interfaces TikTok / Reels) — le moteur s'en charge si tu utilises "pos".
 - "motif" = texture signature : bubbles (boissons, bain, lessive), grain (boulangerie, artisan, bois, café, vintage), waves (eau, mer, bien-être, mode fluide), confetti (événement, fête, association, promo), sparkles (beauté, bijoux, luxe, mariage), lines (sport, auto, livraison, tech), particles (tech/startup), none (minimaliste).
+- Typographie cinétique ("anim") : "slam" (mot géant qui s'écrase avec secousse caméra : accroches, sport, promo), "mask" (texte qui sort d'un masque : premium, luxe, corporate), "split" (lettres qui se rassemblent : fun, jeune, événement), "type" (machine à écrire : tech, B2B, chiffres), "rise" (montée souple). VARIE d'une scène à l'autre comme un vrai monteur ; l'accroche frappe fort.
+- Le montage est calé sur le tempo : les durées des scènes tombent sur les temps de la musique (le moteur les ajuste au bpm).
 - "transition" selon l'énergie : flash (dynamique), slide (moderne), zoom (impact, sport), wipe (graphique, marque forte), glitch (tech, gaming, jeune).
 - "sound.music" + "bpm" : pop (110-124, joyeux), electro (120-128, énergique), chill (75-95, doux), epic (80-100, grandiose), acoustic (90-110, artisanal, chaleureux), hiphop (85-98, urbain).
 - "sfx" qui RACONTENT la marque : fizz (ouverture de boisson), bubble, pop (apparition ludique), click (appli/tech), impact (révélation), riser (montée avant révélation), chime (luxe, beauté, magie), glitch (tech), whoosh/swipe (mouvement).
@@ -235,6 +239,7 @@ function repair(raw: unknown, fallback?: MotionProject): unknown {
       if (sc.type === 'stat') sc.value = Number(sc.value) || 0;
       if (sc.sfx !== undefined && !pick(SFX, sc.sfx)) delete sc.sfx;
       if (sc.captionPos !== undefined && !['top', 'bottom'].includes(String(sc.captionPos))) delete sc.captionPos;
+      if (sc.anim !== undefined && !['rise', 'slam', 'mask', 'split', 'type'].includes(String(sc.anim))) delete sc.anim;
       if (sc.magic !== undefined) {
         const dur = Number(sc.duration) || 3;
         const list = (Array.isArray(sc.magic) ? sc.magic : [])
@@ -264,6 +269,7 @@ function repair(raw: unknown, fallback?: MotionProject): unknown {
     const th = p.theme as Record<string, unknown>;
     if (th.motif !== undefined && !pick(MOTIFS, th.motif)) delete th.motif;
     if (th.radius !== undefined && !['square', 'rounded', 'pill'].includes(String(th.radius))) delete th.radius;
+    if (th.anim !== undefined && !['rise', 'slam', 'mask', 'split', 'type'].includes(String(th.anim))) delete th.anim;
     if (!['neon', 'clean', 'bold'].includes(String(th.style))) th.style = 'clean';
   }
   if (p.transition !== undefined && !pick(TRANSITIONS, p.transition)) delete p.transition;
@@ -391,6 +397,16 @@ export async function POST(request: Request) {
           const k = 15 / sum;
           scenes = scenes.map((sc) => ({ ...sc, duration: Math.round(Math.min(sc.type === 'video' ? 15 : 8, sc.duration * k) * 10) / 10 }));
         }
+        // Coupes calées sur la musique : chaque durée = un nombre entier de temps (2 temps minimum).
+        const bpm = result.data.sound?.bpm;
+        if (bpm && result.data.sound?.music !== 'none') {
+          const beat = 60 / bpm;
+          scenes = scenes.map((sc) => {
+            const max = sc.type === 'video' ? 15 : 8;
+            const n = Math.max(2, Math.round(sc.duration / beat));
+            return { ...sc, duration: Math.round(Math.min(max, Math.max(1.5, n * beat)) * 100) / 100 };
+          });
+        }
         if (scenes.length) {
           let finalProject: MotionProject = { ...result.data, scenes };
           if (free) finalProject = clampToFree(finalProject);
@@ -414,9 +430,10 @@ export async function POST(request: Request) {
       }
       lastError = (result.error?.issues ?? []).slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     }
-    return NextResponse.json({ error: "L'IA n'a pas réussi à produire une vidéo valide. Reformulez votre demande." }, { status: 502 });
+    return NextResponse.json({ error: 'La création n’a pas abouti du premier coup.', code: 'retry' }, { status: 502 });
   } catch (err) {
     if (err instanceof AiNotConfiguredError) return NextResponse.json({ error: err.message }, { status: 503 });
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Erreur IA' }, { status: 502 });
+    console.error('[motion] génération :', err);
+    return NextResponse.json({ error: 'Notre IA est très demandée en ce moment.', code: 'busy' }, { status: 503 });
   }
 }

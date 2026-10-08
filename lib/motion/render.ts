@@ -22,7 +22,7 @@ export type MotionAssets = {
   /** Photos du client (produits, locaux, équipe…). */
   photos?: (HTMLImageElement | null)[];
 };
-export type RenderOptions = { fontFamily: string; watermark?: boolean };
+export type RenderOptions = { fontFamily: string; watermark?: boolean; /** Facteur de résolution (1 = 1080p, 1.333 = 1440p). */ scale?: number };
 
 // ---------- Courbes d'animation ----------
 const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -92,6 +92,7 @@ type Ctx = {
   font: string;
   assets: MotionAssets;
   brand: string;
+  anim?: 'rise' | 'slam' | 'mask' | 'split' | 'type';
 };
 
 function setFont(c: Ctx, weight: number, size: number) {
@@ -128,20 +129,41 @@ function kinetic(c: Ctx, text: string, cx: number, cy: number, size: number, max
     let x = cx - line.width / 2;
     const y = top + li * lh + lh / 2;
     for (const w of line.words) {
-      const p = progress(lt, start + w.index * stagger, 0.42);
+      const mode = c.anim ?? 'rise';
+      // Chaque mode = une courbe différente (jamais linéaire : expo-out, back, spring).
+      const t0 = start + w.index * (mode === 'slam' ? stagger * 0.8 : stagger);
+      const p = mode === 'mask' ? progress(lt, start + li * 0.12 + w.index * 0.03, 0.55) : mode === 'slam' ? progress(lt, t0, 0.28) : mode === 'type' ? 1 : mode === 'split' ? progress(lt, t0, 0.6) : progress(lt, t0, 0.42);
+      if (mode === 'type' && lt < start + w.index * 0.11) { x += w.width + space; continue; }
       if (p > 0) {
-        const e = easeOutBack(p);
         ctx.save();
-        ctx.globalAlpha *= clamp(p * 1.6);
-        ctx.translate(x + w.width / 2, y + (1 - e) * fs * 0.45);
-        const s = 0.82 + 0.18 * e;
-        ctx.scale(s, s);
+        if (mode === 'slam') {
+          const e = easeOutCubic(p);
+          ctx.globalAlpha *= clamp(p * 2.2);
+          ctx.translate(x + w.width / 2, y);
+          const sc = 2.6 - 1.6 * e;
+          ctx.rotate((1 - e) * 0.08 * (w.index % 2 ? 1 : -1));
+          ctx.scale(sc, sc);
+        } else if (mode === 'mask') {
+          const e = 1 - Math.pow(1 - p, 4);
+          ctx.beginPath();
+          ctx.rect(x - fs * 0.15, y - lh * 0.56, w.width + fs * 0.3, lh * 1.12);
+          ctx.clip();
+          ctx.translate(x + w.width / 2, y + (1 - e) * lh);
+        } else if (mode === 'split' || mode === 'type') {
+          ctx.translate(x + w.width / 2, y);
+        } else {
+          const e = easeOutBack(p);
+          ctx.globalAlpha *= clamp(p * 1.6);
+          ctx.translate(x + w.width / 2, y + (1 - e) * fs * 0.45);
+          const sc = 0.82 + 0.18 * e;
+          ctx.scale(sc, sc);
+        }
         if (w.accent) {
           ctx.fillStyle = c.theme.primary;
           if (c.theme.style === 'neon') { ctx.shadowColor = rgba(c.theme.primary, 0.75); ctx.shadowBlur = fs * 0.35; }
           if (c.theme.style === 'bold') {
             // Surlignage « marqueur » derrière le mot.
-            const hp = easeOutCubic(progress(lt, start + w.index * stagger + 0.2, 0.35));
+            const hp = easeOutCubic(progress(lt, t0 + 0.2, 0.35));
             ctx.save();
             ctx.fillStyle = rgba(c.theme.primary, 0.9);
             ctx.fillRect(-w.width / 2 - fs * 0.08, -fs * 0.42, (w.width + fs * 0.16) * hp, fs * 0.84);
@@ -151,7 +173,38 @@ function kinetic(c: Ctx, text: string, cx: number, cy: number, size: number, max
         } else {
           ctx.fillStyle = opts.color ?? c.theme.text;
         }
-        ctx.fillText(w.text, -w.width / 2, 0);
+        if (mode === 'split') {
+          // Lettres qui arrivent de directions différentes et se rassemblent (ressort).
+          let cx0 = -w.width / 2;
+          const chars = Array.from(w.text);
+          chars.forEach((ch, k) => {
+            const cw = ctx.measureText(ch).width;
+            const pk = progress(lt, t0 + k * 0.025, 0.5);
+            if (pk > 0) {
+              const e = easeOutBack(pk);
+              const r1 = rand(w.index * 31 + k * 7);
+              const r2 = rand(w.index * 17 + k * 13);
+              ctx.save();
+              ctx.globalAlpha *= clamp(pk * 2);
+              ctx.translate(cx0 + cw / 2 + (1 - e) * (r1 - 0.5) * fs * 3, (1 - e) * (r2 - 0.5) * fs * 3);
+              ctx.rotate((1 - e) * (r1 - 0.5) * 2);
+              ctx.fillText(ch, -cw / 2, 0);
+              ctx.restore();
+            }
+            cx0 += cw;
+          });
+        } else if (mode === 'type') {
+          // Machine à écrire : les lettres apparaissent une à une, curseur clignotant.
+          const shown = Math.max(0, Math.floor((lt - (start + w.index * 0.11)) * 30));
+          const part = Array.from(w.text).slice(0, shown).join('');
+          ctx.fillText(part, -w.width / 2, 0);
+          if (shown < w.text.length && Math.floor(lt * 3) % 2 === 0) {
+            const pw = ctx.measureText(part).width;
+            ctx.fillRect(-w.width / 2 + pw + fs * 0.04, -fs * 0.4, fs * 0.07, fs * 0.8);
+          }
+        } else {
+          ctx.fillText(w.text, -w.width / 2, 0);
+        }
         ctx.restore();
       }
       x += w.width + space;
@@ -1185,9 +1238,11 @@ export function locate(project: MotionProject, t: number): { index: number; lt: 
 
 export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject, t: number, assets: MotionAssets, opts: RenderOptions) {
   const { width: W, height: H } = FORMAT_SIZE[project.format];
+  const S = opts.scale ?? 1;
   const c: Ctx = { ctx, W, H, U: Math.min(W, H), vertical: H > W, theme: project.theme, font: opts.fontFamily, assets, brand: project.brand };
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // Le dessin est calculé en 1080p puis mis à l'échelle (1440p) : netteté maximale à l'export.
+  ctx.setTransform(S, 0, 0, S, 0, 0);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.globalAlpha = 1;
@@ -1198,6 +1253,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
   const scene = project.scenes[index];
   const d = scene.duration;
   const isLast = index === project.scenes.length - 1;
+  c.anim = scene.anim ?? project.theme.anim ?? 'rise';
   // Entrée / sortie de scène selon la transition choisie.
   const tr = project.transition ?? 'flash';
   const enter = index === 0 ? 1 : easeOutCubic(lt / 0.5);
@@ -1205,6 +1261,19 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
   ctx.save();
   ctx.globalAlpha = tr === 'slide' || tr === 'wipe' ? 1 : clamp(enter) * (1 - exit);
   ctx.translate(W / 2, H / 2);
+  // Secousse de caméra sur les impacts (décroissante, déterministe).
+  if ((scene.sfx === 'impact' || c.anim === 'slam') && lt < 0.4) {
+    const amp = c.U * 0.012 * (1 - lt / 0.4);
+    const k = Math.floor(lt * 60);
+    ctx.translate((rand(k + index * 97) - 0.5) * 2 * amp, (rand(k + index * 53 + 7) - 0.5) * 2 * amp);
+  }
+  // Pulsation calée sur le tempo de la musique (le montage « respire » au rythme).
+  if (project.sound && project.sound.music !== 'none') {
+    const beat = 60 / project.sound.bpm;
+    const ph = (t % beat) / beat;
+    const pulse = 1 + 0.012 * Math.exp(-ph * 9);
+    ctx.scale(pulse, pulse);
+  }
   if (tr === 'zoom') {
     const z = (1 + exit * 0.9) * (index === 0 ? 1 : 0.6 + 0.4 * clamp(enter));
     ctx.scale(z, z);
@@ -1257,7 +1326,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
       const y = rand(i + Math.floor(t * 30)) * H;
       const h = H * (0.02 + rand(i + 3) * 0.06);
       const dx = (rand(i + 9 + Math.floor(t * 30)) - 0.5) * W * 0.12 * k;
-      ctx.drawImage(ctx.canvas, 0, y, W, h, dx, y, W, h);
+      ctx.drawImage(ctx.canvas, 0, y * S, W * S, h * S, dx, y, W, h);
     }
     ctx.globalCompositeOperation = 'screen';
     ctx.globalAlpha = 0.35 * k;

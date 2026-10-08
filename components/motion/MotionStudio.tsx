@@ -54,6 +54,9 @@ import {
   MUSIC_LABELS,
   SFX,
   SFX_LABELS,
+  TEXT_ANIMS,
+  TEXT_ANIM_LABELS,
+  type TextAnim,
   TRANSITIONS,
   TRANSITION_LABELS,
   MAGIC_KINDS,
@@ -100,9 +103,11 @@ function loadSaved(): MotionProject | null {
 }
 
 function pickMime(withAudio = false): { mime: string; ext: string } {
+  // H.264 « High » niveau 5.1 en priorité : gère le 1080p et le 1440p à 60 i/s avec une vraie netteté.
+  const avc = ['avc1.640033', 'avc1.640032', 'avc1.4D0033', 'avc1.42E033', 'avc1.42E01E'];
   const candidates = [
-    ...(withAudio ? [{ mime: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4' }, { mime: 'video/webm;codecs=vp9,opus', ext: 'webm' }] : []),
-    { mime: 'video/mp4;codecs=avc1.42E01E', ext: 'mp4' },
+    ...(withAudio ? [...avc.map((v) => ({ mime: `video/mp4;codecs=${v},mp4a.40.2`, ext: 'mp4' })), { mime: 'video/webm;codecs=vp9,opus', ext: 'webm' }] : []),
+    ...avc.map((v) => ({ mime: `video/mp4;codecs=${v}`, ext: 'mp4' })),
     { mime: 'video/webm;codecs=vp9', ext: 'webm' },
     { mime: 'video/webm', ext: 'webm' }
   ];
@@ -171,6 +176,7 @@ export function MotionStudio() {
   const brandRef = useRef<BrandProfile>(EMPTY_BRAND);
   brandRef.current = brand;
   const [autoStep, setAutoStep] = useState<string | null>(null);
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
   const brandLoaded = useRef(false);
   const mediaRef = useRef<Media[]>([]);
   const audioRef = useRef<{ ctx: AudioContext; dest: MediaStreamAudioDestinationNode; wired: Set<HTMLVideoElement> } | null>(null);
@@ -214,6 +220,10 @@ export function MotionStudio() {
   playingRef.current = playing;
 
   const duration = totalDuration(project);
+  const [quality, setQuality] = useState<'1080p' | '1440p'>('1080p');
+  const renderScale = quality === '1440p' ? 4 / 3 : 1;
+  const scaleRef = useRef(1);
+  scaleRef.current = renderScale;
   const size = FORMAT_SIZE[project.format];
   const watermark = !isPaid;
 
@@ -299,7 +309,7 @@ export function MotionStudio() {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');
       if (!canvas || !ctx) return;
-      drawFrame(ctx, projectRef.current, t, assetsRef.current, { fontFamily: motionFont.style.fontFamily, watermark });
+      drawFrame(ctx, projectRef.current, t, assetsRef.current, { fontFamily: motionFont.style.fontFamily, watermark, scale: scaleRef.current });
     },
     [watermark]
   );
@@ -579,23 +589,40 @@ export function MotionStudio() {
     if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour utiliser l’IA du Studio.'); return; }
     setAiBusy(true);
     setPrompt('');
+    const steps = ['J’analyse la marque et vos images…', 'J’écris le concept et l’accroche…', 'Je monte les scènes et les apparitions…', 'Sound design : musique et bruitages…', 'Contrôle qualité final…'];
+    let stepIdx = 0;
+    setAiStatus(steps[0]);
+    const stepTimer = window.setInterval(() => { stepIdx = Math.min(steps.length - 1, stepIdx + 1); setAiStatus(steps[stepIdx]); }, 6000);
     const photoKey = photos.map((ph) => ph.url).join('|');
     setMessages((m) => [...m, { role: 'user', text: value }]);
     try {
-      const res = await fetch('/api/motion/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: value,
-          // Premier message = nouvelle pub (concept complet) ; ensuite = modifications.
-          project: !opts.fresh && messages.length ? project : undefined,
-          media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 })),
-          photos: photos.map((ph, i) => ({ index: i, name: ph.name })),
-          ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
-          brand: brand.company || brand.notes.trim() || brand.brief || brand.site || brand.link ? { ...brand, site: brand.site ?? null, link: brand.link || undefined } : undefined
-        })
-      });
-      const json = await res.json().catch(() => ({}));
+      // Jusqu'à 3 essais : si l'IA est saturée ou se trompe de format, on relance
+      // automatiquement sans afficher d'erreur technique au client.
+      let res: Response | null = null;
+      let json: Record<string, unknown> & { [k: string]: any } = {};
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          setAiStatus(attempt === 1 ? 'Je peaufine encore un peu…' : 'Dernière passe, la pub arrive…');
+          await new Promise((r) => setTimeout(r, attempt * 5000));
+        }
+        res = await fetch('/api/motion/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: value,
+            // Premier message = nouvelle pub (concept complet) ; ensuite = modifications.
+            project: !opts.fresh && messages.length ? project : undefined,
+            media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 })),
+            photos: photos.map((ph, i) => ({ index: i, name: ph.name })),
+            ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
+            brand: brand.company || brand.notes.trim() || brand.brief || brand.site || brand.link ? { ...brand, site: brand.site ?? null, link: brand.link || undefined } : undefined
+          })
+        });
+        json = await res.json().catch(() => ({}));
+        if (res.ok || res.status === 401 || res.status === 402 || res.status === 400) break;
+      }
+      if (!res) throw new Error('Connexion impossible.');
+
       if (typeof json.photoNotes === 'string' && json.photoNotes) photoNotesRef.current = { key: photoKey, notes: json.photoNotes };
       if (json.quota) setQuota(json.quota as MotionQuota);
       if (!res.ok || !json.project) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
@@ -614,8 +641,11 @@ export function MotionStudio() {
           : `C’est fait : ${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s. Demandez-moi une autre modification si besoin.`
       }]);
     } catch (err) {
-      setMessages((m) => [...m, { role: 'ai', text: err instanceof Error ? err.message : 'Erreur de l’IA.' }]);
+      const msg = err instanceof Error ? err.message : '';
+      setMessages((m) => [...m, { role: 'ai', text: /Pro|gratuites|Connectez|Free/.test(msg) ? msg : 'Je n’ai pas réussi à terminer cette version, l’IA est très sollicitée. Réessayez dans un instant : votre pub actuelle est conservée.' }]);
     } finally {
+      window.clearInterval(stepTimer);
+      setAiStatus(null);
       setAiBusy(false);
     }
   };
@@ -663,7 +693,7 @@ export function MotionStudio() {
       }
     }
     const stream = new MediaStream([...canvas.captureStream(60).getVideoTracks(), ...audioTracks]);
-    const recorder = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 14_000_000 });
+    const recorder = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: scaleRef.current > 1 ? 32_000_000 : 20_000_000 });
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     const done = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
@@ -764,7 +794,7 @@ export function MotionStudio() {
             className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)]"
             style={{ aspectRatio: `${size.width} / ${size.height}`, maxWidth: `min(100%, calc(70vh * ${size.width / size.height}))` }}
           >
-            <canvas ref={canvasRef} width={size.width} height={size.height} className="block h-full w-full max-w-full" onClick={() => setPlaying((p) => !p)} />
+            <canvas ref={canvasRef} width={Math.round(size.width * renderScale)} height={Math.round(size.height * renderScale)} className="block h-full w-full max-w-full" onClick={() => setPlaying((p) => !p)} />
             {exporting !== null ? (
               <div className="absolute inset-x-0 bottom-0 bg-black/70 px-4 py-3 text-center text-xs text-white">
                 Enregistrement de la vidéo… gardez cet onglet ouvert ({exporting} %)
@@ -880,7 +910,18 @@ export function MotionStudio() {
                       </div>
                     ))
                   )}
-                  {aiBusy ? <div className="flex items-center gap-2 text-sm text-fg-muted"><span className="h-4 w-4 animate-spin rounded-full border-2 border-neon/20 border-t-neon" /> L’IA prépare votre animation…</div> : null}
+                  {aiBusy ? (
+                    <div className="izi-card flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-fg">
+                      <span className="relative grid h-7 w-7 shrink-0 place-items-center">
+                        <span className="absolute inset-0 animate-ping rounded-full bg-neon/30" />
+                        <Sparkles className="relative h-4 w-4 text-neon" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block font-semibold">Votre directeur de création IA travaille</span>
+                        <span className="block text-xs text-fg-muted">{aiStatus ?? 'Création en cours…'}</span>
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
                 {messages.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
@@ -1019,6 +1060,13 @@ export function MotionStudio() {
                     <SceneFields scene={scene} media={media} photos={photos} onChange={(patch) => updateScene(i, patch)} />
                     <MagicFields magic={scene.magic ?? []} duration={scene.duration} onChange={(magic) => updateScene(i, { magic: magic.length ? magic : undefined })} />
                     <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
+                      Animation du texte
+                      <select value={scene.anim ?? ''} onChange={(e) => updateScene(i, { anim: (e.target.value || undefined) as TextAnim | undefined })} className="flex-1 cursor-pointer rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-fg outline-none">
+                        <option value="">Par défaut</option>
+                        {TEXT_ANIMS.map((x) => <option key={x} value={x}>{TEXT_ANIM_LABELS[x]}</option>)}
+                      </select>
+                    </label>
+                    <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
                       Son d’entrée
                       <select value={scene.sfx ?? ''} onChange={(e) => updateScene(i, { sfx: (e.target.value || undefined) as Sfx | undefined })} className="flex-1 cursor-pointer rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-fg outline-none">
                         <option value="">Automatique</option>
@@ -1085,6 +1133,19 @@ export function MotionStudio() {
                   <div className="grid grid-cols-3 gap-1.5">
                     {([['neon', 'Néon'], ['clean', 'Épuré'], ['bold', 'Marqueur']] as const).map(([s, l]) => (
                       <Choice key={s} active={project.theme.style === s} onClick={() => setProject((p) => ({ ...p, theme: { ...p.theme, style: s } }))}>{l}</Choice>
+                    ))}
+                  </div>
+                </Field>
+                <Field label="Qualité d’export">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Choice active={quality === '1080p'} onClick={() => setQuality('1080p')}><span className="block font-bold">1080p</span><span className="text-[10px] opacity-70">Full HD · 20 Mb/s</span></Choice>
+                    <Choice locked={!isPaid} active={quality === '1440p'} onClick={() => (isPaid ? setQuality('1440p') : proOnly())}><span className="block font-bold">1440p</span><span className="text-[10px] opacity-70">2K · 32 Mb/s</span></Choice>
+                  </div>
+                </Field>
+                <Field label="Typographie cinétique">
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {TEXT_ANIMS.map((a) => (
+                      <Choice key={a} active={(project.theme.anim ?? 'rise') === a} onClick={() => setProject((p) => ({ ...p, theme: { ...p.theme, anim: a } }))}>{TEXT_ANIM_LABELS[a]}</Choice>
                     ))}
                   </div>
                 </Field>

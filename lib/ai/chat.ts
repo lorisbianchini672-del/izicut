@@ -5,7 +5,8 @@
  * mais intégré : aucun serveur exposé, clés uniquement dans les variables
  * d'environnement). Si l'un est saturé (429), en panne (5xx) ou trop lent,
  * on passe automatiquement au suivant.
- *   GEMINI_API_KEY     → Google Gemini (IA principale : gratuite, voit les images)
+ *   ANTHROPIC_API_KEY  → Claude (Anthropic) : IA principale si la clé est présente (créativité, vision)
+ *   GEMINI_API_KEY     → Google Gemini (gratuite, voit les images)
  *   GROQ_API_KEY       → Groq (rapide, secours)
  *   OPENROUTER_API_KEY → OpenRouter (modèles « :free »)
  *   MISTRAL_API_KEY    → Mistral (offre gratuite « Experiment »)
@@ -18,13 +19,14 @@ export class AiNotConfiguredError extends Error {
   }
 }
 
-type Provider = { name: string; url: string; key: string; model: string; vision?: string; json: boolean };
+type Provider = { name: string; url: string; key: string; model: string; vision?: string; json: boolean; kind?: 'openai' | 'anthropic' };
 type ChatOptions = { system: string; user: string; maxTokens?: number; temperature?: number };
 type Part = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
 function providers(): Provider[] {
   const list: Provider[] = [];
   const env = process.env;
+  if (env.ANTHROPIC_API_KEY) list.push({ name: 'claude', kind: 'anthropic', url: 'https://api.anthropic.com/v1/messages', key: env.ANTHROPIC_API_KEY, model: env.ANTHROPIC_MODEL || 'claude-opus-5-5', vision: env.ANTHROPIC_MODEL || 'claude-opus-5-5', json: false });
   if (env.GEMINI_API_KEY) list.push({ name: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: env.GEMINI_API_KEY, model: env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash', vision: env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash', json: true });
   if (env.GROQ_API_KEY) list.push({ name: 'groq', url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_API_KEY, model: env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b', vision: env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b', json: true });
   if (env.OPENROUTER_API_KEY) list.push({ name: 'openrouter', url: 'https://openrouter.ai/api/v1/chat/completions', key: env.OPENROUTER_API_KEY, model: env.OPENROUTER_CHAT_MODEL || 'openrouter/free', vision: env.OPENROUTER_VISION_MODEL, json: false });
@@ -50,7 +52,43 @@ export function parseJsonObject(text: string): unknown {
   }
 }
 
+/** Claude (API Messages d'Anthropic) : le système est à part, les images en base64. */
+async function callAnthropic(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean): Promise<string> {
+  const system = messages.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n\n');
+  const conv = messages.filter((m) => m.role !== 'system').map((m) => ({
+    role: m.role === 'assistant' ? 'assistant' : 'user',
+    content: typeof m.content === 'string'
+      ? m.content
+      : m.content.map((part) => {
+          if (part.type === 'text') return { type: 'text', text: part.text };
+          const match = part.image_url.url.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
+          return match ? { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } } : { type: 'image', source: { type: 'url', url: part.image_url.url } };
+        })
+  }));
+  const res = await fetch(p.url, {
+    method: 'POST',
+    headers: { 'x-api-key': p.key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      temperature: Math.min(1, temperature),
+      system: json ? `${system}\n\nRéponds uniquement par l'objet JSON demandé, sans texte autour ni balises de code.` : system || undefined,
+      messages: conv
+    }),
+    signal: AbortSignal.timeout(110_000)
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw Object.assign(new Error(`claude HTTP ${res.status} ${detail.slice(0, 120)}`), { retry: true });
+  }
+  const data = (await res.json()) as { content?: { type: string; text?: string }[] };
+  const text = (data.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
+  if (!text.trim()) throw Object.assign(new Error('claude : réponse vide'), { retry: true });
+  return text;
+}
+
 async function call(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean): Promise<string> {
+  if (p.kind === 'anthropic') return callAnthropic(p, model, messages, maxTokens, temperature, json);
   const res = await fetch(p.url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${p.key}`, 'Content-Type': 'application/json' },
@@ -90,7 +128,8 @@ async function cascade(run: (p: Provider) => Promise<string>, filter: (p: Provid
       console.warn(`[ia] ${p.name} indisponible : ${(err as Error).message}`);
     }
   }
-  throw new Error(`Toutes les IA sont momentanément saturées. Réessayez dans une minute. (${(last as Error)?.message ?? ''})`);
+  console.error(`[ia] toutes les IA ont échoué : ${(last as Error)?.message ?? ''}`);
+  throw Object.assign(new Error('Notre IA est très demandée en ce moment. Nouvel essai automatique dans quelques secondes…'), { busy: true });
 }
 
 export async function chatJson({ system, user, maxTokens = 1500, temperature = 0.7 }: ChatOptions): Promise<unknown> {

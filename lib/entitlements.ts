@@ -108,7 +108,7 @@ export const ENTITLEMENTS: Record<PlanTier, Entitlements> = {
     manualReframe: false,
     fps60: false,
     brandText: false,
-    crf: 23
+    crf: 20
   },
   pro: {
     maxClipsPerVideo: 6,
@@ -125,7 +125,7 @@ export const ENTITLEMENTS: Record<PlanTier, Entitlements> = {
     manualReframe: true,
     fps60: true,
     brandText: false,
-    crf: 17
+    crf: 16
   },
   agency: {
     maxClipsPerVideo: 10,
@@ -142,7 +142,7 @@ export const ENTITLEMENTS: Record<PlanTier, Entitlements> = {
     manualReframe: true,
     fps60: true,
     brandText: true,
-    crf: 17
+    crf: 16
   }
 };
 

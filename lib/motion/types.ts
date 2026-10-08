@@ -19,6 +19,11 @@ export type Motif = (typeof MOTIFS)[number];
 /** Transitions entre scènes. */
 export const TRANSITIONS = ['flash', 'slide', 'zoom', 'wipe', 'glitch'] as const;
 export type Transition = (typeof TRANSITIONS)[number];
+/** Animations de texte (typographie cinétique). */
+export const TEXT_ANIMS = ['rise', 'slam', 'mask', 'split', 'type'] as const;
+export type TextAnim = (typeof TEXT_ANIMS)[number];
+export const TEXT_ANIM_LABELS: Record<TextAnim, string> = { rise: 'Montée', slam: 'Impact', mask: 'Masque', split: 'Éclaté', type: 'Machine à écrire' };
+
 /** Ambiances musicales générées. */
 export const MUSIC = ['pop', 'electro', 'chill', 'epic', 'acoustic', 'hiphop', 'none'] as const;
 export type Music = (typeof MUSIC)[number];
@@ -47,24 +52,24 @@ export const MAX_SCENES = 12;
 export const MAX_PHOTOS = 12;
 
 export const SceneSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('title'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), title: txt(90), subtitle: z.string().trim().max(120).optional() }),
-  z.object({ type: z.literal('bullets'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), title: txt(60), items: z.array(txt(60)).min(1).max(4) }),
+  z.object({ type: z.literal('title'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), title: txt(90), subtitle: z.string().trim().max(120).optional() }),
+  z.object({ type: z.literal('bullets'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), title: txt(60), items: z.array(txt(60)).min(1).max(4) }),
   z.object({
     type: z.literal('stat'),
     duration,
-    sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(),
+    sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(),
     value: z.number().min(-1e9).max(1e9),
     prefix: z.string().max(4).optional(),
     suffix: z.string().max(6).optional(),
     label: txt(70)
   }),
-  z.object({ type: z.literal('screenshot'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), caption: txt(80) }),
-  z.object({ type: z.literal('quote'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), text: txt(160), author: z.string().trim().max(50).optional() }),
-  z.object({ type: z.literal('cta'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), title: txt(70), button: txt(30) }),
+  z.object({ type: z.literal('screenshot'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), caption: txt(80) }),
+  z.object({ type: z.literal('quote'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), text: txt(160), author: z.string().trim().max(50).optional() }),
+  z.object({ type: z.literal('cta'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), title: txt(70), button: txt(30) }),
   z.object({
     type: z.literal('video'),
     duration: z.number().min(1.5).max(15),
-    sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(),
+    sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(),
     /** Index de la vidéo importée par le client (0, 1 ou 2). */
     media: z.number().int().min(0).max(2),
     /** Seconde de départ dans la vidéo importée. */
@@ -76,7 +81,7 @@ export const SceneSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('photo'),
     duration,
-    sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(),
+    sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(),
     /** Index de la photo importée par le client (0 à 11). */
     photo: z.number().int().min(0).max(11),
     caption: z.string().trim().max(80).optional(),
@@ -96,7 +101,9 @@ export const MotionProjectSchema = z.object({
     style: z.enum(['neon', 'clean', 'bold']),
     motif: z.enum(MOTIFS).optional(),
     /** Style des boutons / cartes repris du site du client. */
-    radius: z.enum(['square', 'rounded', 'pill']).optional()
+    radius: z.enum(['square', 'rounded', 'pill']).optional(),
+    /** Animation de texte par défaut de la pub. */
+    anim: z.enum(TEXT_ANIMS).optional()
   }),
   transition: z.enum(TRANSITIONS).optional(),
   sound: z
