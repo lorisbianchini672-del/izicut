@@ -5,6 +5,7 @@
  * de fin). Rendue hors ligne en un AudioBuffer, elle sert à l'aperçu et à
  * l'export, parfaitement synchronisée avec l'animation.
  */
+import { sceneCues } from './cues';
 import { totalDuration, type MagicKind, type MotionProject, type Music, type Sfx } from './types';
 
 type Chord = [number, 'M' | 'm' | 'M7' | 'm7'];
@@ -39,7 +40,7 @@ const SHAPES: Record<Chord[1], number[]> = { M: [0, 4, 7], m: [0, 3, 7], M7: [0,
 const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 
 /** Effet sonore joué par défaut à chaque coupe, selon la transition. */
-const DEFAULT_CUT: Record<NonNullable<MotionProject['transition']>, Sfx> = { flash: 'whoosh', slide: 'swipe', zoom: 'whoosh', wipe: 'swipe', glitch: 'glitch' };
+const DEFAULT_CUT: Record<NonNullable<MotionProject['transition']>, Sfx> = { flash: 'whoosh', slide: 'swipe', zoom: 'whoosh', wipe: 'swipe', glitch: 'glitch', blur: 'whoosh' };
 
 const MAGIC_SFX: Record<MagicKind, Sfx> = { notification: 'chime', sticker: 'pop', badge: 'pop', button: 'pop', emoji: 'pop', review: 'chime', qr: 'click' };
 
@@ -48,7 +49,7 @@ export type VoiceClip = { start: number; buffer: AudioBuffer };
 export type VoiceTrack = { key: string; clips: VoiceClip[] };
 
 export function hasSound(p: MotionProject): boolean {
-  return Boolean(p.sound) || p.scenes.some((s) => s.sfx || s.magic?.length);
+  return Boolean(p.sound) || p.scenes.some((s) => s.sfx || s.magic?.length || sceneCues(s).length);
 }
 
 const cache = new Map<string, Promise<AudioBuffer | null>>();
@@ -56,7 +57,7 @@ const cache = new Map<string, Promise<AudioBuffer | null>>();
 /** Bande-son complète du projet (mise en cache tant que le projet sonore ne change pas). */
 export function renderSoundtrack(project: MotionProject, voice?: VoiceTrack | null): Promise<AudioBuffer | null> {
   if (typeof window === 'undefined' || typeof OfflineAudioContext === 'undefined' || (!hasSound(project) && !voice?.clips.length)) return Promise.resolve(null);
-  const key = JSON.stringify([voice?.key ?? '', project.sound, project.transition, project.scenes.map((s) => [s.duration, s.sfx, s.type, s.magic?.map((m) => [m.kind, m.at, m.sfx])])]);
+  const key = JSON.stringify([voice?.key ?? '', project.sound, project.transition, project.scenes.map((s) => [s.duration, s.sfx, s.type, s.magic?.map((m) => [m.kind, m.at, m.sfx]), sceneCues(s).map((q) => [q.at, q.kind])])]);
   const hit = cache.get(key);
   if (hit) return hit;
   const job = render(project, voice?.clips ?? []).catch(() => null);
@@ -138,6 +139,16 @@ async function render(project: MotionProject, voice: VoiceClip[]): Promise<Audio
       playSfx(ctx, sfxBus, noise, m.sfx ?? MAGIC_SFX[m.kind], at);
       if (m.kind === 'button' && at + 0.9 < total) playSfx(ctx, sfxBus, noise, 'click', at + 0.9);
     }
+    // Bruitages calés sur l'image des scènes « démo » (clic du curseur, frappe au clavier…).
+    sceneCues(scene).forEach((q, qi) => {
+      const at = start + q.at;
+      if (at >= total - 0.05) return;
+      if (q.kind === 'key') {
+        // Frappe de clavier : petit claquement filtré, hauteur légèrement variable.
+        const f = 2600 + ((qi * 7919) % 1700);
+        noiseSrc(ctx, noise, at, 0.04, filter(ctx, 'bandpass', f, env(ctx, sfxBus, at, 0.22, 0.002, 0.035), 1.4));
+      } else playSfx(ctx, sfxBus, noise, q.kind, at);
+    });
     // Jingle de fin : petite signature mélodique sur la dernière scène.
     if (isLast && project.sound) jingle(ctx, sfxBus, start + 0.25, project.sound.music === 'none' ? 60 : GENRES[project.sound.music].key);
     start += scene.duration;

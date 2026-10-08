@@ -14,15 +14,15 @@ const txt = (max: number) => z.string().trim().min(1).max(max);
 export const SFX = ['whoosh', 'pop', 'click', 'impact', 'riser', 'chime', 'fizz', 'bubble', 'swipe', 'glitch'] as const;
 export type Sfx = (typeof SFX)[number];
 /** Textures de fond « signature » de la marque. */
-export const MOTIFS = ['particles', 'bubbles', 'grain', 'waves', 'confetti', 'sparkles', 'lines', 'none'] as const;
+export const MOTIFS = ['flow', 'particles', 'bubbles', 'grain', 'waves', 'confetti', 'sparkles', 'lines', 'none'] as const;
 export type Motif = (typeof MOTIFS)[number];
 /** Transitions entre scènes. */
-export const TRANSITIONS = ['flash', 'slide', 'zoom', 'wipe', 'glitch'] as const;
+export const TRANSITIONS = ['flash', 'slide', 'zoom', 'wipe', 'glitch', 'blur'] as const;
 export type Transition = (typeof TRANSITIONS)[number];
 /** Animations de texte (typographie cinétique). */
-export const TEXT_ANIMS = ['rise', 'slam', 'mask', 'split', 'type'] as const;
+export const TEXT_ANIMS = ['rise', 'slam', 'mask', 'split', 'type', 'curve', 'blur'] as const;
 export type TextAnim = (typeof TEXT_ANIMS)[number];
-export const TEXT_ANIM_LABELS: Record<TextAnim, string> = { rise: 'Montée', slam: 'Impact', mask: 'Masque', split: 'Éclaté', type: 'Machine à écrire' };
+export const TEXT_ANIM_LABELS: Record<TextAnim, string> = { rise: 'Montée', slam: 'Impact', mask: 'Masque', split: 'Éclaté', type: 'Machine à écrire', curve: 'Ruban (lettres en courbe)', blur: 'Mise au point (flou → net)' };
 
 /** Ambiances musicales générées. */
 export const MUSIC = ['pop', 'electro', 'chill', 'epic', 'acoustic', 'hiphop', 'none'] as const;
@@ -65,6 +65,23 @@ export const SceneSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('screenshot'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), caption: txt(80) }),
   z.object({ type: z.literal('quote'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), text: txt(160), author: z.string().trim().max(50).optional() }),
+  /** Révélation du logo / nom de marque (signe lumineux + nom qui sort de derrière). */
+  z.object({ type: z.literal('logo'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), title: txt(32), subtitle: z.string().trim().max(80).optional() }),
+  /** Rangée de boutons lumineux : un curseur arrive et clique sur l'un d'eux. */
+  z.object({ type: z.literal('chips'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), title: z.string().trim().max(60).optional(), items: z.array(txt(22)).min(2).max(5), pick: z.number().int().min(0).max(4) }),
+  /** Barre de saisie façon assistant : la demande du client se tape lettre par lettre (caméra qui recule). */
+  z.object({ type: z.literal('prompt'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), text: txt(120), label: z.string().trim().max(24).optional() }),
+  /** Maquette de site / d'écran en 3D qui pivote et se pose, avec changement de couleur possible. */
+  z.object({
+    type: z.literal('mockup'),
+    duration,
+    sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(),
+    title: txt(60),
+    nav: z.array(z.string().trim().min(1).max(14)).max(4).optional(),
+    button: z.string().trim().max(24).optional(),
+    photo: z.number().int().min(0).max(11).optional(),
+    recolor: hex.optional()
+  }),
   z.object({ type: z.literal('cta'), duration, sfx: z.enum(SFX).optional(), magic: z.array(MagicSchema).max(3).optional(), anim: z.enum(TEXT_ANIMS).optional(), title: txt(70), button: txt(30) }),
   z.object({
     type: z.literal('video'),
@@ -162,9 +179,9 @@ export const FORMAT_SIZE: Record<MotionProject['format'], { width: number; heigh
 };
 
 export const MOTIF_LABELS: Record<Motif, string> = {
-  particles: 'Particules', bubbles: 'Bulles', grain: 'Grain / farine', waves: 'Vagues', confetti: 'Confettis', sparkles: 'Paillettes', lines: 'Vitesse', none: 'Aucune'
+  flow: 'Flux lumineux (cinéma)', particles: 'Particules', bubbles: 'Bulles', grain: 'Grain / farine', waves: 'Vagues', confetti: 'Confettis', sparkles: 'Paillettes', lines: 'Vitesse', none: 'Aucune'
 };
-export const TRANSITION_LABELS: Record<Transition, string> = { flash: 'Flash', slide: 'Glissé', zoom: 'Zoom', wipe: 'Volet', glitch: 'Glitch' };
+export const TRANSITION_LABELS: Record<Transition, string> = { flash: 'Flash', slide: 'Glissé', zoom: 'Zoom', wipe: 'Volet', glitch: 'Glitch', blur: 'Flou de mouvement' };
 export const MUSIC_LABELS: Record<Music, string> = { pop: 'Pop', electro: 'Électro', chill: 'Chill / lo-fi', epic: 'Épique', acoustic: 'Acoustique', hiphop: 'Hip-hop', none: 'Sans musique' };
 export const SFX_LABELS: Record<Sfx, string> = {
   whoosh: 'Whoosh', pop: 'Pop', click: 'Clic', impact: 'Impact', riser: 'Montée', chime: 'Carillon', fizz: 'Pétillant', bubble: 'Bulles', swipe: 'Swipe', glitch: 'Glitch'
@@ -178,7 +195,11 @@ export const SCENE_LABELS: Record<SceneType, string> = {
   quote: 'Citation',
   cta: 'Appel à l’action',
   video: 'Votre vidéo',
-  photo: 'Votre photo'
+  photo: 'Votre photo',
+  logo: 'Révélation du logo',
+  chips: 'Boutons + clic',
+  prompt: 'Demande tapée (assistant)',
+  mockup: 'Maquette 3D du site'
 };
 
 export const TRANSITION = 0.45;
@@ -205,6 +226,14 @@ export function defaultScene(type: SceneType): Scene {
       return { type, duration: 4, media: 0, from: 0, caption: 'Découvrez *notre savoir-faire*', layout: 'full' };
     case 'photo':
       return { type, duration: 3, photo: 0, caption: 'Fait *avec passion*', layout: 'full' };
+    case 'logo':
+      return { type, duration: 2.5, title: 'Votre marque' };
+    case 'chips':
+      return { type, duration: 3, items: ['Découvrir', 'Réserver', 'Contact'], pick: 1 };
+    case 'prompt':
+      return { type, duration: 3.5, text: 'Je veux un rendez-vous cette semaine', label: 'Votre marque' };
+    case 'mockup':
+      return { type, duration: 3.5, title: 'Votre *savoir-faire* en ligne', nav: ['Accueil', 'Offres', 'Contact'], button: 'Réserver' };
   }
 }
 
@@ -217,6 +246,25 @@ export const THEME_PRESETS: { name: string; theme: MotionProject['theme'] }[] = 
 ];
 
 export const TEMPLATES: { id: string; name: string; description: string; project: MotionProject }[] = [
+  {
+    id: 'cinema',
+    name: 'Démo cinématique',
+    description: 'Le style des pubs motion design qui cartonnent : lumière liquide, curseur, maquette 3D',
+    project: {
+      format: '9:16',
+      brand: 'Votre marque',
+      theme: { background: '#050505', primary: '#ff7a1a', accent: '#ffc23d', text: '#ffffff', style: 'neon', motif: 'flow', radius: 'pill', anim: 'blur' },
+      transition: 'blur',
+      sound: { music: 'electro', bpm: 122, volume: 0.8 },
+      scenes: [
+        { type: 'logo', duration: 2.5, title: 'Votre marque', subtitle: 'Votre signature' },
+        { type: 'chips', duration: 3, title: 'Vous cherchez *quoi* ?', items: ['Découvrir', 'Réserver', 'Commander', 'Contact'], pick: 1 },
+        { type: 'prompt', duration: 3.5, text: 'Je veux réserver cette semaine, près de chez moi', label: 'Votre marque' },
+        { type: 'mockup', duration: 3.5, title: 'Tout votre *savoir-faire*', nav: ['Accueil', 'Offres', 'Contact'], button: 'Réserver', recolor: '#2f6bff' },
+        { type: 'title', duration: 2.5, anim: 'curve', title: 'Réservez *en 1 clic*.' }
+      ]
+    }
+  },
   {
     id: 'product',
     name: 'Pub produit',

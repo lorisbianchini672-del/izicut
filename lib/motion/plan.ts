@@ -12,8 +12,8 @@ export const FREE_LIMITS = {
   photos: 4,
   videos: 1,
   music: ['pop', 'chill', 'none'] as Music[],
-  transitions: ['flash', 'slide'] as Transition[],
-  motifs: ['particles', 'bubbles', 'confetti', 'none'] as Motif[]
+  transitions: ['flash', 'slide', 'blur'] as Transition[],
+  motifs: ['flow', 'particles', 'bubbles', 'confetti', 'none'] as Motif[]
 };
 
 /** Fonctions réservées aux offres payantes (affichées avec un cadenas). */

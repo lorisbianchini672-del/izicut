@@ -472,7 +472,8 @@ export function MotionStudio() {
     setProject((p) => {
       const scenes = p.scenes
         .filter((sc) => !(sc.type === 'photo' && sc.photo === index))
-        .map((sc) => (sc.type === 'photo' && sc.photo > index ? { ...sc, photo: sc.photo - 1 } : sc));
+        .map((sc) => (sc.type === 'photo' && sc.photo > index ? { ...sc, photo: sc.photo - 1 } : sc))
+        .map((sc) => (sc.type === 'mockup' && sc.photo !== undefined ? { ...sc, photo: sc.photo === index ? undefined : sc.photo > index ? sc.photo - 1 : sc.photo } : sc));
       return { ...p, scenes: scenes.length ? scenes : [defaultScene('title')] };
     });
   };
@@ -1400,6 +1401,62 @@ function SceneFields({ scene, media, photos, onChange }: { scene: Scene; media: 
               <button key={lay} type="button" onClick={() => onChange({ layout: lay })} className={cn('flex-1 cursor-pointer rounded-lg border px-2 py-1 text-xs', scene.layout === lay ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>{lay === 'full' ? 'Plein écran' : 'Tirage photo'}</button>
             ))}
           </div>
+        </div>
+      );
+    case 'logo':
+      return (
+        <div className="space-y-1.5">
+          <input className={inputCls} value={scene.title} maxLength={32} onChange={(e) => onChange({ title: e.target.value })} placeholder="Nom de la marque" />
+          <input className={inputCls} value={scene.subtitle ?? ''} maxLength={80} onChange={(e) => onChange({ subtitle: e.target.value || undefined })} placeholder="Signature (facultatif)" />
+          <p className="text-[10px] text-fg-subtle">Votre logo (onglet Marque) apparaît en lumière ; sans logo, un signe lumineux le remplace.</p>
+        </div>
+      );
+    case 'chips':
+      return (
+        <div className="space-y-1.5">
+          <input className={inputCls} value={scene.title ?? ''} maxLength={60} onChange={(e) => onChange({ title: e.target.value || undefined })} placeholder="Question au-dessus (facultatif)" />
+          {scene.items.map((item, j) => (
+            <div key={j} className="flex items-center gap-1.5">
+              <button type="button" title="Le curseur clique ici" onClick={() => onChange({ pick: j })} className={cn('h-5 w-5 shrink-0 cursor-pointer rounded-full border text-[10px]', scene.pick === j ? 'border-neon bg-neon/20 text-neon' : 'border-white/20 text-fg-subtle')}>{scene.pick === j ? '●' : ''}</button>
+              <input className={inputCls} value={item} maxLength={22} onChange={(e) => onChange({ items: scene.items.map((x, k) => (k === j ? e.target.value : x)) })} />
+              {scene.items.length > 2 ? (
+                <button type="button" aria-label="Retirer" onClick={() => onChange({ items: scene.items.filter((_, k) => k !== j), pick: Math.min(scene.pick, scene.items.length - 2) })} className="cursor-pointer px-1 text-fg-subtle hover:text-fg">×</button>
+              ) : null}
+            </div>
+          ))}
+          {scene.items.length < 5 ? <button type="button" onClick={() => onChange({ items: [...scene.items, 'Option'] })} className="cursor-pointer text-xs text-neon">+ Ajouter un bouton</button> : null}
+          <p className="text-[10px] text-fg-subtle">● = le bouton sur lequel le curseur vient cliquer.</p>
+        </div>
+      );
+    case 'prompt':
+      return (
+        <div className="space-y-1.5">
+          <textarea className={cn(inputCls, 'resize-none')} rows={2} value={scene.text} maxLength={120} onChange={(e) => onChange({ text: e.target.value })} placeholder="La demande de votre client, tapée lettre par lettre" />
+          <input className={inputCls} value={scene.label ?? ''} maxLength={24} onChange={(e) => onChange({ label: e.target.value || undefined })} placeholder="Libellé dans la barre (ex. votre marque)" />
+        </div>
+      );
+    case 'mockup':
+      return (
+        <div className="space-y-1.5">
+          <input className={inputCls} value={scene.title} maxLength={60} onChange={(e) => onChange({ title: e.target.value })} placeholder="Titre de la page (*mot* = couleur)" />
+          <input className={inputCls} value={(scene.nav ?? []).join(', ')} maxLength={70} onChange={(e) => onChange({ nav: e.target.value.split(',').map((x) => x.trim().slice(0, 14)).filter(Boolean).slice(0, 4) })} placeholder="Menu : Accueil, Offres, Contact" />
+          <input className={inputCls} value={scene.button ?? ''} maxLength={24} onChange={(e) => onChange({ button: e.target.value || undefined })} placeholder="Bouton (facultatif)" />
+          {photos.length ? (
+            <div className="flex flex-wrap gap-1">
+              <button type="button" onClick={() => onChange({ photo: undefined })} className={cn('h-10 cursor-pointer rounded-md border-2 px-2 text-[10px]', scene.photo === undefined ? 'border-neon text-neon' : 'border-white/10 text-fg-muted')}>Dégradé</button>
+              {photos.map((ph, k) => (
+                <button key={ph.url} type="button" onClick={() => onChange({ photo: k })} className={cn('h-10 w-10 cursor-pointer overflow-hidden rounded-md border-2', scene.photo === k ? 'border-neon' : 'border-transparent opacity-70')}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={ph.url} alt="" className="h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <label className="flex items-center gap-2 text-xs text-fg-muted">
+            <input type="checkbox" checked={Boolean(scene.recolor)} onChange={(e) => onChange({ recolor: e.target.checked ? '#2f6bff' : undefined })} />
+            Changement de couleur en direct
+            {scene.recolor ? <input type="color" value={scene.recolor} onChange={(e) => onChange({ recolor: e.target.value })} className="ml-auto h-6 w-8 cursor-pointer rounded border-0 bg-transparent" /> : null}
+          </label>
         </div>
       );
     case 'title':

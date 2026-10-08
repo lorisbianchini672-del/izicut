@@ -3,8 +3,9 @@
  * drawFrame() dessine l'image exacte à l'instant t : le même code sert à
  * l'aperçu en direct et à l'export MP4 (enregistrement du canvas).
  */
+import { chipsClickAt, promptTiming } from './cues';
 import { makeQr } from './qr';
-import { FORMAT_SIZE, TRANSITION, type Magic, type MotionProject, type Scene } from './types';
+import { FORMAT_SIZE, TRANSITION, type Magic, type MotionProject, type Scene, type TextAnim } from './types';
 
 const qrCache = new Map<string, boolean[][] | null>();
 function qrFor(text: string): boolean[][] | null {
@@ -35,6 +36,18 @@ const progress = (t: number, start: number, len: number) => clamp((t - start) / 
 function rgba(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+/** Couleur des mots mis en avant, éclaircie si elle se perd sur un fond sombre (bleu marine sur noir…). */
+function readableAccent(c: { theme: MotionProject['theme'] }): string {
+  const lum = (h: string) => { const n = parseInt(h.slice(1), 16); return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114; };
+  const p = c.theme.primary;
+  if (lum(c.theme.background) < 90 && lum(p) < 140) {
+    const n = parseInt(p.slice(1), 16);
+    const k = 0.4;
+    const m = (v: number) => Math.round(v + (255 - v) * k);
+    return '#' + ((1 << 24) | (m((n >> 16) & 255) << 16) | (m((n >> 8) & 255) << 8) | m(n & 255)).toString(16).slice(1);
+  }
+  return p;
 }
 function isLight(hex: string): boolean {
   const n = parseInt(hex.slice(1), 16);
@@ -92,7 +105,9 @@ type Ctx = {
   font: string;
   assets: MotionAssets;
   brand: string;
-  anim?: 'rise' | 'slam' | 'mask' | 'split' | 'type';
+  anim?: TextAnim;
+  /** Intensité du flux lumineux de fond (atténué derrière les interfaces et les textes). */
+  flowDim?: number;
 };
 
 function setFont(c: Ctx, weight: number, size: number) {
@@ -132,7 +147,7 @@ function kinetic(c: Ctx, text: string, cx: number, cy: number, size: number, max
       const mode = c.anim ?? 'rise';
       // Chaque mode = une courbe différente (jamais linéaire : expo-out, back, spring).
       const t0 = start + w.index * (mode === 'slam' ? stagger * 0.8 : stagger);
-      const p = mode === 'mask' ? progress(lt, start + li * 0.12 + w.index * 0.03, 0.55) : mode === 'slam' ? progress(lt, t0, 0.28) : mode === 'type' ? 1 : mode === 'split' ? progress(lt, t0, 0.6) : progress(lt, t0, 0.42);
+      const p = mode === 'mask' ? progress(lt, start + li * 0.12 + w.index * 0.03, 0.55) : mode === 'slam' ? progress(lt, t0, 0.28) : mode === 'type' || mode === 'curve' ? 1 : mode === 'split' ? progress(lt, t0, 0.6) : mode === 'blur' ? progress(lt, t0, 0.7) : progress(lt, t0, 0.42);
       if (mode === 'type' && lt < start + w.index * 0.11) { x += w.width + space; continue; }
       if (p > 0) {
         ctx.save();
@@ -149,8 +164,16 @@ function kinetic(c: Ctx, text: string, cx: number, cy: number, size: number, max
           ctx.rect(x - fs * 0.15, y - lh * 0.56, w.width + fs * 0.3, lh * 1.12);
           ctx.clip();
           ctx.translate(x + w.width / 2, y + (1 - e) * lh);
-        } else if (mode === 'split' || mode === 'type') {
+        } else if (mode === 'split' || mode === 'type' || mode === 'curve') {
           ctx.translate(x + w.width / 2, y);
+        } else if (mode === 'blur') {
+          // Mise au point : le mot passe du flou au net en se resserrant.
+          const e = easeOutCubic(p);
+          ctx.globalAlpha *= clamp(p * 1.5);
+          ctx.translate(x + w.width / 2, y);
+          const sc = 1.25 - 0.25 * e;
+          ctx.scale(sc, sc);
+          setBlur(ctx, (1 - e) * fs * 0.28);
         } else {
           const e = easeOutBack(p);
           ctx.globalAlpha *= clamp(p * 1.6);
@@ -159,7 +182,7 @@ function kinetic(c: Ctx, text: string, cx: number, cy: number, size: number, max
           ctx.scale(sc, sc);
         }
         if (w.accent) {
-          ctx.fillStyle = c.theme.primary;
+          ctx.fillStyle = readableAccent(c);
           if (c.theme.style === 'neon') { ctx.shadowColor = rgba(c.theme.primary, 0.75); ctx.shadowBlur = fs * 0.35; }
           if (c.theme.style === 'bold') {
             // Surlignage « marqueur » derrière le mot.
@@ -188,6 +211,26 @@ function kinetic(c: Ctx, text: string, cx: number, cy: number, size: number, max
               ctx.globalAlpha *= clamp(pk * 2);
               ctx.translate(cx0 + cw / 2 + (1 - e) * (r1 - 0.5) * fs * 3, (1 - e) * (r2 - 0.5) * fs * 3);
               ctx.rotate((1 - e) * (r1 - 0.5) * 2);
+              ctx.fillText(ch, -cw / 2, 0);
+              ctx.restore();
+            }
+            cx0 += cw;
+          });
+        } else if (mode === 'curve') {
+          // Ruban : les lettres arrivent en file le long d'une courbe et se posent.
+          let cx0 = -w.width / 2;
+          const chars = Array.from(w.text);
+          const base = start + (w.index * 0.6 + li * 0.4) * stagger * 1.4;
+          chars.forEach((ch, k) => {
+            const cw = ctx.measureText(ch).width;
+            const pk = progress(lt, base + k * 0.03, 0.55);
+            if (pk > 0) {
+              const e = easeOutCubic(pk);
+              const sgo = 1 - e;
+              ctx.save();
+              ctx.globalAlpha *= clamp(pk * 3);
+              ctx.translate(cx0 + cw / 2 + sgo * fs * 1.6, sgo * sgo * fs * 4.2 + sgo * fs * 0.6);
+              ctx.rotate(sgo * 1.1);
               ctx.fillText(ch, -cw / 2, 0);
               ctx.restore();
             }
@@ -369,6 +412,9 @@ function drawMotif(c: Ctx, motif: NonNullable<MotionProject['theme']['motif']>, 
         ctx.lineWidth = Math.max(1, U * (0.002 + rand(i + 4) * 0.004));
         ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len, y - len * 0.18); ctx.stroke();
       }
+      break;
+    case 'flow':
+      drawFlow(c, t, light);
       break;
     case 'none':
       break;
@@ -1225,6 +1271,659 @@ function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number
   ctx.fill();
 }
 
+// ---------- Style « démo produit cinématique » ----------
+// Flux lumineux, logo révélé, boutons cliqués par un curseur, demande tapée
+// avec caméra qui recule, maquette de site en vraie perspective 3D.
+
+type Off = { canvas: HTMLCanvasElement | OffscreenCanvas; ctx: CanvasRenderingContext2D };
+const offscreens = new Map<string, Off>();
+/** Canvas de travail réutilisé (pas d'allocation à chaque image). */
+function offscreen(key: string, w: number, h: number): Off | null {
+  const iw = Math.max(1, Math.round(w));
+  const ih = Math.max(1, Math.round(h));
+  let o = offscreens.get(key);
+  if (!o || o.canvas.width !== iw || o.canvas.height !== ih) {
+    let cv: HTMLCanvasElement | OffscreenCanvas | null = null;
+    if (typeof OffscreenCanvas !== 'undefined') cv = new OffscreenCanvas(iw, ih);
+    else if (typeof document !== 'undefined') { cv = document.createElement('canvas'); cv.width = iw; cv.height = ih; }
+    if (!cv) return null;
+    const cx = cv.getContext('2d') as CanvasRenderingContext2D | null;
+    if (!cx) return null;
+    o = { canvas: cv, ctx: cx };
+    offscreens.set(key, o);
+  }
+  return o;
+}
+
+function mixHex(a: string, b: string, k: number): string {
+  const x = parseInt(a.slice(1), 16);
+  const y = parseInt(b.slice(1), 16);
+  const m = (s: number) => Math.round(((x >> s) & 255) * (1 - k) + ((y >> s) & 255) * k);
+  return '#' + ((1 << 24) | (m(16) << 16) | (m(8) << 8) | m(0)).toString(16).slice(1);
+}
+
+function setBlur(ctx: CanvasRenderingContext2D, px: number) {
+  // Flou réel quand le navigateur le gère (Chrome, Edge, Safari 18+), ignoré sinon.
+  if ('filter' in ctx) ctx.filter = px > 0.4 ? `blur(${px.toFixed(1)}px)` : 'none';
+}
+
+/** Rubans de lumière liquide (dessinés en basse définition puis agrandis = lueur douce et fluide). */
+function flowLayer(g: CanvasRenderingContext2D, w: number, h: number, t: number, theme: MotionProject['theme'], thin: number) {
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'source-over';
+  g.clearRect(0, 0, w, h);
+  g.globalCompositeOperation = 'lighter';
+  const vertical = h > w;
+  const ribbons = [
+    { col: theme.primary, off: 0, amp: 0.13, th: 0.2, sp: 0.32, a: 0.75 },
+    { col: theme.accent, off: 0.22, amp: 0.1, th: 0.12, sp: 0.41, a: 0.8 },
+    { col: theme.primary, off: -0.25, amp: 0.16, th: 0.1, sp: 0.27, a: 0.55 },
+    { col: mixHex(theme.accent, '#ffffff', 0.45), off: 0.1, amp: 0.08, th: 0.035, sp: 0.5, a: 0.75 }
+  ];
+  const N = 40;
+  for (const [ri, r] of ribbons.entries()) {
+    const ph = t * r.sp + ri * 1.9;
+    const top: [number, number][] = [];
+    const bot: [number, number][] = [];
+    for (let i = 0; i <= N; i++) {
+      const u = i / N;
+      // Diagonale bas-gauche → haut-droit, ondulée.
+      const bx = vertical ? -0.25 + 1.5 * u : -0.15 + 1.3 * u;
+      const by = vertical ? 1.05 - 1.1 * u : 1.15 - 1.3 * u;
+      const wave = Math.sin(u * Math.PI * 2.2 + ph) * r.amp + Math.sin(u * 5.3 - ph * 1.3) * r.amp * 0.35;
+      const cx = (bx + r.off * 0.6 + wave * 0.7) * w;
+      const cy = (by + r.off + wave) * h;
+      const th = r.th * thin * (0.35 + 0.65 * Math.sin(Math.PI * u)) * (0.75 + 0.25 * Math.sin(ph * 1.7 + u * 4)) * Math.min(w, h);
+      // Normale approximative à la diagonale.
+      const nx = vertical ? 0.6 : 0.7;
+      const ny = vertical ? 0.8 : 0.7;
+      top.push([cx - nx * th, cy - ny * th]);
+      bot.push([cx + nx * th * 0.5, cy + ny * th * 0.5]);
+    }
+    // Trois passes (large et pâle → fin et éclatant) : dégradé soyeux dans l'épaisseur du ruban.
+    const passes = [{ k: 1, a: 0.28, col: r.col }, { k: 0.55, a: 0.42, col: r.col }, { k: 0.2, a: 0.7, col: mixHex(r.col, '#ffffff', 0.5) }];
+    for (const ps of passes) {
+      const grad = g.createLinearGradient(0, h, w, 0);
+      grad.addColorStop(0, rgba(ps.col, 0));
+      grad.addColorStop(0.35, rgba(ps.col, r.a * ps.a));
+      grad.addColorStop(0.7, rgba(ps.col, r.a * ps.a * 0.9));
+      grad.addColorStop(1, rgba(ps.col, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const mx = (top[i][0] + bot[i][0]) / 2, my = (top[i][1] + bot[i][1]) / 2;
+        const px = mx + (top[i][0] - mx) * ps.k, py = my + (top[i][1] - my) * ps.k;
+        if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+      }
+      for (let i = N; i >= 0; i--) {
+        const mx = (top[i][0] + bot[i][0]) / 2, my = (top[i][1] + bot[i][1]) / 2;
+        g.lineTo(mx + (bot[i][0] - mx) * ps.k, my + (bot[i][1] - my) * ps.k);
+      }
+      g.closePath();
+      g.fill();
+    }
+  }
+  g.globalCompositeOperation = 'source-over';
+}
+
+function drawFlow(c: Ctx, t: number, light: boolean) {
+  const { ctx, W, H } = c;
+  const glow = offscreen('flow-glow', W / 16, H / 16);
+  const body = offscreen('flow-body', W / 7, H / 7);
+  if (!glow || !body) return;
+  flowLayer(glow.ctx, glow.canvas.width, glow.canvas.height, t, c.theme, 1.5);
+  flowLayer(body.ctx, body.canvas.width, body.canvas.height, t, c.theme, 0.8);
+  ctx.save();
+  ctx.globalCompositeOperation = light ? 'multiply' : 'lighter';
+  const k = c.flowDim ?? 1;
+  ctx.globalAlpha = (light ? 0.35 : 0.75) * k;
+  ctx.drawImage(glow.canvas as CanvasImageSource, 0, 0, W, H);
+  ctx.globalAlpha = (light ? 0.3 : 0.9) * k;
+  ctx.drawImage(body.canvas as CanvasImageSource, 0, 0, W, H);
+  ctx.restore();
+  if (!light && k < 0.95) {
+    // Centre plongé dans le noir derrière textes et interfaces : la lumière reste sur les bords.
+    const sc = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.55);
+    sc.addColorStop(0, `rgba(0,0,0,${(0.85 * (1 - k)).toFixed(3)})`);
+    sc.addColorStop(0.6, `rgba(0,0,0,${(0.5 * (1 - k)).toFixed(3)})`);
+    sc.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = sc;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+/** Signe lumineux en étoile (utilisé quand la marque n'a pas fourni de logo). */
+function drawBurst(c: Ctx, x: number, y: number, r: number, t: number, p: number, color: string) {
+  const { ctx } = c;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(t * 0.5 + (1 - easeOutCubic(p)) * -1.2);
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = r * 0.17;
+  ctx.shadowColor = rgba(color, 1);
+  ctx.shadowBlur = r * 0.9;
+  const n = 11;
+  for (let i = 0; i < n; i++) {
+    const pk = easeOutBack(clamp(p * 1.6 - i * 0.04));
+    if (pk <= 0) continue;
+    const len = r * (0.62 + 0.38 * rand(i + 5)) * pk;
+    const a = (i / n) * Math.PI * 2 + (rand(i) - 0.5) * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * r * 0.12, Math.sin(a) * r * 0.12);
+    ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function logoReady(c: Ctx): HTMLImageElement | null {
+  const l = c.assets.logo;
+  return l && l.complete && l.naturalWidth ? l : null;
+}
+
+/** Marque : logo ou signe lumineux qui apparaît, puis le nom glisse de derrière, lettre par lettre (flou → net). */
+function sceneLogo(c: Ctx, s: Extract<Scene, { type: 'logo' }>, lt: number, t: number) {
+  const { ctx, W, H, U } = c;
+  const logo = logoReady(c);
+  const fs = textFit(c, s.title, 700, U * (c.vertical ? 0.1 : 0.085), W * 0.62);
+  setFont(c, 700, fs);
+  const tw = ctx.measureText(s.title).width;
+  const r = fs * 0.8;
+  const gap = fs * 0.6;
+  const markW = logo ? Math.min(r * 2.4, (logo.naturalWidth / logo.naturalHeight) * r * 2) : r * 2;
+  const slide = easeInOut(progress(lt, 0.45, 0.6));
+  const totalW = markW + gap + tw;
+  const markX = W / 2 + (-totalW / 2 + markW / 2) * slide;
+  const y = H / 2 - (s.subtitle ? fs * 0.3 : 0);
+  const pMark = progress(lt, 0.05, 0.7);
+  ctx.save();
+  ctx.globalAlpha *= clamp(pMark * 2);
+  if (logo) {
+    const sc = 0.6 + 0.4 * easeOutBack(pMark);
+    const lh = markW / (logo.naturalWidth / logo.naturalHeight);
+    ctx.shadowColor = rgba(c.theme.primary, 0.8);
+    ctx.shadowBlur = r * 0.8;
+    ctx.drawImage(logo, markX - (markW * sc) / 2, y - (lh * sc) / 2, markW * sc, lh * sc);
+  } else {
+    drawBurst(c, markX, y, r, t, pMark, mixHex(c.theme.accent, '#ffffff', 0.25));
+  }
+  ctx.restore();
+  // Le nom sort de derrière le signe.
+  const x0 = W / 2 - totalW / 2 + markW + gap;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(markX + markW * 0.35, 0, W, H);
+  ctx.clip();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = c.theme.text;
+  let x = x0;
+  Array.from(s.title).forEach((ch, k) => {
+    const cw = ctx.measureText(ch).width;
+    const pk = progress(lt, 0.55 + k * 0.035, 0.5);
+    if (pk > 0) {
+      const e = easeOutCubic(pk);
+      ctx.save();
+      ctx.globalAlpha *= clamp(pk * 1.8);
+      setBlur(ctx, (1 - e) * fs * 0.25);
+      ctx.fillText(ch, x - (1 - e) * fs * 0.9, y);
+      ctx.restore();
+    }
+    x += cw;
+  });
+  ctx.restore();
+  if (s.subtitle) {
+    const p = progress(lt, 1.1, 0.6);
+    ctx.save();
+    ctx.globalAlpha *= easeOutCubic(p) * 0.8;
+    setFont(c, 500, textFit(c, s.subtitle, 500, U * 0.035, W * 0.8));
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = c.theme.text;
+    ctx.fillText(s.subtitle, W / 2, y + fs * 1.05 + (1 - easeOutCubic(p)) * U * 0.02);
+    ctx.restore();
+  }
+}
+
+/** Flèche de souris (blanche, contour sombre), pointe en (x, y). */
+function drawCursor(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, press: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  const sc = 1 - press * 0.15;
+  ctx.scale(sc, sc);
+  ctx.beginPath();
+  const pts: [number, number][] = [[0, 0], [0, 1], [0.27, 0.76], [0.45, 1.14], [0.6, 1.07], [0.42, 0.7], [0.75, 0.7]];
+  ctx.moveTo(pts[0][0] * size, pts[0][1] * size);
+  for (const p of pts.slice(1)) ctx.lineTo(p[0] * size, p[1] * size);
+  ctx.closePath();
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = size * 0.25;
+  ctx.shadowOffsetY = size * 0.06;
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = size * 0.07;
+  ctx.strokeStyle = '#111111';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Boutons lumineux qui apparaissent (flou → net) puis un curseur vient cliquer sur l'un d'eux. */
+function sceneChips(c: Ctx, s: Extract<Scene, { type: 'chips' }>, lt: number) {
+  const { ctx, W, H, U } = c;
+  const items = s.items;
+  const pick = Math.min(s.pick, items.length - 1);
+  const fs = U * (c.vertical ? 0.042 : 0.034);
+  const ch = fs * 2.3;
+  const padX = fs * 0.95;
+  const gap = fs * 0.45;
+  setFont(c, 600, fs);
+  const widths = items.map((it) => ctx.measureText(it).width + padX * 2);
+  // Répartition sur une ou plusieurs lignes selon la largeur disponible.
+  const maxRow = W * 0.9;
+  const rows: number[][] = [[]];
+  let acc = 0;
+  widths.forEach((w, i) => {
+    const row = rows[rows.length - 1];
+    if (row.length && acc + gap + w > maxRow) { rows.push([i]); acc = w; } else { row.push(i); acc += (row.length > 1 ? gap : 0) + w; }
+  });
+  const titleH = s.title ? fs * 3.2 : 0;
+  const blockH = rows.length * ch + (rows.length - 1) * gap * 1.4 + titleH;
+  let y = H / 2 - blockH / 2 + titleH;
+  if (s.title) kinetic(c, s.title, W / 2, y - titleH * 0.6, U * 0.06, W * 0.86, lt, { weight: 800 });
+  const pos: { x: number; y: number; w: number }[] = [];
+  for (const row of rows) {
+    const rw = row.reduce((a, i) => a + widths[i], 0) + gap * (row.length - 1);
+    let x = W / 2 - rw / 2;
+    for (const i of row) { pos[i] = { x, y, w: widths[i] }; x += widths[i] + gap; }
+    y += ch + gap * 1.4;
+  }
+  const tClick = chipsClickAt(s);
+  const clicked = clamp((lt - tClick) / 0.25);
+  const r = radiusOf(c, ch) * (c.theme.radius === 'square' ? 1 : 0.72);
+  items.forEach((it, i) => {
+    const p = progress(lt, 0.1 + i * 0.07, 0.55);
+    if (p <= 0) return;
+    const e = easeOutCubic(p);
+    const { x, y: cy, w } = pos[i];
+    const on = i === pick ? clicked : 0;
+    ctx.save();
+    ctx.globalAlpha *= clamp(p * 1.6) * (clicked > 0 && i !== pick ? 1 - 0.35 * clicked : 1);
+    ctx.translate(x + w / 2, cy + ch / 2);
+    const sc = (1.18 - 0.18 * e) * (i === pick && lt > tClick && lt < tClick + 0.18 ? 0.94 : 1);
+    ctx.scale(sc, sc);
+    setBlur(ctx, (1 - e) * fs * 0.4);
+    roundRect(ctx, -w / 2, -ch / 2, w, ch, r);
+    ctx.fillStyle = on > 0 ? rgba(mixHex(c.theme.accent, '#000000', 0.55), 0.55 + 0.35 * on) : 'rgba(10,10,12,0.42)';
+    ctx.shadowColor = rgba(on > 0 ? c.theme.accent : '#ffffff', 0.55 + 0.35 * on);
+    ctx.shadowBlur = fs * (0.7 + on * 0.9);
+    ctx.fill();
+    ctx.shadowBlur = fs * 0.5;
+    ctx.lineWidth = Math.max(1.5, fs * 0.075);
+    ctx.strokeStyle = rgba('#ffffff', 0.85);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    setFont(c, 600, fs);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(it, 0, fs * 0.04);
+    ctx.restore();
+    // Onde de clic.
+    if (i === pick && lt > tClick && lt < tClick + 0.6) {
+      const k = (lt - tClick) / 0.6;
+      ctx.save();
+      ctx.globalAlpha *= 1 - k;
+      ctx.strokeStyle = rgba(c.theme.accent, 0.9);
+      ctx.lineWidth = fs * 0.12 * (1 - k);
+      roundRect(ctx, x - k * fs, cy - k * fs, w + k * fs * 2, ch + k * fs * 2, r + k * fs);
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
+  // Curseur : arrive en courbe depuis le bas, ralentit, clique.
+  const target = pos[pick];
+  if (!target) return;
+  const tx = target.x + target.w * 0.55;
+  const ty = target.y + ch * 0.6;
+  const mv = easeInOut(progress(lt, 0.55, tClick - 0.6));
+  if (mv <= 0) return;
+  const sx = W * (c.vertical ? 0.82 : 0.78);
+  const sy = H * 0.95;
+  const mx = (sx + tx) / 2 + W * 0.12;
+  const my = (sy + ty) / 2 + H * 0.05;
+  const u = mv;
+  const cx = (1 - u) * (1 - u) * sx + 2 * (1 - u) * u * mx + u * u * tx;
+  const cy = (1 - u) * (1 - u) * sy + 2 * (1 - u) * u * my + u * u * ty;
+  const press = lt > tClick && lt < tClick + 0.16 ? 1 : 0;
+  drawCursor(ctx, cx, cy, fs * 1.25, press);
+}
+
+/** Barre de saisie façon assistant : la demande se tape, la caméra part du texte et recule pour révéler l'interface. */
+function scenePrompt(c: Ctx, s: Extract<Scene, { type: 'prompt' }>, lt: number) {
+  const { ctx, W, H, U } = c;
+  const pt = promptTiming(s);
+  const bw = c.vertical ? W * 0.88 : W * 0.62;
+  const fs = U * (c.vertical ? 0.046 : 0.038);
+  const pad = fs * 1.1;
+  setFont(c, 500, fs);
+  // Retour à la ligne du texte complet (pour que la mise en page ne bouge pas pendant la frappe).
+  const words = s.text.split(/\s+/);
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(test).width > bw - pad * 2 && cur) { lines.push(cur); cur = w; } else cur = test;
+  }
+  if (cur) lines.push(cur);
+  const lh = fs * 1.35;
+  const bh = pad * 2 + lines.length * lh + fs * 2.6;
+  const bx = W / 2 - bw / 2;
+  const by = H / 2 - bh / 2;
+  const typed = Math.max(0, Math.min(Array.from(s.text).length, Math.floor((lt - pt.start) * pt.cps)));
+  // Position du curseur de frappe (pour le cadrage caméra).
+  let remain = typed;
+  let caretX = bx + pad;
+  let caretY = by + pad + lh / 2;
+  lines.forEach((ln, li) => {
+    const n = Array.from(ln).length + 1;
+    if (remain >= 0) {
+      const part = Array.from(ln).slice(0, Math.max(0, Math.min(n - 1, remain))).join('');
+      caretX = bx + pad + ctx.measureText(part).width;
+      caretY = by + pad + li * lh + lh / 2;
+    }
+    remain -= n;
+  });
+  // Caméra : très près du texte au début, puis recul en douceur.
+  const pull = easeInOut(progress(lt, Math.max(0.6, (pt.end - pt.start) * 0.45), Math.max(0.9, (pt.end - pt.start) * 0.6)));
+  const z = 2.1 - 1.1 * pull;
+  const fx = caretX * (1 - pull) + (W / 2) * pull - (1 - pull) * fs * 3;
+  const fy = caretY * (1 - pull) + (H / 2) * pull;
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(z, z);
+  ctx.translate(-fx, -fy);
+  // Boîte vitrée.
+  ctx.save();
+  roundRect(ctx, bx, by, bw, bh, fs * 1.1);
+  ctx.shadowColor = rgba(c.theme.primary, 0.35);
+  ctx.shadowBlur = fs * 3;
+  ctx.shadowOffsetY = fs * 0.6;
+  ctx.fillStyle = 'rgba(14,14,16,0.88)';
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = Math.max(1, fs * 0.04);
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.stroke();
+  ctx.restore();
+  // Texte tapé : les dernières lettres frappées brillent en couleur d'accent.
+  setFont(c, 500, fs);
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  let idx = 0;
+  lines.forEach((ln, li) => {
+    let x = bx + pad;
+    const yy = by + pad + li * lh + lh / 2;
+    for (const chr of Array.from(ln + ' ')) {
+      if (idx >= typed) break;
+      const age = typed - idx;
+      ctx.fillStyle = age <= 7 ? mixHex(c.theme.accent, '#ffffff', clamp((age - 1) / 7)) : '#ffffff';
+      ctx.fillText(chr, x, yy);
+      x += ctx.measureText(chr).width;
+      idx++;
+    }
+    idx += 0;
+  });
+  if (lt < pt.end + 0.25 || Math.floor(lt * 2.5) % 2 === 0) {
+    ctx.fillStyle = c.theme.accent;
+    ctx.fillRect(caretX + fs * 0.06, caretY - fs * 0.55, fs * 0.08, fs * 1.1);
+  }
+  // Barre d'outils : « + », libellé, micro, envoyer.
+  ctx.save();
+  ctx.globalAlpha *= clamp(pull * 1.4);
+  const ty = by + bh - pad - fs * 0.6;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = fs * 0.09;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(bx + pad, ty); ctx.lineTo(bx + pad + fs * 0.8, ty);
+  ctx.moveTo(bx + pad + fs * 0.4, ty - fs * 0.4); ctx.lineTo(bx + pad + fs * 0.4, ty + fs * 0.4);
+  ctx.stroke();
+  const sendS = fs * 1.15;
+  const sendX = bx + bw - pad - sendS;
+  const press = lt > pt.send && lt < pt.send + 0.15 ? 0.88 : 1;
+  const sent = clamp((lt - pt.send) / 0.3);
+  ctx.save();
+  ctx.translate(sendX + sendS / 2, ty);
+  ctx.scale(press, press);
+  roundRect(ctx, -sendS / 2, -sendS / 2, sendS, sendS, sendS * 0.25);
+  ctx.fillStyle = c.theme.accent;
+  ctx.shadowColor = rgba(c.theme.accent, 0.4 + 0.6 * sent);
+  ctx.shadowBlur = fs * (0.5 + sent * 1.5);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = isLight(c.theme.accent) ? '#111111' : '#ffffff';
+  ctx.lineWidth = fs * 0.1;
+  ctx.beginPath();
+  ctx.moveTo(0, sendS * 0.25); ctx.lineTo(0, -sendS * 0.25);
+  ctx.moveTo(-sendS * 0.2, -sendS * 0.05); ctx.lineTo(0, -sendS * 0.25); ctx.lineTo(sendS * 0.2, -sendS * 0.05);
+  ctx.stroke();
+  ctx.restore();
+  // Micro + onde.
+  const micX = sendX - fs * 2.6;
+  ctx.fillStyle = '#ffffff';
+  roundRect(ctx, micX - fs * 0.16, ty - fs * 0.42, fs * 0.32, fs * 0.55, fs * 0.16); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(micX, ty + fs * 0.2); ctx.lineTo(micX, ty + fs * 0.42); ctx.stroke();
+  for (let i = 0; i < 5; i++) {
+    const hh = fs * (0.18 + 0.32 * Math.abs(Math.sin(lt * 9 + i * 1.3))) * (lt < pt.end ? 1 : 0.4);
+    ctx.fillRect(micX + fs * 0.75 + i * fs * 0.2, ty - hh / 2, fs * 0.09, hh);
+  }
+  const label = s.label || c.brand;
+  if (label) {
+    setFont(c, 500, fs * 0.72);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText(label, micX - fs * 0.8, ty);
+  }
+  ctx.restore();
+  ctx.restore();
+}
+
+/** Contenu de la maquette (une page d'accueil), dessiné à plat avant la mise en perspective. */
+function paintMockup(c: Ctx, g: CanvasRenderingContext2D, w: number, h: number, s: Extract<Scene, { type: 'mockup' }>, color: string, lt: number) {
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const u = Math.min(w, h);
+  const vertical = h > w;
+  const rr = u * 0.05;
+  roundRect(g, 0, 0, w, h, rr);
+  g.save();
+  g.clip();
+  const img = s.photo !== undefined ? c.assets.photos?.[s.photo] ?? null : null;
+  if (img && img.complete && img.naturalWidth) {
+    const k = Math.max(w / img.naturalWidth, h / img.naturalHeight) * (1.04 + 0.05 * clamp(lt / 4));
+    g.drawImage(img, (w - img.naturalWidth * k) / 2, (h - img.naturalHeight * k) / 2, img.naturalWidth * k, img.naturalHeight * k);
+    const ov = g.createLinearGradient(0, 0, w, h);
+    ov.addColorStop(0, 'rgba(0,0,0,0.7)');
+    ov.addColorStop(1, rgba(color, 0.45));
+    g.fillStyle = ov;
+    g.fillRect(0, 0, w, h);
+  } else {
+    const gr = g.createLinearGradient(0, 0, w, h);
+    gr.addColorStop(0, mixHex(color, '#000000', 0.82));
+    gr.addColorStop(0.55, mixHex(color, '#000000', 0.45));
+    gr.addColorStop(1, color);
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+    const hl = g.createRadialGradient(w * 0.9, h * 0.95, 0, w * 0.9, h * 0.95, u * 0.9);
+    hl.addColorStop(0, rgba(mixHex(color, '#ffffff', 0.35), 0.55));
+    hl.addColorStop(1, rgba(color, 0));
+    g.fillStyle = hl;
+    g.fillRect(0, 0, w, h);
+  }
+  // Barre de navigation.
+  const ny = u * 0.09;
+  const logo = logoReady(c);
+  const ls = u * 0.085;
+  if (logo) {
+    const lw = Math.min(ls * 2.5, (logo.naturalWidth / logo.naturalHeight) * ls);
+    g.drawImage(logo, u * 0.06, ny - (lw / (logo.naturalWidth / logo.naturalHeight)) / 2, lw, lw / (logo.naturalWidth / logo.naturalHeight));
+  } else {
+    g.fillStyle = 'rgba(255,255,255,0.9)';
+    g.beginPath(); g.arc(u * 0.06 + ls / 2, ny, ls / 2, 0, Math.PI * 2); g.fill();
+    g.fillStyle = color;
+    g.font = `800 ${Math.round(ls * 0.5)}px ${c.font}`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText((c.brand || 'M').slice(0, 1).toUpperCase(), u * 0.06 + ls / 2, ny + ls * 0.03);
+  }
+  const nav = s.nav?.length ? s.nav : [];
+  g.font = `500 ${Math.round(u * (vertical ? 0.042 : 0.04))}px ${c.font}`;
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(255,255,255,0.88)';
+  let nx = u * 0.06 + ls * (logo ? 2.6 : 1) + u * 0.05;
+  for (const it of nav) {
+    if (nx + g.measureText(it).width > w - u * 0.05) break;
+    g.fillText(it, nx, ny);
+    nx += g.measureText(it).width + u * 0.05;
+  }
+  // Titre.
+  const words = parseRich(s.title);
+  let tf = u * (vertical ? 0.12 : 0.13);
+  const maxW = w * (vertical ? 0.84 : 0.72);
+  let lines: Line[] = [];
+  for (let k = 0; k < 8; k++) {
+    g.font = `700 ${Math.round(tf)}px ${c.font}`;
+    lines = wrap(g, words, maxW);
+    if (lines.length <= 3) break;
+    tf *= 0.9;
+  }
+  const tx = u * 0.08;
+  let ty = h * (vertical ? 0.36 : 0.33);
+  const space = g.measureText(' ').width;
+  for (const ln of lines) {
+    let x = tx;
+    for (const wd of ln.words) {
+      g.fillStyle = wd.accent ? mixHex(c.theme.accent, '#ffffff', 0.15) : '#ffffff';
+      g.fillText(wd.text, x, ty);
+      x += wd.width + space;
+    }
+    ty += tf * 1.12;
+  }
+  if (s.button) {
+    g.font = `600 ${Math.round(u * 0.045)}px ${c.font}`;
+    const bwid = g.measureText(s.button).width + u * 0.1;
+    const bh = u * 0.095;
+    const by = ty + u * 0.02;
+    roundRect(g, tx, by, bwid, bh, c.theme.radius === 'square' ? bh * 0.12 : c.theme.radius === 'rounded' ? bh * 0.3 : bh / 2);
+    g.fillStyle = '#ffffff';
+    g.fill();
+    g.fillStyle = '#111111';
+    g.textAlign = 'center';
+    g.fillText(s.button, tx + bwid / 2, by + bh / 2 + u * 0.002);
+  }
+  g.restore();
+  // Liseré lumineux.
+  roundRect(g, 1, 1, w - 2, h - 2, rr);
+  g.lineWidth = Math.max(2, u * 0.006);
+  g.strokeStyle = rgba(mixHex(color, '#ffffff', 0.55), 0.85);
+  g.stroke();
+}
+
+/** Projette un point de la carte (repère centré) après rotation Y puis X, perspective simple. */
+function project3d(x: number, y: number, ay: number, ax: number, dist: number): [number, number] {
+  const x1 = x * Math.cos(ay);
+  let z = x * Math.sin(ay);
+  const y1 = y * Math.cos(ax) - z * Math.sin(ax);
+  z = y * Math.sin(ax) + z * Math.cos(ax);
+  const f = dist / (dist + z);
+  return [x1 * f, y1 * f];
+}
+
+/** Dessine une image plane en perspective par bandes verticales (chaque bande = transformation affine). */
+function drawPerspective(ctx: CanvasRenderingContext2D, src: CanvasImageSource, w: number, h: number, cx: number, cy: number, scale: number, ay: number, ax: number) {
+  const N = 40;
+  const dist = Math.max(w, h) * 1.6;
+  for (let i = 0; i < N; i++) {
+    const sx = (i / N) * w;
+    const sw = w / N;
+    const p0 = project3d(sx - w / 2, -h / 2, ay, ax, dist);
+    const p1 = project3d(sx + sw - w / 2, -h / 2, ay, ax, dist);
+    const p2 = project3d(sx - w / 2, h / 2, ay, ax, dist);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    const a = (p1[0] - p0[0]) / sw;
+    const b = (p1[1] - p0[1]) / sw;
+    const cc = (p2[0] - p0[0]) / h;
+    const d = (p2[1] - p0[1]) / h;
+    ctx.transform(a, b, cc, d, p0[0] - a * sx, p0[1] - b * sx);
+    // +1 px de recouvrement pour éviter les fines lignes entre les bandes.
+    ctx.drawImage(src, sx, 0, Math.min(sw + 1, w - sx), h, sx, 0, Math.min(sw + 1, w - sx), h);
+    ctx.restore();
+  }
+}
+
+/** Maquette du site qui arrive en pivotant (vraie perspective), se pose, puis change de couleur si demandé. */
+function sceneMockup(c: Ctx, s: Extract<Scene, { type: 'mockup' }>, lt: number) {
+  const { ctx, W, H } = c;
+  const cw = c.vertical ? W * 0.84 : W * 0.6;
+  const chh = c.vertical ? cw * 1.3 : cw * 0.6;
+  const off = offscreen('mockup', cw, chh);
+  if (!off) return;
+  const rc = s.recolor ? easeInOut(progress(lt, s.duration * 0.42, 0.55)) : 0;
+  const color = s.recolor ? mixHex(c.theme.primary, s.recolor, rc) : c.theme.primary;
+  paintMockup(c, off.ctx, off.canvas.width, off.canvas.height, s, color, lt);
+  const pose = (tt: number) => {
+    const p = easeOutCubic(progress(tt, 0, 1.15));
+    return {
+      ay: (1 - p) * 0.95 + Math.sin(tt * 0.9) * 0.035 * p,
+      ax: (1 - p) * -0.35,
+      x: W / 2 + (1 - p) * W * 0.32,
+      y: H / 2 + (1 - p) * H * 0.12,
+      sc: 0.62 + 0.38 * p + 0.035 * clamp((tt - 1.15) / 3)
+    };
+  };
+  // Flou de mouvement : copies fantômes tant que la carte bouge vite.
+  const fast = 1 - clamp(lt / 0.75);
+  const ghosts = fast > 0.05 ? 3 : 0;
+  for (let gk = ghosts; gk >= 0; gk--) {
+    const q = pose(Math.max(0, lt - gk * 0.035));
+    ctx.save();
+    ctx.globalAlpha *= gk === 0 ? 1 : 0.22 * fast;
+    if (gk === 0) {
+      // Halo coloré derrière la carte.
+      ctx.save();
+      const tl = project3d(-cw / 2, -chh / 2, q.ay, q.ax, Math.max(cw, chh) * 1.6);
+      const br = project3d(cw / 2, chh / 2, q.ay, q.ax, Math.max(cw, chh) * 1.6);
+      ctx.translate(q.x, q.y);
+      ctx.scale(q.sc, q.sc);
+      ctx.shadowColor = rgba(color, 0.75);
+      ctx.shadowBlur = c.U * 0.09;
+      ctx.fillStyle = rgba(color, 0.35);
+      ctx.fillRect(tl[0] + 8, tl[1] + 8, br[0] - tl[0] - 16, br[1] - tl[1] - 16);
+      ctx.restore();
+    }
+    drawPerspective(ctx, off.canvas as CanvasImageSource, off.canvas.width, off.canvas.height, q.x, q.y, q.sc, q.ay, q.ax);
+    ctx.restore();
+  }
+  // Éclair lumineux qui balaie la carte au changement de couleur.
+  if (s.recolor && rc > 0 && rc < 1) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha *= Math.sin(rc * Math.PI) * 0.5;
+    const gx = W * (rc * 1.4 - 0.2);
+    const gr = ctx.createLinearGradient(gx - W * 0.15, 0, gx + W * 0.15, 0);
+    gr.addColorStop(0, 'rgba(255,255,255,0)');
+    gr.addColorStop(0.5, rgba(s.recolor, 0.9));
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+}
+
 /** Position dans le projet : scène courante + temps local. */
 export function locate(project: MotionProject, t: number): { index: number; lt: number; start: number } {
   let start = 0;
@@ -1247,10 +1946,20 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
   ctx.imageSmoothingQuality = 'high';
   ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;
-  background(c, t);
-
   const { index, lt } = locate(project, t);
   const scene = project.scenes[index];
+  {
+    // Le flux lumineux s'efface derrière les interfaces pour garder la lisibilité, et suit le changement de couleur.
+    const dimOf = (s: Scene) => (s.type === 'logo' ? 1 : s.type === 'prompt' || s.type === 'chips' || s.type === 'mockup' ? 0.45 : s.type === 'photo' || s.type === 'video' ? 1 : 0.6);
+    const next = project.scenes[index + 1];
+    const blend = next ? clamp((lt - (scene.duration - 0.4)) / 0.4) : 0;
+    c.flowDim = dimOf(scene) * (1 - blend) + (next ? dimOf(next) : 0) * blend;
+    let bgTheme = project.theme;
+    const recolorOf = (s: Scene | undefined, l: number) => (s?.type === 'mockup' && s.recolor ? { col: s.recolor, k: easeInOut(progress(l, s.duration * 0.42, 0.55)) } : null);
+    const rc = recolorOf(scene, lt);
+    if (rc && rc.k > 0) bgTheme = { ...bgTheme, primary: mixHex(bgTheme.primary, rc.col, rc.k), accent: mixHex(bgTheme.accent, mixHex(rc.col, '#ffffff', 0.35), rc.k) };
+    background({ ...c, theme: bgTheme }, t);
+  }
   const d = scene.duration;
   const isLast = index === project.scenes.length - 1;
   c.anim = scene.anim ?? project.theme.anim ?? 'rise';
@@ -1280,6 +1989,11 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
     ctx.translate(-W / 2, -H / 2);
   } else if (tr === 'slide') {
     ctx.translate(-W / 2 + (1 - clamp(enter)) * W - exit * W, -H / 2);
+  } else if (tr === 'blur') {
+    // Mouvement de caméra rapide (la scène file vers le haut), traîné de flou ajouté plus bas.
+    const z = 1 + exit * 0.22 + (1 - clamp(enter)) * 0.1;
+    ctx.scale(z, z);
+    ctx.translate(-W / 2, -H / 2 - exit * H * 0.28 + (1 - clamp(enter)) * H * 0.28);
   } else {
     const zoom = 1 + exit * 0.08 - (1 - enter) * 0.04;
     ctx.scale(zoom, zoom);
@@ -1294,10 +2008,26 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
     case 'cta': sceneCta(c, scene, lt); break;
     case 'video': sceneVideo(c, scene, lt); break;
     case 'photo': scenePhoto(c, scene, lt, index); break;
+    case 'logo': sceneLogo(c, scene, lt, t); break;
+    case 'chips': sceneChips(c, scene, lt); break;
+    case 'prompt': scenePrompt(c, scene, lt); break;
+    case 'mockup': sceneMockup(c, scene, lt); break;
   }
   if (scene.magic?.length) for (const [k, m] of scene.magic.entries()) drawMagic(c, m, lt, d, k);
   ctx.restore();
 
+  if (tr === 'blur') {
+    // Flou de mouvement vertical pendant les mouvements de caméra.
+    const k = Math.max(index > 0 ? 1 - clamp(lt / 0.4) : 0, exit);
+    if (k > 0.03) {
+      ctx.save();
+      for (let j = 1; j <= 4; j++) {
+        ctx.globalAlpha = 0.2 * k;
+        ctx.drawImage(ctx.canvas, 0, 0, W * S, H * S, 0, j * k * c.U * 0.035, W, H);
+      }
+      ctx.restore();
+    }
+  }
   // Effet de coupe entre deux scènes.
   if (tr === 'flash' && index > 0 && lt < 0.3) {
     ctx.save();

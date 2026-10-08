@@ -35,6 +35,11 @@ function sceneText(s: Scene): string {
     case 'cta': return `${s.title} ${s.button}`;
     case 'video': return s.caption ?? '';
     case 'photo': return s.caption ?? '';
+    case 'logo': return `${s.title} ${s.subtitle ?? ''}`;
+    case 'chips': return `${s.title ?? ''} ${s.items.join(' ')}`;
+    // La demande tapée se lit au rythme de la frappe : elle compte peu dans la charge de lecture.
+    case 'prompt': return s.text.split(/\s+/).slice(0, 4).join(' ');
+    case 'mockup': return `${s.title} ${s.button ?? ''}`;
   }
 }
 const words = (t: string) => t.replace(/\*/g, '').split(/\s+/).filter(Boolean).length;

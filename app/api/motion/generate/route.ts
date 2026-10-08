@@ -8,7 +8,7 @@ import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, isAdminEmail } from '@
 import { trialsUsedEmail } from '@/lib/email/messages';
 import { sendEmail } from '@/lib/email/send';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, SFX, SceneSchema, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
+import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 /**
@@ -48,14 +48,14 @@ const FORMAT = `{
   "theme": {
     "background": "#RRGGBB", "primary": "#RRGGBB", "accent": "#RRGGBB", "text": "#RRGGBB",
     "style": "neon" | "clean" | "bold",
-    "motif": "particles" | "bubbles" | "grain" | "waves" | "confetti" | "sparkles" | "lines" | "none",
+    "motif": "flow" | "particles" | "bubbles" | "grain" | "waves" | "confetti" | "sparkles" | "lines" | "none",
     "radius": "square" | "rounded" | "pill" (style des boutons de la marque),
-    "anim": "rise" | "slam" | "mask" | "split" | "type" (animation de texte par défaut)
+    "anim": "rise" | "slam" | "mask" | "split" | "type" | "curve" | "blur" (animation de texte par défaut)
   },
-  "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch",
+  "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch" | "blur",
   "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop" | "none", "bpm": 60-170, "volume": 0-1 },
   "scenes": [ 1 à 12 scènes. Chaque scène peut avoir :
-      "anim" = animation du texte de la scène : "rise" | "slam" | "mask" | "split" | "type"
+      "anim" = animation du texte de la scène : "rise" | "slam" | "mask" | "split" | "type" | "curve" | "blur"
       "sfx" = son à son entrée : "whoosh" | "pop" | "click" | "impact" | "riser" | "chime" | "fizz" | "bubble" | "swipe" | "glitch"
       "magic" = 0 à 2 apparitions magiques : [{ "kind": "notification" | "sticker" | "badge" | "button" | "emoji" | "review" | "qr", "text": "max 60 car.", "sub": "optionnel max 60", "emoji": "optionnel, 1 emoji", "at": seconde d'apparition dans la scène, "pos": "top" | "center" | "bottom", "sfx": "optionnel" }]
     Types de scènes :
@@ -66,7 +66,11 @@ const FORMAT = `{
     { "type": "quote", "duration": 3-6, "text": "max 160", "author": "optionnel" },
     { "type": "cta", "duration": 2.5-4, "title": "max 70", "button": "max 30" },
     { "type": "video", "duration": 2-15, "media": index de la vidéo du client, "from": seconde de départ, "caption": "optionnel max 80", "captionPos": "top" | "bottom", "layout": "full" | "frame" },
-    { "type": "photo", "duration": 1.5-5, "photo": index de la photo du client, "caption": "optionnel max 80", "captionPos": "top" | "bottom", "layout": "full" | "frame" }
+    { "type": "photo", "duration": 1.5-5, "photo": index de la photo du client, "caption": "optionnel max 80", "captionPos": "top" | "bottom", "layout": "full" | "frame" },
+    { "type": "logo", "duration": 2-3, "title": "nom de la marque, max 32", "subtitle": "optionnel, signature max 80" },
+    { "type": "chips", "duration": 2.5-3.5, "title": "optionnel, question max 60", "items": ["2 à 5 boutons de max 22 car."], "pick": index du bouton cliqué par le curseur },
+    { "type": "prompt", "duration": 3-4.5, "text": "la demande du client final tapée lettre par lettre, max 120", "label": "optionnel, max 24 (ex. nom de la marque)" },
+    { "type": "mockup", "duration": 3-4.5, "title": "titre de la page, max 60", "nav": ["0 à 4 entrées de menu, max 14"], "button": "optionnel max 24", "photo": "optionnel, index d'une photo du client en fond", "recolor": "optionnel #RRGGBB : la maquette change de couleur en direct" }
   ]
 }`;
 
@@ -99,6 +103,7 @@ const RULES = `Règles techniques :
 - Ne recopie jamais un slogan déposé ou une campagne existante d'une marque : invente une création originale, même pour une grande marque.
 - Sans nom de marque fourni, n'invente pas de nom : utilise un nom générique lié à l'activité (« Votre salon », « Votre boulangerie »…).
 - Texte sur photo / vidéo : JAMAIS sur le visage ni sur le produit. "captionPos" = la zone vide, à l'opposé du sujet décrit dans les notes des photos (sujet en bas → "top"). Le moteur ajoute un calque d'assombrissement calculé selon la luminosité.
+- STYLE « DÉMO PRODUIT CINÉMATIQUE » (le niveau des pubs motion design qui cartonnent sur TikTok) : fond noir profond "motif": "flow" (rubans de lumière liquide aux couleurs de la marque), "transition": "blur" (mouvements de caméra rapides avec flou de mouvement), "anim": "blur" (mise au point flou → net) et "curve" pour la phrase finale (lettres qui arrivent en ruban). Enchaînement type : "logo" (le signe et le nom se révèlent) → "chips" (les services / publics de la marque, le curseur clique sur le bon) → "prompt" (la vraie demande d'un client, ex. « Je cherche un club de basket pour mon fils à Villeurbanne ») → "mockup" (la page du site du client qui pivote en 3D, avec sa vraie photo en fond si fournie) → "photo" pour les preuves → "title" ou "cta" final en "curve". À utiliser pour les sites, applis, services en ligne, réservations, et dès que le client veut un rendu premium / « Apple ». Les textes de "chips" et "mockup" reprennent ses vraies rubriques et offres (site web fourni) ; "recolor" seulement pour montrer une personnalisation (avant / après).
 - "theme.radius" : reprends le style de boutons du site du client s'il est fourni (carré, arrondi, pilule).
 - Format : "9:16" par défaut ; "16:9" si le client parle de YouTube (vidéo classique) ; "1:1" pour un post carré.`;
 
@@ -229,17 +234,28 @@ function repair(raw: unknown, fallback?: MotionProject): unknown {
         sc.from = Math.max(0, Number(sc.from) || 0);
         if (sc.layout !== 'frame') sc.layout = 'full';
       }
-      sc.title = cut(sc.title, sc.type === 'title' ? 90 : 60);
-      sc.subtitle = cut(sc.subtitle, 120);
+      sc.title = cut(sc.title, sc.type === 'title' ? 90 : sc.type === 'logo' ? 32 : 60);
+      sc.subtitle = cut(sc.subtitle, sc.type === 'logo' ? 80 : 120);
       sc.caption = cut(sc.caption, 80);
-      sc.text = cut(sc.text, 160);
-      sc.label = cut(sc.label, 70);
-      sc.button = cut(sc.button, 30);
-      if (Array.isArray(sc.items)) sc.items = sc.items.slice(0, 4).map((i) => cut(String(i), 60));
+      sc.text = cut(sc.text, sc.type === 'prompt' ? 120 : 160);
+      sc.label = cut(sc.label, sc.type === 'prompt' ? 24 : 70);
+      sc.button = cut(sc.button, sc.type === 'mockup' ? 24 : 30);
+      if (Array.isArray(sc.items)) sc.items = sc.type === 'chips' ? sc.items.slice(0, 5).map((i) => cut(String(i), 22)) : sc.items.slice(0, 4).map((i) => cut(String(i), 60));
+      if (sc.type === 'chips') {
+        const n = Array.isArray(sc.items) ? sc.items.length : 0;
+        sc.pick = Math.min(Math.max(0, n - 1), Math.max(0, Math.round(Number(sc.pick) || 0)));
+        if (typeof sc.title !== 'string' || !sc.title.trim()) delete sc.title;
+      }
+      if (sc.type === 'mockup') {
+        sc.nav = (Array.isArray(sc.nav) ? sc.nav : []).map((x) => String(x).trim().slice(0, 14)).filter(Boolean).slice(0, 4);
+        if (sc.photo !== undefined) { const ph = Math.round(Number(sc.photo)); if (Number.isFinite(ph) && ph >= 0 && ph < MAX_PHOTOS) sc.photo = ph; else delete sc.photo; }
+        if (typeof sc.recolor !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(sc.recolor)) delete sc.recolor;
+        if (typeof sc.button !== 'string' || !sc.button.trim()) delete sc.button;
+      }
       if (sc.type === 'stat') sc.value = Number(sc.value) || 0;
       if (sc.sfx !== undefined && !pick(SFX, sc.sfx)) delete sc.sfx;
       if (sc.captionPos !== undefined && !['top', 'bottom'].includes(String(sc.captionPos))) delete sc.captionPos;
-      if (sc.anim !== undefined && !['rise', 'slam', 'mask', 'split', 'type'].includes(String(sc.anim))) delete sc.anim;
+      if (sc.anim !== undefined && !pick(TEXT_ANIMS, sc.anim)) delete sc.anim;
       if (sc.magic !== undefined) {
         const dur = Number(sc.duration) || 3;
         const list = (Array.isArray(sc.magic) ? sc.magic : [])
@@ -269,7 +285,7 @@ function repair(raw: unknown, fallback?: MotionProject): unknown {
     const th = p.theme as Record<string, unknown>;
     if (th.motif !== undefined && !pick(MOTIFS, th.motif)) delete th.motif;
     if (th.radius !== undefined && !['square', 'rounded', 'pill'].includes(String(th.radius))) delete th.radius;
-    if (th.anim !== undefined && !['rise', 'slam', 'mask', 'split', 'type'].includes(String(th.anim))) delete th.anim;
+    if (th.anim !== undefined && !pick(TEXT_ANIMS, th.anim)) delete th.anim;
     if (!['neon', 'clean', 'bold'].includes(String(th.style))) th.style = 'clean';
   }
   if (p.transition !== undefined && !pick(TRANSITIONS, p.transition)) delete p.transition;
@@ -391,6 +407,7 @@ export async function POST(request: Request) {
         const count = media?.length ?? 0;
         const photoCount = photos?.length ?? 0;
         let scenes = result.data.scenes.filter((sc) => (sc.type !== 'video' || sc.media < count) && (sc.type !== 'photo' || sc.photo < photoCount));
+        scenes = scenes.map((sc) => (sc.type === 'mockup' && sc.photo !== undefined && sc.photo >= photoCount ? { ...sc, photo: undefined } : sc));
         // Une pub créée doit tenir ses ~15 s : si l'IA a fait trop court, on étire le rythme.
         const sum = scenes.reduce((n, sc) => n + sc.duration, 0);
         if (!project && sum > 0 && sum < 13 && !/\b([1-9]|1[0-2]) ?(s|sec|secondes)\b/i.test(prompt)) {
