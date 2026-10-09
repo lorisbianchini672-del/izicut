@@ -38,6 +38,7 @@ import {
 
 import { BrandPanel, EMPTY_BRAND, loadBrand, saveBrand } from '@/components/motion/BrandPanel';
 import { CertificationPanel } from '@/components/motion/CertificationPanel';
+import { QuickBar } from '@/components/motion/QuickBar';
 import { Button } from '@/components/ui/button';
 import type { BrandProfile } from '@/lib/brand/types';
 import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, type MotionQuota } from '@/lib/motion/plan';
@@ -718,6 +719,8 @@ export function MotionStudio() {
             project: !fresh ? project : undefined,
             media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 })),
             photos: photos.map((ph, i) => ({ index: i, name: ph.name })),
+            hasLogo: Boolean(assets.logo),
+            format: project.format,
             ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
             brand: brand.company || brand.notes.trim() || brand.brief || brand.site || brand.link ? { ...brand, site: brand.site ?? null, link: brand.link || undefined } : undefined
           })
@@ -955,11 +958,11 @@ export function MotionStudio() {
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         {/* ---------- Aperçu ---------- */}
-        <div className="flex min-w-0 flex-col items-center">
+        <div className="sticky top-0 z-30 -mx-4 flex min-w-0 flex-col items-center bg-[var(--color-ink-950,#05060a)]/95 px-4 pb-2 pt-2 backdrop-blur-xl lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:pt-0 lg:backdrop-blur-none">
 
           <div
-            className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)]"
-            style={{ aspectRatio: `${size.width} / ${size.height}`, maxWidth: `min(100%, calc(70vh * ${size.width / size.height}))` }}
+            className="relative w-full max-w-[min(100%,calc(36vh*var(--r)))] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] lg:max-w-[min(100%,calc(68vh*var(--r)))]"
+            style={{ aspectRatio: `${size.width} / ${size.height}`, ['--r' as string]: String(size.width / size.height) }}
           >
             <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className="block h-full w-full max-w-full" onClick={() => setPlaying((p) => !p)} />
             {exporting !== null ? (
@@ -1003,23 +1006,13 @@ export function MotionStudio() {
               <span className="w-16 shrink-0 text-right font-code text-xs text-fg-muted">{time.toFixed(1)} / {duration.toFixed(0)} s</span>
             </div>
           </div>
-          <CertificationPanel
-            project={project}
-            onFix={(next) => { setProject(next); timeRef.current = 0; setPlaying(true); setNotice('Pub corrigée ✓ Vérifiez le résultat dans l’aperçu.'); }}
-            hasLogo={Boolean(assets.logo)}
-            link={brand.link}
-            notes={brand.notes}
-            concept={concept?.creative_concept}
-            loggedIn={loggedIn}
-            onExport={exportVideo}
-            exporting={exporting}
-          />
+          <QuickBar project={project} onChange={setProject} />
         </div>
 
         {/* ---------- Panneau d'édition ---------- */}
         <div className="flex min-h-[420px] flex-col rounded-2xl border border-white/10 bg-white/[0.03]">
-          <div className="grid grid-cols-5 gap-1 border-b border-white/10 p-1.5">
-            {([['ia', 'IA', <Wand2 key="i" className="h-4 w-4" />], ['marque', 'Marque', <Building2 key="b" className="h-4 w-4" />], ['medias', 'Médias', <Film key="m" className="h-4 w-4" />], ['scenes', 'Scènes', <Plus key="s" className="h-4 w-4" />], ['style', 'Style', <Palette key="p" className="h-4 w-4" />]] as [Tab, string, ReactNode][]).map(([id, label, icon]) => (
+          <div className="grid grid-cols-4 gap-1 border-b border-white/10 p-1.5">
+            {([['ia', 'Créer', <Wand2 key="i" className="h-4 w-4" />], ['medias', 'Mes images', <Film key="m" className="h-4 w-4" />], ['marque', 'Ma marque', <Building2 key="b" className="h-4 w-4" />], ['style', 'Réglages', <Palette key="p" className="h-4 w-4" />]] as [Tab, string, ReactNode][]).map(([id, label, icon]) => (
               <button
                 key={id}
                 type="button"
@@ -1225,7 +1218,7 @@ export function MotionStudio() {
               </div>
             ) : null}
 
-            {tab === 'scenes' ? (
+            {tab === 'style' ? (
               <div className="space-y-3">
                 <p className="text-xs text-fg-subtle">Astuce : mettez un mot entre *astérisques* pour le colorer.</p>
                 {project.scenes.map((scene, i) => (
@@ -1434,6 +1427,19 @@ export function MotionStudio() {
           <button type="button" onClick={() => { replaceProject(BLANK_PROJECT); setMessages([]); setAssets({}); setPhotos([]); setConcept(null); setHooks([]); try { window.localStorage.removeItem(CONCEPT_KEY); } catch { /* rien */ } }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
             <RotateCcw className="h-3 w-3" /> Repartir de zéro
           </button>
+        </div>
+        <div className="min-w-0">
+            <CertificationPanel
+              project={project}
+              onFix={(next) => { setProject(next); timeRef.current = 0; setPlaying(true); setNotice('Pub corrigée ✓ Vérifiez le résultat dans l’aperçu.'); }}
+              hasLogo={Boolean(assets.logo)}
+              link={brand.link}
+              notes={brand.notes}
+              concept={concept?.creative_concept}
+              loggedIn={loggedIn}
+              onExport={exportVideo}
+              exporting={exporting}
+            />
         </div>
       </div>
     </div>

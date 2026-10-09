@@ -10,6 +10,7 @@ import { sendEmail } from '@/lib/email/send';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, BackdropSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { FREE_DOC } from '@/lib/motion/prompt';
+import { BLOCKS_DOC, StyleSchema, composeProject, parseBlocks } from '@/lib/motion/compose';
 import { coerce, repairFree } from '@/lib/motion/repair';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -32,6 +33,8 @@ const BodySchema = z.object({
   photoSheets: z.array(z.string().startsWith('data:image/').max(1_500_000)).max(2).optional(),
   /** Description des photos déjà faite lors d'un appel précédent. */
   photoNotes: z.string().max(6000).optional(),
+  hasLogo: z.boolean().optional(),
+  format: z.enum(['9:16', '16:9', '1:1']).optional(),
   brand: z
     .object({
       company: CompanySchema.nullable(),
@@ -202,7 +205,43 @@ Réponds UNIQUEMENT par : { "message": "explication de ton idée et du déroulé
 
 ${FREE_DOC}`;
 
+/**
+ * Création par BLOCS : l'IA choisit la suite de scènes premium et écrit les
+ * textes, le compositeur fabrique l'animation. JSON court → fiable même avec
+ * les IA gratuites, et rendu toujours au niveau des grandes campagnes.
+ */
+const COMPOSER = `${ATTITUDE}
+
+Tu es Directeur Artistique chez IziCut, au niveau des campagnes Spotify / Apple / Nike. Tu conçois une pub motion design de 15 s (sauf autre durée demandée) en enchaînant des BLOCS déjà animés par nos motion designers : toi, tu choisis l'ordre, les textes (courts, percutants, en français), les images et la direction artistique.
+
+${BLOCKS_DOC}
+
+RÈGLES :
+- 6 à 9 blocs. Structure : HOOK (reveal ou kinetic choc) → enjeu / bénéfice → preuves visuelles → signature "cta" en dernier.
+- Varie les blocs : jamais deux fois le même bloc d'affilée, au moins 4 blocs différents.
+- PHOTOS DU CLIENT = INFORMATIONS : utilise CHAQUE photo au moins une fois. Pour la photo la plus parlante, un bloc "explain" avec 1 à 3 annotations placées sur les points clés indiqués (x = fx, y = fy). Avec 3 photos ou plus : un "carousel" ou un "wall". Deux photos du même sujet avant/après : "compare".
+- Sans photo du client : utilise "search:mots-clés en anglais" (photos libres de droits) dans 1 à 3 blocs, et privilégie kinetic, card, list, stat (stat UNIQUEMENT avec un vrai chiffre donné par le client), cta.
+- Textes très courts : 2 à 6 mots par ligne. Aucun faux avis, faux chiffre ni fausse promo.
+- Style : fond et couleurs aux couleurs de la marque (site web fourni = sa charte). Fonds clairs : "paper" seulement si la marque est très claire ; sinon "glow", "silk", "aurora", "mesh", "liquid", "nebula"… Musique et bpm adaptés à l'émotion.
+- Format : "9:16" par défaut, "16:9" pour YouTube, "1:1" pour un post carré.
+
+Réponds UNIQUEMENT par un objet JSON COMPACT :
+{"message":"4 à 6 phrases pour le client : ce que tu as compris, l'idée créative, l'esthétique et le déroulé","plan":["Scène N — ce qu'on voit"],"question":"une question courte ou chaîne vide","brand":"nom de la marque","format":"9:16","style":{…},"blocks":[…]}`;
+
 const pick = <T extends readonly string[]>(list: T, v: unknown): T[number] | undefined => (list as readonly unknown[]).includes(v) ? (v as T[number]) : undefined;
+
+/** Style de l'IA : on garde chaque champ valide séparément (un fond inconnu n'annule pas les couleurs). */
+function safeStyle(raw: unknown): z.infer<typeof StyleSchema> {
+  const full = StyleSchema.safeParse(raw);
+  if (full.success) return full.data;
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const out: z.infer<typeof StyleSchema> = {};
+  for (const k of ['backdrop', 'colors', 'accent', 'music', 'bpm'] as const) {
+    const one = StyleSchema.safeParse({ [k]: k === 'colors' && Array.isArray(o.colors) ? o.colors.filter((c) => typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)).slice(0, 4) : o[k] });
+    if (one.success) Object.assign(out, one.data);
+  }
+  return out;
+}
 
 /** Nettoie le concept créatif (textes trop longs, champs manquants). */
 function repairConcept(raw: unknown): Concept | undefined {
@@ -436,28 +475,42 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
   try {
     let lastError = '';
     const t0 = Date.now();
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < (project ? 2 : 3); attempt++) {
       // Pas de seconde tentative si le temps manque (limite Vercel 300 s).
       if (attempt > 0 && Date.now() - t0 > 200_000) break;
-      const lite = attempt > 0 && !project;
+      // Création : d'abord par blocs (rendu premium garanti), en dernier recours la version libre légère.
+      const composer = !project && attempt < 2;
+      const lite = !project && !composer;
       let raw: unknown;
       try {
         raw = await chatJson({
-          system: project ? EDITOR : lite ? LITE : DIRECTOR(free),
+          system: project ? EDITOR : composer ? COMPOSER : LITE,
           user: attempt === 0 ? userMsg : `${userMsg}\n\n${lastError ? `ATTENTION : ta réponse précédente était invalide (${lastError}). ` : ''}Respecte exactement le format JSON, en restant concis.`,
-          maxTokens: lite ? 7000 : project ? 9000 : 10000,
+          maxTokens: composer ? 5000 : lite ? 7000 : 9000,
           temperature: project ? 0.5 : 0.85,
           // Réflexion approfondie de Claude au premier essai.
-          think: attempt === 0 ? (project ? 3000 : 5000) : 0,
+          think: attempt === 0 ? (project ? 3000 : 4000) : 0,
           timeoutMs: 150_000,
           deadline: t0 + 280_000
         });
       } catch (err) {
         if (err instanceof AiNotConfiguredError) throw err;
-        // Tous les fournisseurs ont échoué sur la grande version : on tente la version légère.
         lastError = '';
         console.warn('[motion] essai', attempt + 1, 'sans réponse exploitable :', (err as Error).message);
         continue;
+      }
+      let composed: MotionProject | null = null;
+      if (composer) {
+        const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+        const blocks = parseBlocks(r.blocks);
+        if (blocks.length < 3) {
+          lastError = 'il faut un champ "blocks" avec au moins 3 blocs valides';
+          continue;
+        }
+        const fmt = pick(['9:16', '16:9', '1:1'] as const, r.format) ?? parsed.data.format ?? '9:16';
+        const brandName = (typeof r.brand === 'string' && r.brand.trim() ? r.brand.trim() : brand?.company?.name ?? 'Votre marque').slice(0, 40);
+        composed = composeProject(blocks, safeStyle(r.style), { brand: brandName, hasLogo: Boolean(parsed.data.hasLogo), format: fmt, photos: photos?.length ?? 0 });
+        raw = { message: r.message, plan: r.plan, question: r.question, project: composed };
       }
       const wrapped = Boolean(raw && typeof raw === 'object' && 'project' in (raw as Record<string, unknown>));
       const said = wrapped ? (raw as Record<string, unknown>) : {};
@@ -465,7 +518,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
       const plan = Array.isArray(said.plan) ? said.plan.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map((x) => x.slice(0, 300)).slice(0, 16) : undefined;
       const question = typeof said.question === 'string' && said.question.trim() ? said.question.slice(0, 200) : undefined;
       const concept = wrapped && !project ? repairConcept((raw as Record<string, unknown>).concept) : undefined;
-      const result = MotionProjectSchema.safeParse(repair(wrapped ? (raw as Record<string, unknown>).project : raw, project));
+      const result = MotionProjectSchema.safeParse(composed ?? repair(wrapped ? (raw as Record<string, unknown>).project : raw, project));
       // 3 accroches A/B (offres payantes).
       const hookList: Scene[] = [];
       if (wrapped && !free && Array.isArray((raw as Record<string, unknown>).hooks)) {
