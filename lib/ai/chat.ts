@@ -21,7 +21,7 @@ export class AiNotConfiguredError extends Error {
 
 type Provider = { name: string; url: string; key: string; model: string; vision?: string; json: boolean; kind?: 'openai' | 'anthropic' };
 /** think = budget de réflexion (tokens) : Claude réfléchit en profondeur avant de répondre. */
-type ChatOptions = { system: string; user: string; maxTokens?: number; temperature?: number; think?: number };
+type ChatOptions = { system: string; user: string; maxTokens?: number; temperature?: number; think?: number; /** Temps max par fournisseur (ms) : une grosse création JSON prend 1 à 2 min. */ timeoutMs?: number; /** Heure limite globale (Date.now()) : on n'essaie plus de fournisseur après. */ deadline?: number };
 type Part = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
 function providers(): Provider[] {
@@ -40,6 +40,38 @@ export function aiConfigured(): boolean {
   return providers().length > 0;
 }
 
+/**
+ * Réponse coupée en plein milieu (limite de longueur atteinte) : on revient au
+ * dernier élément complet et on referme les crochets / accolades ouverts.
+ */
+export function closeTruncatedJson(text: string): string | null {
+  const stack: string[] = [];
+  let inStr = false;
+  let esc = false;
+  let lastSafe = -1;
+  let safeStack: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') stack.push(ch === '{' ? '}' : ']');
+    else if (ch === '}' || ch === ']') {
+      stack.pop();
+      lastSafe = i;
+      safeStack = [...stack];
+      if (!stack.length) return text.slice(0, i + 1);
+    } else if (ch === ',') { lastSafe = i - 1; safeStack = [...stack]; }
+  }
+  if (lastSafe < 0) return null;
+  const body = text.slice(0, lastSafe + 1).replace(/,\s*$/, '');
+  return body + safeStack.reverse().join('');
+}
+
 /** Extrait le premier objet JSON d'une réponse (tolère du texte autour). */
 export function parseJsonObject(text: string): unknown {
   const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
@@ -48,13 +80,19 @@ export function parseJsonObject(text: string): unknown {
   } catch {
     const start = clean.indexOf('{');
     const end = clean.lastIndexOf('}');
-    if (start >= 0 && end > start) return JSON.parse(clean.slice(start, end + 1));
+    if (start >= 0 && end > start) {
+      try { return JSON.parse(clean.slice(start, end + 1)); } catch { /* peut-être coupé : on répare */ }
+    }
+    if (start >= 0) {
+      const fixed = closeTruncatedJson(clean.slice(start));
+      if (fixed) return JSON.parse(fixed);
+    }
     throw new Error("Réponse de l'IA illisible");
   }
 }
 
 /** Claude (API Messages d'Anthropic) : le système est à part, les images en base64. */
-async function callAnthropic(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean, think = 0): Promise<string> {
+async function callAnthropic(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean, think = 0, timeoutMs = 110_000): Promise<string> {
   const system = messages.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n\n');
   const conv = messages.filter((m) => m.role !== 'system').map((m) => ({
     role: m.role === 'assistant' ? 'assistant' : 'user',
@@ -77,7 +115,7 @@ async function callAnthropic(p: Provider, model: string, messages: { role: strin
       system: json ? `${system}\n\nRéponds uniquement par l'objet JSON demandé, sans texte autour ni balises de code.` : system || undefined,
       messages: conv
     }),
-    signal: AbortSignal.timeout(withThinking ? 240_000 : 110_000)
+    signal: AbortSignal.timeout(withThinking ? Math.max(timeoutMs, 200_000) : timeoutMs)
   });
   let res = await send(think > 0);
   // Modèle sans réflexion étendue : on refait la demande sans elle.
@@ -92,8 +130,8 @@ async function callAnthropic(p: Provider, model: string, messages: { role: strin
   return text;
 }
 
-async function call(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean, think = 0): Promise<string> {
-  if (p.kind === 'anthropic') return callAnthropic(p, model, messages, maxTokens, temperature, json, think);
+async function call(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean, think = 0, timeoutMs = 40_000): Promise<string> {
+  if (p.kind === 'anthropic') return callAnthropic(p, model, messages, maxTokens, temperature, json, think, Math.max(timeoutMs, 110_000));
   const res = await fetch(p.url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${p.key}`, 'Content-Type': 'application/json' },
@@ -104,7 +142,7 @@ async function call(p: Provider, model: string, messages: { role: string; conten
       ...(json && p.json ? { response_format: { type: 'json_object' } } : {}),
       messages
     }),
-    signal: AbortSignal.timeout(think > 0 ? 120_000 : 40_000)
+    signal: AbortSignal.timeout(timeoutMs)
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
@@ -120,11 +158,12 @@ async function call(p: Provider, model: string, messages: { role: string; conten
 }
 
 /** Essaie chaque fournisseur dans l'ordre jusqu'à obtenir une réponse. */
-async function cascade(run: (p: Provider) => Promise<string>, filter: (p: Provider) => boolean = () => true): Promise<string> {
+async function cascade(run: (p: Provider) => Promise<string>, filter: (p: Provider) => boolean = () => true, deadline = Infinity): Promise<string> {
   const list = providers().filter(filter);
   if (!list.length) throw new AiNotConfiguredError();
   let last: unknown = null;
   for (const p of list) {
+    if (Date.now() > deadline - 15_000) break;
     try {
       return await run(p);
     } catch (err) {
@@ -137,10 +176,15 @@ async function cascade(run: (p: Provider) => Promise<string>, filter: (p: Provid
   throw Object.assign(new Error('Notre IA est très demandée en ce moment. Nouvel essai automatique dans quelques secondes…'), { busy: true });
 }
 
-export async function chatJson({ system, user, maxTokens = 1500, temperature = 0.7, think = 0 }: ChatOptions): Promise<unknown> {
-  const content = await cascade((p) =>
-    call(p, p.model, [{ role: 'system', content: system }, { role: 'user', content: user }], maxTokens, temperature, true, think)
-  );
+export async function chatJson({ system, user, maxTokens = 1500, temperature = 0.7, think = 0, timeoutMs = 40_000, deadline = Infinity }: ChatOptions): Promise<unknown> {
+  // Chaque fournisseur doit répondre avec un JSON lisible ; sinon on passe au suivant.
+  const content = await cascade((p) => {
+    const left = deadline === Infinity ? timeoutMs : Math.max(10_000, Math.min(timeoutMs, deadline - Date.now() - 5_000));
+    return call(p, p.model, [{ role: 'system', content: system }, { role: 'user', content: user }], maxTokens, temperature, true, think, left).then((text) => {
+      parseJsonObject(text);
+      return text;
+    });
+  }, () => true, deadline);
   return parseJsonObject(content);
 }
 

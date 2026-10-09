@@ -148,7 +148,7 @@ Méthode :
 ${free ? '' : `5. A/B TESTING : 3 accroches alternatives pour la scène 1 — A = problème / frustration, B = bénéfice / résultat, C = curiosité / question intrigante. La scène 1 du projet = l'accroche A.
 6. VOIX-OFF : 35 à 40 mots maximum pour 15 s, ton dynamique et naturel, une réplique par moment clé, avec marqueurs de bruitages ([Whoosh], [Pop], [Click], [Ding]). La musique baissera de 12 dB pendant chaque réplique.
 `}
-Tout est rédigé en FRANÇAIS. Réponds UNIQUEMENT par un objet JSON :
+Tout est rédigé en FRANÇAIS. Taille : 5 à 7 scènes, 12 calques maximum par scène "free", JSON COMPACT (sans espaces inutiles ni retours à la ligne) pour que la réponse ne soit jamais coupée. Réponds UNIQUEMENT par un objet JSON :
 {
   "message": "explication claire et DÉTAILLÉE pour le client (4 à 8 phrases) : ce que tu as compris de sa demande, ton idée créative, l'esthétique choisie et pourquoi, le déroulé de la pub, et ce qu'il peut te demander ensuite (tutoiement si le client tutoie)",
   "plan": ["une ligne par scène : « Scène N (durée) — ce qu'on voit, comment ça bouge, quel son » ; puis 1 à 3 idées pour aller plus loin"],
@@ -180,7 +180,8 @@ ${RULES}`;
 const EDITOR = `${ATTITUDE}
 
 Tu es le Directeur Créatif motion design d'IziCut. Le client retouche une pub animée existante.
-Applique UNIQUEMENT la modification demandée (« modifie le rythme », « change la palette », « plus moderne », « ajoute un effet »…) sans détruire l'harmonie globale, et renvoie le projet COMPLET mis à jour (garde à l'identique theme.motif, transition, sound, sfx et magic s'ils ne sont pas concernés).
+Si le client demande une pub TOTALEMENT NOUVELLE (autre sujet, autre produit, autre marque : « fais une pub pour… »), crée-la de zéro : nouveau projet complet, sans rien garder de l'ancien.
+Sinon, applique UNIQUEMENT la modification demandée (« modifie le rythme », « change la palette », « plus moderne », « ajoute un effet »…) sans détruire l'harmonie globale, et renvoie le projet COMPLET mis à jour (garde à l'identique theme.motif, transition, sound, sfx et magic s'ils ne sont pas concernés).
 Traduis les demandes floues ou hésitantes (« un truc qui pète ») en décisions visuelles précises.
 Réponds UNIQUEMENT par un objet JSON :
 {
@@ -191,6 +192,14 @@ Réponds UNIQUEMENT par un objet JSON :
 }
 
 ${RULES}`;
+
+/** Deuxième chance, plus légère : si la grande création n'aboutit pas, on demande une version courte mais 100 % sur mesure. */
+const LITE = `${ATTITUDE}
+
+Tu es motion designer chez IziCut. Crée la pub demandée en 4 à 6 scènes, TOUTES de type "free" (création libre), 4 à 9 calques chacune, 12 à 16 s au total. JSON COMPACT. Tout en français.
+Réponds UNIQUEMENT par : { "message": "explication de ton idée et du déroulé (3 à 5 phrases)", "plan": ["Scène N — …"], "project": { "format": "9:16" | "16:9" | "1:1", "brand": "...", "theme": { "background": "#RRGGBB", "primary": "#RRGGBB", "accent": "#RRGGBB", "text": "#RRGGBB", "style": "neon" | "clean" | "bold" }, "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch" | "blur", "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170 }, "scenes": [ { "type": "free", "duration": 2-4, "bg": "#RRGGBB" ou dégradé, "camera": {...}, "layers": [...], "cues": [...] } ] } }
+
+${FREE_DOC}`;
 
 const pick = <T extends readonly string[]>(list: T, v: unknown): T[number] | undefined => (list as readonly unknown[]).includes(v) ? (v as T[number]) : undefined;
 
@@ -304,6 +313,21 @@ function repair(raw: unknown, fallback?: MotionProject): unknown {
       return sc;
     }).filter((s) => SceneSchema.safeParse(s).success);
   }
+  // Valeurs de secours : un thème ou un format manquant ne doit jamais faire échouer une pub.
+  const HEXRE = /^#[0-9a-fA-F]{6}$/;
+  if (!['9:16', '16:9', '1:1'].includes(String(p.format))) p.format = fallback?.format ?? '9:16';
+  if (typeof p.brand !== 'string') p.brand = fallback?.brand ?? '';
+  p.brand = String(p.brand).slice(0, 40);
+  if (!p.theme || typeof p.theme !== 'object') p.theme = { ...(fallback?.theme ?? {}) };
+  {
+    const th = p.theme as Record<string, unknown>;
+    const def = fallback?.theme ?? { background: '#07060f', primary: '#a990ff', accent: '#ffbe76', text: '#ffffff', style: 'neon' };
+    for (const k of ['background', 'primary', 'accent', 'text'] as const) {
+      const v = typeof th[k] === 'string' ? (th[k] as string).trim() : '';
+      const short = v.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i);
+      th[k] = HEXRE.test(v) ? v : short ? `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}` : def[k];
+    }
+  }
   if (p.theme && typeof p.theme === 'object') {
     const th = p.theme as Record<string, unknown>;
     if (th.motif !== undefined && !pick(MOTIFS, th.motif)) delete th.motif;
@@ -407,15 +431,27 @@ export async function POST(request: Request) {
     const t0 = Date.now();
     for (let attempt = 0; attempt < 2; attempt++) {
       // Pas de seconde tentative si le temps manque (limite Vercel 300 s).
-      if (attempt > 0 && Date.now() - t0 > 170_000) break;
-      const raw = await chatJson({
-        system: project ? EDITOR : DIRECTOR(free),
-        user: attempt === 0 ? userMsg : `${userMsg}\n\nATTENTION : ta réponse précédente était invalide (${lastError}). Respecte exactement le format JSON.`,
-        maxTokens: project ? 9000 : free ? 9000 : 14000,
-        temperature: project ? 0.5 : 0.85,
-        // Réflexion approfondie de Claude au premier essai.
-        think: attempt === 0 ? (project ? 3000 : 6000) : 0
-      });
+      if (attempt > 0 && Date.now() - t0 > 200_000) break;
+      const lite = attempt > 0 && !project;
+      let raw: unknown;
+      try {
+        raw = await chatJson({
+          system: project ? EDITOR : lite ? LITE : DIRECTOR(free),
+          user: attempt === 0 ? userMsg : `${userMsg}\n\n${lastError ? `ATTENTION : ta réponse précédente était invalide (${lastError}). ` : ''}Respecte exactement le format JSON, en restant concis.`,
+          maxTokens: lite ? 7000 : project ? 9000 : 10000,
+          temperature: project ? 0.5 : 0.85,
+          // Réflexion approfondie de Claude au premier essai.
+          think: attempt === 0 ? (project ? 3000 : 5000) : 0,
+          timeoutMs: 150_000,
+          deadline: t0 + 280_000
+        });
+      } catch (err) {
+        if (err instanceof AiNotConfiguredError) throw err;
+        // Tous les fournisseurs ont échoué sur la grande version : on tente la version légère.
+        lastError = '';
+        console.warn('[motion] essai', attempt + 1, 'sans réponse exploitable :', (err as Error).message);
+        continue;
+      }
       const wrapped = Boolean(raw && typeof raw === 'object' && 'project' in (raw as Record<string, unknown>));
       const said = wrapped ? (raw as Record<string, unknown>) : {};
       const message = typeof said.message === 'string' ? said.message.slice(0, 1400) : undefined;

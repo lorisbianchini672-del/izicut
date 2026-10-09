@@ -349,6 +349,37 @@ export const THEME_PRESETS: { name: string; theme: MotionProject['theme'] }[] = 
   { name: 'Clair', theme: { background: '#f4f5f9', primary: '#5b5bf6', accent: '#ff4d8d', text: '#101225', style: 'clean' } }
 ];
 
+/**
+ * Toile vierge à l'arrivée dans le Studio : aucun style imposé, juste une
+ * invitation à décrire sa pub. C'est l'IA qui invente tout le reste.
+ */
+export const BLANK_PROJECT: MotionProject = {
+  format: '9:16',
+  brand: '',
+  theme: { background: '#06050d', primary: '#a990ff', accent: '#ffbe76', text: '#ffffff', style: 'clean', motif: 'none' },
+  scenes: [
+    {
+      type: 'free',
+      duration: 6,
+      name: 'Toile vierge',
+      bg: { from: '#0d0a1f', to: '#040309', radial: true },
+      layers: [
+        { kind: 'glow', x: 0.5, y: 0.44, color: '#7c5cf0', size: [{ t: 0, v: 420 }, { t: 3, v: 520, e: 'inOut' }, { t: 6, v: 420, e: 'inOut' }], opacity: 0.5, blend: 'add' },
+        { kind: 'ellipse', x: 0.5, y: 0.44, w: 300, stroke: { color: '#a990ff', width: 2 }, opacity: 0.45, progress: [{ t: 0, v: 0 }, { t: 1.6, v: 1, e: 'inOut' }], rotate: [{ t: 0, v: -90 }, { t: 6, v: 0, e: 'linear' }] },
+        { kind: 'text', x: 0.5, y: 0.44, text: '+', size: 120, weight: 200, color: '#d9d0ff', reveal: 'scale', revealAt: 0.4 },
+        { kind: 'text', x: 0.5, y: 0.6, text: 'Décrivez votre pub', size: 62, weight: 700, reveal: 'blur', revealAt: 0.6 },
+        { kind: 'text', x: 0.5, y: 0.655, text: 'L’IA la dessine et l’anime de A à Z', size: 34, weight: 400, color: '#a49cc7', reveal: 'rise', revealAt: 1.1 },
+        { kind: 'particles', x: 0.5, y: 0.5, mode: 'float', count: 26, color: '#a990ff', color2: '#ffbe76', size: 4, spread: 0.6, speed: 0.6 }
+      ]
+    }
+  ]
+};
+
+/** Le projet affiché est-il encore la toile vierge ? */
+export function isBlankProject(p: MotionProject): boolean {
+  return p.scenes.length === 1 && p.scenes[0].type === 'free' && p.scenes[0].name === 'Toile vierge';
+}
+
 export const TEMPLATES: { id: string; name: string; description: string; project: MotionProject }[] = [
   {
     id: 'cinema',

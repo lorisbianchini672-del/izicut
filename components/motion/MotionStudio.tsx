@@ -67,7 +67,8 @@ import {
   type MagicKind,
   type Sfx,
   SCENE_LABELS,
-  TEMPLATES,
+  BLANK_PROJECT,
+  isBlankProject,
   THEME_PRESETS,
   defaultScene,
   totalDuration,
@@ -166,7 +167,7 @@ function contrastText(bg: string): string {
 export function MotionStudio() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
-  const [project, setProject] = useState<MotionProject>(TEMPLATES[0].project);
+  const [project, setProject] = useState<MotionProject>(BLANK_PROJECT);
   const [assets, setAssets] = useState<MotionAssets>({});
   /** Photos libres de droits demandées par l'IA (« search:… »), avec leur crédit. */
   const [webImgs, setWebImgs] = useState<Record<string, HTMLImageElement | null>>({});
@@ -635,13 +636,16 @@ export function MotionStudio() {
     setAiStatus(steps[0]);
     const stepTimer = window.setInterval(() => { stepIdx = Math.min(steps.length - 1, stepIdx + 1); setAiStatus(steps[stepIdx]); }, 9000);
     const photoKey = photos.map((ph) => ph.url).join('|');
+    // Nouvelle pub (et non retouche) : premier message, toile vierge, ou demande explicite d'une autre pub.
+    const wantsNew = /\b(fais|fait|faire|cr[ée]e[rz]?|g[ée]n[èe]re[rz]?|r[ée]alise[rz]?|imagine[rz]?|monte[rz]?|refais|nouvelle|autre)\b[^.?!]{0,40}\b(pub|publicit[ée]|vid[ée]o|spot|annonce|clip|reel|tiktok)\b/i.test(value) && !/\b(modifi|chang|remplac|garde|ajoute|enl[eè]ve|retire|corrige|plus |moins )/i.test(value);
+    const fresh = Boolean(opts.fresh) || !messages.length || isBlankProject(project) || wantsNew;
     setMessages((m) => [...m, { role: 'user', text: value }]);
     try {
       // Jusqu'à 3 essais : si l'IA est saturée ou se trompe de format, on relance
       // automatiquement sans afficher d'erreur technique au client.
       let res: Response | null = null;
       let json: Record<string, unknown> & { [k: string]: any } = {};
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         if (attempt > 0) {
           setAiStatus(attempt === 1 ? 'Je peaufine encore un peu…' : 'Dernière passe, la pub arrive…');
           await new Promise((r) => setTimeout(r, attempt * 5000));
@@ -652,7 +656,7 @@ export function MotionStudio() {
           body: JSON.stringify({
             prompt: value,
             // Premier message = nouvelle pub (concept complet) ; ensuite = modifications.
-            project: !opts.fresh && messages.length ? project : undefined,
+            project: !fresh ? project : undefined,
             media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 })),
             photos: photos.map((ph, i) => ({ index: i, name: ph.name })),
             ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
@@ -667,7 +671,7 @@ export function MotionStudio() {
       if (typeof json.photoNotes === 'string' && json.photoNotes) photoNotesRef.current = { key: photoKey, notes: json.photoNotes };
       if (json.quota) setQuota(json.quota as MotionQuota);
       if (!res.ok || !json.project) throw new Error(json.error ?? 'L’IA n’a pas pu répondre.');
-      if (!(opts.fresh || !messages.length) || !json.concept) { /* retouche : on garde les accroches */ } else setHooks(Array.isArray(json.hooks) ? (json.hooks as Scene[]) : []);
+      if (!fresh || !json.concept) { /* retouche : on garde les accroches */ } else setHooks(Array.isArray(json.hooks) ? (json.hooks as Scene[]) : []);
       replaceProject(json.project as MotionProject);
       if (json.concept) {
         setConcept(json.concept as Concept);
@@ -822,19 +826,7 @@ export function MotionStudio() {
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         {/* ---------- Aperçu ---------- */}
         <div className="flex min-w-0 flex-col items-center">
-          <div className="mb-3 flex w-full flex-wrap justify-center gap-2">
-            {TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.id}
-                type="button"
-                onClick={() => { replaceProject(tpl.project); setMessages([]); }}
-                className="cursor-pointer rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-fg-muted transition hover:border-neon/40 hover:text-fg"
-                title={tpl.description}
-              >
-                {tpl.name}
-              </button>
-            ))}
-          </div>
+
           <div
             className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)]"
             style={{ aspectRatio: `${size.width} / ${size.height}`, maxWidth: `min(100%, calc(70vh * ${size.width / size.height}))` }}
@@ -1252,7 +1244,7 @@ export function MotionStudio() {
               Offre Free : petite mention « Réalisé avec IziCut ». <Link href="/#pricing" className="text-neon underline">Passer en Pro</Link> pour la retirer.
             </p>
           ) : null}
-          <button type="button" onClick={() => { replaceProject(TEMPLATES[0].project); setMessages([]); setAssets({}); setPhotos([]); setConcept(null); setHooks([]); try { window.localStorage.removeItem(CONCEPT_KEY); } catch { /* rien */ } }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
+          <button type="button" onClick={() => { replaceProject(BLANK_PROJECT); setMessages([]); setAssets({}); setPhotos([]); setConcept(null); setHooks([]); try { window.localStorage.removeItem(CONCEPT_KEY); } catch { /* rien */ } }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
             <RotateCcw className="h-3 w-3" /> Repartir de zéro
           </button>
         </div>
