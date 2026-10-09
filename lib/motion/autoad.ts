@@ -133,7 +133,14 @@ function sectorTag(p: BrandProfile, sector: Sector): string {
   return sp ? `Club de ${sp === 'foot' ? 'football' : sp}` : sector.tag;
 }
 
-const short = (s: string, n: number) => s.replace(/[.!]+$/, '').trim().slice(0, n);
+/** Coupe au dernier mot entier (jamais « Livraison et retours g »). */
+const short = (s: string, n: number) => {
+  const t = s.replace(/[.!]+$/, '').trim();
+  if (t.length <= n) return t;
+  const cut = t.slice(0, n + 1);
+  const i = cut.lastIndexOf(' ');
+  return (i > n * 0.5 ? cut.slice(0, i) : t.slice(0, n)).replace(/[\s,;:–-]+$/, '');
+};
 
 export function buildCinematicAd(p: BrandProfile, opts: { photos: number; format?: MotionProject['format'] }): MotionProject {
   const sector = detectSector(p);
@@ -177,7 +184,7 @@ export function buildCinematicAd(p: BrandProfile, opts: { photos: number; format
   return {
     format: opts.format ?? '9:16',
     brand: name.slice(0, 40),
-    theme: { background: pal.background, primary: pal.primary, accent: pal.accent, text: '#ffffff', style: 'neon', motif: 'flow', radius: p.site?.radius ?? 'pill', anim: 'blur' },
+    theme: { background: pal.background, primary: pal.primary, accent: pal.accent, text: '#ffffff', style: 'neon', motif: 'none', radius: p.site?.radius ?? 'pill', anim: 'blur', backdrop: { kind: 'silk' } },
     transition: 'blur',
     sound: { music: sector.music, bpm: sector.bpm, volume: 0.8 },
     scenes: scenes.slice(0, 12)

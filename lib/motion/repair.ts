@@ -4,7 +4,7 @@
  */
 import { z } from 'zod';
 
-import { EASES, FreeSceneSchema, GroupLayer, LeafLayer, SFX } from './types';
+import { BackdropSchema, EASES, FreeSceneSchema, GroupLayer, LeafLayer, SFX } from './types';
 
 const pick = <T extends readonly string[]>(list: T, v: unknown): T[number] | undefined => ((list as readonly unknown[]).includes(v) ? (v as T[number]) : undefined);
 
@@ -80,7 +80,10 @@ export function repairFree(raw: Record<string, unknown>): Record<string, unknown
   };
   const layers = (Array.isArray(sc.layers) ? sc.layers : []).map(fixLayer).filter(Boolean).slice(0, 40);
   if (!layers.length) return null;
-  if (sc.bg !== undefined && sc.bg !== 'theme' && !coerce(z.union([z.string().regex(/^#[0-9a-fA-F]{6}$/), z.object({ from: z.string(), to: z.string() }).passthrough()]), sc.bg)) sc.bg = 'theme';
+  if (sc.bg && typeof sc.bg === 'object' && 'kind' in (sc.bg as object)) {
+    // Fond animé GPU : réparé (couleurs, réglages) ou remplacé par le fond de la pub.
+    sc.bg = coerce(BackdropSchema, sc.bg) ?? 'theme';
+  } else if (sc.bg !== undefined && sc.bg !== 'theme' && !coerce(z.union([z.string().regex(/^#[0-9a-fA-F]{6}$/), z.object({ from: z.string(), to: z.string() }).passthrough()]), sc.bg)) sc.bg = 'theme';
   if (Array.isArray(sc.cues)) sc.cues = sc.cues.filter((q) => q && typeof q === 'object' && pick(SFX, (q as Record<string, unknown>).sfx)).slice(0, 12);
   return coerce(FreeSceneSchema, { ...sc, layers });
 }

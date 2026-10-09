@@ -44,6 +44,7 @@ import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, type MotionQuota } fro
 import { buildCinematicAd } from '@/lib/motion/autoad';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { drawFrame, locate, type MotionAssets } from '@/lib/motion/render';
+import { BACKDROPS, BACKDROP_LABELS, drawBackdrop, type BackdropKind } from '@/lib/motion/gl-bg';
 import { SoundPlayer, renderSoundtrack, type VoiceTrack } from '@/lib/motion/sound';
 import {
   FORMAT_SIZE,
@@ -1155,6 +1156,58 @@ export function MotionStudio() {
                     ))}
                   </div>
                 </Field>
+                <Field label="Fond animé (qualité cinéma)">
+                  <div className="grid grid-cols-4 gap-1.5">
+                    <button type="button" onClick={() => setProject((p) => ({ ...p, theme: { ...p.theme, backdrop: undefined } }))} className={cn('cursor-pointer rounded-lg border p-1 text-[10px] transition', !project.theme.backdrop ? 'border-neon text-neon' : 'border-white/10 text-fg-muted hover:border-neon/40')}>
+                      <span className="mb-1 grid aspect-[9/16] w-full place-items-center rounded-md bg-white/[0.04] text-base">∅</span>
+                      Classique
+                    </button>
+                    {BACKDROPS.filter((k) => k !== 'custom' || project.theme.backdrop?.kind === 'custom').map((k) => (
+                      <button key={k} type="button" onClick={() => setProject((p) => ({ ...p, theme: { ...p.theme, backdrop: { ...(p.theme.backdrop?.kind === k ? p.theme.backdrop : {}), kind: k, glsl: k === 'custom' ? p.theme.backdrop?.glsl : undefined } } }))} className={cn('cursor-pointer rounded-lg border p-1 text-[10px] transition', project.theme.backdrop?.kind === k ? 'border-neon text-neon' : 'border-white/10 text-fg-muted hover:border-neon/40')}>
+                        <BackdropThumb kind={k} colors={project.theme.backdrop?.kind === k && project.theme.backdrop.colors?.length ? project.theme.backdrop.colors : undefined} theme={project.theme} glsl={k === 'custom' ? project.theme.backdrop?.glsl : undefined} />
+                        {BACKDROP_LABELS[k]}
+                      </button>
+                    ))}
+                  </div>
+                  {project.theme.backdrop ? (
+                    <div className="mt-2 space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+                      <div className="grid grid-cols-4 gap-2">
+                        {[0, 1, 2, 3].map((i) => {
+                          const bd = project.theme.backdrop!;
+                          const def = [project.theme.primary, project.theme.primary, project.theme.accent, project.theme.accent];
+                          const cols = bd.colors?.length ? [...bd.colors, ...def].slice(0, 4) : def;
+                          return (
+                            <label key={i} className="flex flex-col items-center gap-1 text-[10px] text-fg-muted">
+                              <input type="color" value={cols[i]} onChange={(e) => setProject((p) => ({ ...p, theme: { ...p.theme, backdrop: { ...p.theme.backdrop!, colors: cols.map((c, j) => (j === i ? e.target.value : c)) } } }))} className="h-8 w-full cursor-pointer rounded-lg border border-white/10 bg-transparent" />
+                              Couleur {i + 1}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {([['speed', 'Vitesse', 0, 3, 1], ['intensity', 'Intensité', 0, 2, 1], ['scale', 'Échelle', 0.3, 3, 1]] as const).map(([key, label, min, max, def]) => (
+                        <label key={key} className="flex items-center gap-2 text-xs text-fg-muted">
+                          <span className="w-16">{label}</span>
+                          <input type="range" min={min} max={max} step={0.05} value={project.theme.backdrop?.[key] ?? def} onChange={(e) => setProject((p) => ({ ...p, theme: { ...p.theme, backdrop: { ...p.theme.backdrop!, [key]: Number(e.target.value) } } }))} className="flex-1 accent-[var(--color-neon)]" />
+                        </label>
+                      ))}
+                    </div>
+                  ) : null}
+                  <form
+                    className="mt-2 flex gap-1.5"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const input = (e.currentTarget.elements.namedItem('bgwish') as HTMLInputElement | null);
+                      const wish = input?.value.trim();
+                      if (!wish) return;
+                      if (input) input.value = '';
+                      setTab('ia');
+                      void askAi(`Change uniquement le fond animé de la pub (theme.backdrop) selon ce souhait : « ${wish} ». Choisis le fond le plus adapté avec ses couleurs et réglages, ou invente-le en "custom" (glsl) si aucun ne correspond. Ne modifie rien d’autre.`);
+                    }}
+                  >
+                    <input name="bgwish" maxLength={200} placeholder="Décrivez votre fond : flammes, marbre noir et or, océan au coucher du soleil…" className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs text-fg outline-none focus:border-neon/50" />
+                    <button type="submit" disabled={aiBusy} className="izi-cta shrink-0 cursor-pointer rounded-lg px-2.5 py-1.5 text-xs font-bold disabled:opacity-50">Créer</button>
+                  </form>
+                </Field>
                 <Field label="Ambiance">
                   <div className="grid grid-cols-5 gap-1.5">
                     {THEME_PRESETS.map((preset) => (
@@ -1378,6 +1431,21 @@ function ConceptCard({ concept, onVoice, voiceBusy, hasVoice, gender, onGender, 
       ) : null}
     </div>
   );
+}
+
+/** Vignette animée d'un fond GPU (rendue une fois, aux couleurs de la marque). */
+function BackdropThumb({ kind, colors, theme, glsl }: { kind: BackdropKind; colors?: string[]; theme: MotionProject['theme']; glsl?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const key = `${kind}|${(colors ?? []).join(',')}|${theme.primary}|${theme.accent}|${glsl ?? ''}`;
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d');
+    if (!ctx) return;
+    const fallback = [theme.primary, theme.primary, theme.accent, theme.accent];
+    const ok = drawBackdrop(ctx, { kind, colors, glsl }, 9, 54, 96, { w: 108, h: 192 }, colors?.length ? [] : fallback);
+    if (!ok) { ctx.fillStyle = theme.primary; ctx.fillRect(0, 0, 54, 96); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return <canvas ref={ref} width={54} height={96} className="mb-1 block aspect-[9/16] w-full rounded-md" />;
 }
 
 function IconBtn({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {

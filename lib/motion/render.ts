@@ -4,6 +4,7 @@
  * l'aperçu en direct et à l'export MP4 (enregistrement du canvas).
  */
 import { chipsClickAt, promptTiming } from './cues';
+import { drawBackdrop, type Backdrop } from './gl-bg';
 import { makeQr } from './qr';
 import { EASES, FORMAT_SIZE, TRANSITION, type Keyed, type Layer, type LeafLayerT, type Magic, type MotionProject, type Scene, type TextAnim } from './types';
 
@@ -110,7 +111,19 @@ type Ctx = {
   anim?: TextAnim;
   /** Intensité du flux lumineux de fond (atténué derrière les interfaces et les textes). */
   flowDim?: number;
+  /** Facteur de résolution de sortie (1 = 1080p) : définition des fonds GPU. */
+  S?: number;
 };
+
+/** Couleurs par défaut d'un fond GPU : celles de la marque, du plus sombre au plus clair. */
+function backdropColors(theme: MotionProject['theme']): string[] {
+  return [mixHex(theme.primary, '#000000', 0.55), theme.primary, theme.accent, mixHex(theme.accent, '#ffffff', 0.35)];
+}
+/** Fond GPU (WebGL) à pleine qualité ; false si indisponible (repli sur le fond 2D). */
+function gpuBackdrop(c: Ctx, b: Backdrop, t: number): boolean {
+  const k = (c.S ?? 1) * 0.8;
+  return drawBackdrop(c.ctx, b, t, c.W, c.H, { w: c.W * k, h: c.H * k }, b.colors?.length ? [] : backdropColors(c.theme));
+}
 
 function setFont(c: Ctx, weight: number, size: number) {
   c.ctx.font = `${weight} ${Math.round(size)}px ${c.font}`;
@@ -275,6 +288,11 @@ function background(c: Ctx, t: number) {
   const light = isLight(theme.background);
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, W, H);
+  // Fond animé haut de gamme choisi par le client ou l'IA : il remplace les halos.
+  if (theme.backdrop && gpuBackdrop(c, theme.backdrop as Backdrop, t)) {
+    if (theme.motif && theme.motif !== 'none' && theme.motif !== 'particles') drawMotif(c, theme.motif, t, light);
+    return;
+  }
   // Halos colorés qui dérivent lentement.
   const blobs = [
     { color: theme.primary, x: 0.2 + 0.12 * Math.sin(t * 0.5), y: 0.25 + 0.08 * Math.cos(t * 0.4), r: 0.75 },
@@ -1518,11 +1536,14 @@ function sceneChips(c: Ctx, s: Extract<Scene, { type: 'chips' }>, lt: number) {
   const { ctx, W, H, U } = c;
   const items = s.items;
   const pick = Math.min(s.pick, items.length - 1);
-  const fs = U * (c.vertical ? 0.042 : 0.034);
+  let fs = U * (c.vertical ? 0.042 : 0.034);
+  // Le bouton le plus long doit tenir en entier (jamais de texte coupé).
+  setFont(c, 600, fs);
+  const widest = Math.max(...items.map((it) => ctx.measureText(it).width));
+  if (widest + fs * 1.9 > W * 0.86) { fs *= (W * 0.86) / (widest + fs * 1.9); setFont(c, 600, fs); }
   const ch = fs * 2.3;
   const padX = fs * 0.95;
   const gap = fs * 0.45;
-  setFont(c, 600, fs);
   const widths = items.map((it) => ctx.measureText(it).width + padX * 2);
   // Répartition sur une ou plusieurs lignes selon la largeur disponible.
   const maxRow = W * 0.9;
@@ -1559,19 +1580,20 @@ function sceneChips(c: Ctx, s: Extract<Scene, { type: 'chips' }>, lt: number) {
     ctx.scale(sc, sc);
     setBlur(ctx, (1 - e) * fs * 0.4);
     roundRect(ctx, -w / 2, -ch / 2, w, ch, r);
-    ctx.fillStyle = on > 0 ? rgba(mixHex(c.theme.accent, '#000000', 0.55), 0.55 + 0.35 * on) : 'rgba(10,10,12,0.42)';
-    ctx.shadowColor = rgba(on > 0 ? c.theme.accent : '#ffffff', 0.55 + 0.35 * on);
+    const lightBg = isLight(c.theme.background);
+    ctx.fillStyle = on > 0 ? rgba(mixHex(c.theme.accent, '#000000', 0.55), 0.55 + 0.35 * on) : lightBg ? 'rgba(255,255,255,0.7)' : 'rgba(10,10,12,0.42)';
+    ctx.shadowColor = lightBg && !on ? 'rgba(0,0,0,0.18)' : rgba(on > 0 ? c.theme.accent : '#ffffff', 0.55 + 0.35 * on);
     ctx.shadowBlur = fs * (0.7 + on * 0.9);
     ctx.fill();
     ctx.shadowBlur = fs * 0.5;
     ctx.lineWidth = Math.max(1.5, fs * 0.075);
-    ctx.strokeStyle = rgba('#ffffff', 0.85);
+    ctx.strokeStyle = lightBg && !on ? 'rgba(0,0,0,0.55)' : rgba('#ffffff', 0.85);
     ctx.stroke();
     ctx.shadowBlur = 0;
     setFont(c, 600, fs);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = lightBg && !on ? '#151515' : '#ffffff';
     ctx.fillText(it, 0, fs * 0.04);
     ctx.restore();
     // Onde de clic.
@@ -2337,7 +2359,17 @@ function drawFreeLayer(c: Ctx, L: Layer, lt: number, ghost = false) {
 
 function sceneFree(c: Ctx, s: Extract<Scene, { type: 'free' }>, lt: number) {
   const { ctx, W, H, U } = c;
-  if (s.bg && s.bg !== 'theme') {
+  if (s.bg && typeof s.bg === 'object' && 'kind' in s.bg) {
+    // Fond GPU propre à la scène (repli : dégradé de ses couleurs).
+    if (!gpuBackdrop(c, s.bg as Backdrop, lt + 4)) {
+      const cols = (s.bg.colors?.length ? s.bg.colors : backdropColors(c.theme));
+      ctx.save();
+      ctx.translate(W / 2, H / 2);
+      ctx.fillStyle = paintStyle(ctx, { from: cols[0], to: cols[cols.length - 1], angle: 110 }, W, H);
+      ctx.fillRect(-W / 2, -H / 2, W, H);
+      ctx.restore();
+    }
+  } else if (s.bg && s.bg !== 'theme') {
     ctx.save();
     ctx.translate(W / 2, H / 2);
     ctx.fillStyle = paintStyle(ctx, s.bg as Paint, W, H);
@@ -2375,7 +2407,7 @@ export function locate(project: MotionProject, t: number): { index: number; lt: 
 export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject, t: number, assets: MotionAssets, opts: RenderOptions) {
   const { width: W, height: H } = FORMAT_SIZE[project.format];
   const S = opts.scale ?? 1;
-  const c: Ctx = { ctx, W, H, U: Math.min(W, H), vertical: H > W, theme: project.theme, font: opts.fontFamily, assets, brand: project.brand };
+  const c: Ctx = { ctx, W, H, U: Math.min(W, H), vertical: H > W, theme: project.theme, font: opts.fontFamily, assets, brand: project.brand, S };
   ctx.save();
   // Le dessin est calculé en 1080p puis mis à l'échelle (1440p) : netteté maximale à l'export.
   ctx.setTransform(S, 0, 0, S, 0, 0);
@@ -2532,7 +2564,7 @@ export function drawMotionOverlay(
   const W = cw / S;
   const H = ch / S;
   const theme: MotionProject['theme'] = { background: '#000000', primary: '#c8ff3d', accent: '#ffffff', text: '#ffffff', style: 'neon', ...opts.theme };
-  const c: Ctx = { ctx, W, H, U: Math.min(W, H), vertical: H > W, theme, font: opts.fontFamily, assets: opts.assets ?? {}, brand: '' };
+  const c: Ctx = { ctx, W, H, U: Math.min(W, H), vertical: H > W, theme, font: opts.fontFamily, assets: opts.assets ?? {}, brand: '', S };
   ctx.save();
   ctx.setTransform(S, 0, 0, S, 0, 0);
   sceneFree(c, { type: 'free', duration: 15, bg: scene.bg ?? undefined, camera: scene.camera, layers: scene.layers }, lt);

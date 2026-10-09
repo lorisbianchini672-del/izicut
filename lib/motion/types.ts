@@ -5,6 +5,8 @@
  */
 import { z } from 'zod';
 
+import { BACKDROPS } from './gl-bg';
+
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const duration = z.number().min(1.5).max(8);
 /** Les mots entre *astérisques* sont mis en couleur d'accent. */
@@ -50,6 +52,20 @@ export const MAGIC_LABELS: Record<MagicKind, string> = {
 export const MAX_SCENES = 12;
 /** Nombre maximum de photos importées. */
 export const MAX_PHOTOS = 12;
+
+// ---------- Fonds animés GPU (soie, aurore, mesh…) ----------
+export const BackdropSchema = z.object({
+  kind: z.enum(BACKDROPS),
+  /** 1 à 4 couleurs (du plus sombre au plus lumineux en général). */
+  colors: z.array(z.string().regex(/^#[0-9a-fA-F]{6}$/)).min(1).max(4).optional(),
+  speed: z.number().min(0).max(4).optional(),
+  intensity: z.number().min(0).max(2.5).optional(),
+  scale: z.number().min(0.2).max(5).optional(),
+  angle: z.number().min(-360).max(360).optional(),
+  /** kind « custom » : fond écrit sur mesure par l'IA (corps de vec3 bg(vec2 uv, vec2 p, float t)). */
+  glsl: z.string().max(4000).optional()
+});
+export type BackdropT = z.infer<typeof BackdropSchema>;
 
 // ---------- Scène libre : le motion designer IA dessine ce qu'il veut ----------
 /** Courbes d'animation disponibles pour les images clés. */
@@ -135,7 +151,7 @@ export const FreeSceneSchema = z.object({
   /** Nom de la scène dans l'éditeur. */
   name: z.string().trim().max(40).optional(),
   /** Fond : "theme" (fond animé de la marque), une couleur, ou un dégradé. */
-  bg: z.union([z.literal('theme'), paint]).optional(),
+  bg: z.union([z.literal('theme'), paint, BackdropSchema]).optional(),
   /** Caméra : zoom, déplacement (fraction d'écran), rotation (degrés). */
   camera: z.object({ zoom: anum.optional(), x: anum.optional(), y: anum.optional(), rotate: anum.optional(), shake: z.number().min(0).max(1).optional() }).optional(),
   layers: z.array(LayerSchema).min(1).max(40),
@@ -213,7 +229,9 @@ export const MotionProjectSchema = z.object({
     /** Style des boutons / cartes repris du site du client. */
     radius: z.enum(['square', 'rounded', 'pill']).optional(),
     /** Animation de texte par défaut de la pub. */
-    anim: z.enum(TEXT_ANIMS).optional()
+    anim: z.enum(TEXT_ANIMS).optional(),
+    /** Fond animé haut de gamme (GPU) de toute la pub. */
+    backdrop: BackdropSchema.optional()
   }),
   transition: z.enum(TRANSITIONS).optional(),
   sound: z

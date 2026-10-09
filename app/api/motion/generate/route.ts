@@ -8,9 +8,9 @@ import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, isAdminEmail } from '@
 import { trialsUsedEmail } from '@/lib/email/messages';
 import { sendEmail } from '@/lib/email/send';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
+import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, BackdropSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { FREE_DOC } from '@/lib/motion/prompt';
-import { repairFree } from '@/lib/motion/repair';
+import { coerce, repairFree } from '@/lib/motion/repair';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 /**
@@ -52,7 +52,8 @@ const FORMAT = `{
     "style": "neon" | "clean" | "bold",
     "motif": "flow" | "particles" | "bubbles" | "grain" | "waves" | "confetti" | "sparkles" | "lines" | "none",
     "radius": "square" | "rounded" | "pill" (style des boutons de la marque),
-    "anim": "rise" | "slam" | "mask" | "split" | "type" | "curve" | "blur" (animation de texte par défaut)
+    "anim": "rise" | "slam" | "mask" | "split" | "type" | "curve" | "blur" (animation de texte par défaut),
+    "backdrop": { "kind": …, "colors": [...], … } (FOND ANIMÉ HAUT DE GAMME de la pub, voir plus bas — choisis-le avec soin, c'est la première impression)
   },
   "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch" | "blur",
   "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop" | "none", "bpm": 60-170, "volume": 0-1 },
@@ -72,7 +73,7 @@ const FORMAT = `{
     { "type": "logo", "duration": 2-3, "title": "nom de la marque, max 32", "subtitle": "optionnel, signature max 80" },
     { "type": "chips", "duration": 2.5-3.5, "title": "optionnel, question max 60", "items": ["2 à 5 boutons de max 22 car."], "pick": index du bouton cliqué par le curseur },
     { "type": "prompt", "duration": 3-4.5, "text": "la demande du client final tapée lettre par lettre, max 120", "label": "optionnel, max 24 (ex. nom de la marque)" },
-    { "type": "free", "duration": 1.5-8, "name": "nom court", "bg": "theme" | "#RRGGBB" | { "from": "#hex", "to": "#hex", "angle": degrés, "radial": bool },
+    { "type": "free", "duration": 1.5-8, "name": "nom court", "bg": "theme" | "#RRGGBB" | { "from": "#hex", "to": "#hex", "angle": degrés, "radial": bool } | { "kind": …fond animé GPU… },
       "camera": { "zoom": anim, "x": anim, "y": anim, "rotate": anim, "shake": 0-1 },
       "layers": [ 1 à 40 calques dessinés dans l'ordre (le premier est au fond) ],
       "cues": [ { "at": seconde, "sfx": "whoosh" | "pop" | "click" | "impact" | "riser" | "chime" | "fizz" | "bubble" | "swipe" | "glitch" } ] },
@@ -197,7 +198,7 @@ ${RULES}`;
 const LITE = `${ATTITUDE}
 
 Tu es motion designer chez IziCut. Crée la pub demandée en 4 à 6 scènes, TOUTES de type "free" (création libre), 4 à 9 calques chacune, 12 à 16 s au total. JSON COMPACT. Tout en français.
-Réponds UNIQUEMENT par : { "message": "explication de ton idée et du déroulé (3 à 5 phrases)", "plan": ["Scène N — …"], "project": { "format": "9:16" | "16:9" | "1:1", "brand": "...", "theme": { "background": "#RRGGBB", "primary": "#RRGGBB", "accent": "#RRGGBB", "text": "#RRGGBB", "style": "neon" | "clean" | "bold" }, "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch" | "blur", "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170 }, "scenes": [ { "type": "free", "duration": 2-4, "bg": "#RRGGBB" ou dégradé, "camera": {...}, "layers": [...], "cues": [...] } ] } }
+Réponds UNIQUEMENT par : { "message": "explication de ton idée et du déroulé (3 à 5 phrases)", "plan": ["Scène N — …"], "project": { "format": "9:16" | "16:9" | "1:1", "brand": "...", "theme": { "background": "#RRGGBB", "primary": "#RRGGBB", "accent": "#RRGGBB", "text": "#RRGGBB", "style": "neon" | "clean" | "bold" }, "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch" | "blur", "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170 }, "scenes": [ { "type": "free", "duration": 2-4, "bg": "#RRGGBB", dégradé ou fond animé { "kind": … }, "camera": {...}, "layers": [...], "cues": [...] } ] } }
 
 ${FREE_DOC}`;
 
@@ -333,6 +334,10 @@ function repair(raw: unknown, fallback?: MotionProject): unknown {
     if (th.motif !== undefined && !pick(MOTIFS, th.motif)) delete th.motif;
     if (th.radius !== undefined && !['square', 'rounded', 'pill'].includes(String(th.radius))) delete th.radius;
     if (th.anim !== undefined && !pick(TEXT_ANIMS, th.anim)) delete th.anim;
+    if (th.backdrop !== undefined) {
+      const bd = coerce<Record<string, unknown>>(BackdropSchema, th.backdrop);
+      if (bd) th.backdrop = bd; else delete th.backdrop;
+    }
     if (!['neon', 'clean', 'bold'].includes(String(th.style))) th.style = 'clean';
   }
   if (p.transition !== undefined && !pick(TRANSITIONS, p.transition)) delete p.transition;
