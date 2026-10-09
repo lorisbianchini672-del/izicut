@@ -726,7 +726,7 @@ export function MotionStudio() {
           })
         });
         json = await res.json().catch(() => ({}));
-        if (res.ok || res.status === 401 || res.status === 402 || res.status === 400) break;
+        if (res.ok || res.status === 401 || res.status === 402 || res.status === 400 || String(json.error ?? '').includes('Reformulez')) break;
       }
       if (!res) throw new Error('Connexion impossible.');
 
@@ -752,7 +752,7 @@ export function MotionStudio() {
       return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
-      setMessages((m) => [...m, { role: 'ai', text: /Pro|gratuites|Connectez|Free/.test(msg) ? msg : 'Je n’ai pas réussi à terminer cette version, l’IA est très sollicitée. Réessayez dans un instant : votre pub actuelle est conservée.' }]);
+      setMessages((m) => [...m, { role: 'ai', text: /Pro|gratuites|Connectez|Free|Reformulez/.test(msg) ? msg : 'Je n’ai pas réussi à terminer cette version, l’IA est très sollicitée. Réessayez dans un instant : votre pub actuelle est conservée.' }]);
       return false;
     } finally {
       window.clearInterval(stepTimer);

@@ -286,3 +286,13 @@ export const BLOCKS_DOC = `BLOCS DISPONIBLES (chacun devient une scène motion d
 STYLE : { "backdrop": un fond parmi ${BACKDROPS.filter((b) => b !== 'custom').join(', ')}, "colors": [4 couleurs #RRGGBB du plus sombre au plus clair, aux couleurs de la marque], "accent": "#RRGGBB" (couleur vive des boutons / badges), "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170 }`;
 
 export { SFX };
+
+/** Une scène premium isolée (ajout ou remplacement d'une scène lors d'une retouche), aux couleurs de la pub. */
+export function blockScene(block: Block, project: MotionProject, index: number, o: { hasLogo: boolean; photos: number }): Scene {
+  const th = project.theme;
+  const light = lum(th.background) > 160 && (!th.backdrop || LIGHT_BACKDROPS.has(th.backdrop.kind));
+  const c: Ctx = { accent: th.primary, text: light ? '#141414' : '#ffffff', sub: light ? '#4a4a4a' : '#c9cfd6', brand: project.brand ?? '', hasLogo: o.hasLogo, vertical: project.format === '9:16' };
+  const fixImg = (s: string) => (s.startsWith('photo:') && Number(s.slice(6)) >= o.photos ? (o.photos ? `photo:${Number(s.slice(6)) % o.photos}` : `search:${project.brand ?? 'abstract'}`) : s);
+  const fixed = JSON.parse(JSON.stringify(block, (k, v) => (k === 'img' || k === 'before' || k === 'after' ? fixImg(String(v)) : k === 'imgs' && Array.isArray(v) ? v.map((x: unknown) => fixImg(String(x))) : v))) as Block;
+  return sceneFor(fixed, index, c);
+}

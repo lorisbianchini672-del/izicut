@@ -11,6 +11,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, BackdropSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { FREE_DOC } from '@/lib/motion/prompt';
 import { BLOCKS_DOC, StyleSchema, composeProject, parseBlocks } from '@/lib/motion/compose';
+import { EDIT_OPS_DOC, applyOps, summarize } from '@/lib/motion/edit-ops';
 import { coerce, repairFree } from '@/lib/motion/repair';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -417,7 +418,8 @@ export async function POST(request: Request) {
   }
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Demande invalide' }, { status: 400 });
-  const { prompt, project, media, photos, photoSheets, brand } = parsed.data;
+  const { prompt, media, photos, photoSheets, brand } = parsed.data;
+  let project = parsed.data.project;
 
   // Offre : 3 pubs créées gratuitement, puis Pro. Les retouches restent possibles.
   const { data: profile } = await supabase.from('profiles').select('plan, subscription_status').eq('id', user.id).maybeSingle();
@@ -468,6 +470,48 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
       })}`
     : '';
 
+  // ---------- Retouche : petites opérations ciblées (réponse courte, fiable avec les IA gratuites) ----------
+  if (project) {
+    const editMsg = `Résumé de la pub actuelle :\n${summarize(project)}${photos?.length ? `\nPhotos du client : index 0 à ${photos.length - 1}.${photoNotes ? `\n${photoNotes.slice(0, 1500)}` : ''}` : ''}\n\nDemande du client : ${prompt}`;
+    const t1 = Date.now();
+    let recreate = false;
+    let lastErr = '';
+    for (let attempt = 0; attempt < 3 && !recreate; attempt++) {
+      if (attempt > 0 && Date.now() - t1 > 150_000) break;
+      try {
+        const raw = (await chatJson({
+          system: EDIT_OPS_DOC,
+          user: attempt === 0 ? editMsg : `${editMsg}\n\nATTENTION : ${lastErr || 'réponse précédente inexploitable'}. Réponds avec le JSON {"message":…,"ops":[…]} en utilisant les identifiants exacts.`,
+          maxTokens: 2500,
+          temperature: 0.3,
+          timeoutMs: 60_000,
+          deadline: t1 + 200_000
+        })) as Record<string, unknown>;
+        const res = applyOps(project, raw?.ops, { hasLogo: Boolean(parsed.data.hasLogo), photos: photos?.length ?? 0 });
+        if (res.recreate) { recreate = true; break; }
+        if (res.applied > 0) {
+          const out = free ? clampToFree(res.project) : res.project;
+          const message = typeof raw.message === 'string' ? raw.message.slice(0, 600) : 'C’est fait.';
+          return NextResponse.json({ project: out, message, quota: { tier, used, limit: free ? FREE_MOTION_CREATIONS : null } });
+        }
+        lastErr = 'aucune opération valide (vérifie les identifiants et le format)';
+      } catch (err) {
+        if (err instanceof AiNotConfiguredError) return NextResponse.json({ error: err.message }, { status: 503 });
+        lastErr = '';
+        console.warn('[motion] retouche essai', attempt + 1, ':', (err as Error).message);
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      }
+    }
+    if (!recreate) {
+      return NextResponse.json({ error: 'Je n’ai pas réussi à appliquer cette retouche. Reformulez-la plus simplement (ex. « titre de la scène 1 en jaune »).', code: 'retry' }, { status: 502 });
+    }
+    // Pub totalement nouvelle demandée : on crée.
+    if (free && used >= FREE_MOTION_CREATIONS) {
+      return NextResponse.json({ error: `Vous avez utilisé vos ${FREE_MOTION_CREATIONS} pubs gratuites. Passez en Pro pour créer des pubs en illimité (vous pouvez toujours retoucher vos pubs).`, code: 'quota', quota: { tier, used, limit: FREE_MOTION_CREATIONS } }, { status: 402 });
+    }
+    project = undefined;
+  }
+
   const userMsg = project
     ? `Projet actuel :\n${JSON.stringify(project)}${mediaInfo}${brandInfo}\n\nModification demandée : ${prompt}`
     : `Demande du client : ${prompt}${mediaInfo}${brandInfo}\n\nCrée le concept puis le projet.`;
@@ -486,7 +530,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
         raw = await chatJson({
           system: project ? EDITOR : composer ? COMPOSER : LITE,
           user: attempt === 0 ? userMsg : `${userMsg}\n\n${lastError ? `ATTENTION : ta réponse précédente était invalide (${lastError}). ` : ''}Respecte exactement le format JSON, en restant concis.`,
-          maxTokens: composer ? 5000 : lite ? 7000 : 9000,
+          maxTokens: composer ? 3500 : lite ? 5000 : 9000,
           temperature: project ? 0.5 : 0.85,
           // Réflexion approfondie de Claude au premier essai.
           think: attempt === 0 ? (project ? 3000 : 4000) : 0,
