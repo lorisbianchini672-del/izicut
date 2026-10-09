@@ -29,7 +29,10 @@ function providers(): Provider[] {
   const env = process.env;
   if (env.ANTHROPIC_API_KEY) list.push({ name: 'claude', kind: 'anthropic', url: 'https://api.anthropic.com/v1/messages', key: env.ANTHROPIC_API_KEY, model: env.ANTHROPIC_MODEL || 'claude-opus-5-5', vision: env.ANTHROPIC_MODEL || 'claude-opus-5-5', json: false });
   if (env.GEMINI_API_KEY) list.push({ name: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: env.GEMINI_API_KEY, model: env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash', vision: env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash', json: true });
+  // Quotas gratuits comptés PAR MODÈLE : si l'un est épuisé, un modèle voisin prend le relais.
+  if (env.GEMINI_API_KEY) for (const m of ['gemini-flash-latest', 'gemini-flash-lite-latest']) if (m !== env.GEMINI_CHAT_MODEL) list.push({ name: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: env.GEMINI_API_KEY, model: m, vision: m, json: true });
   if (env.GROQ_API_KEY) list.push({ name: 'groq', url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_API_KEY, model: env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b', vision: env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b', json: true });
+  if (env.GROQ_API_KEY) for (const m of ['moonshotai/kimi-k2-instruct', 'llama-3.3-70b-versatile', 'qwen/qwen3-32b']) if (m !== env.GROQ_CHAT_MODEL) list.push({ name: 'groq', url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_API_KEY, model: m, json: true });
   if (env.OPENROUTER_API_KEY) list.push({ name: 'openrouter', url: 'https://openrouter.ai/api/v1/chat/completions', key: env.OPENROUTER_API_KEY, model: env.OPENROUTER_CHAT_MODEL || 'openrouter/free', vision: env.OPENROUTER_VISION_MODEL, json: false });
   if (env.MISTRAL_API_KEY) list.push({ name: 'mistral', url: 'https://api.mistral.ai/v1/chat/completions', key: env.MISTRAL_API_KEY, model: env.MISTRAL_CHAT_MODEL || 'mistral-small-latest', vision: env.MISTRAL_VISION_MODEL || 'mistral-small-latest', json: true });
   if (env.OPENAI_API_KEY) list.push({ name: 'openai', url: 'https://api.openai.com/v1/chat/completions', key: env.OPENAI_API_KEY, model: env.OPENAI_CHAT_MODEL || 'gpt-4o-mini', vision: env.OPENAI_CHAT_MODEL || 'gpt-4o-mini', json: true });
@@ -145,7 +148,7 @@ async function call(p: Provider, model: string, messages: { role: string; conten
       temperature,
       max_tokens: maxTokens,
       // IA gratuites qui savent « réfléchir » avant de répondre (Gemini, gpt-oss chez Groq).
-      ...(think > 0 && (p.name === 'gemini' || p.name === 'groq') ? { reasoning_effort: p.name === 'gemini' && think >= 4000 ? 'high' : 'medium' } : {}),
+      ...(think > 0 && (p.name === 'gemini' || model.includes('gpt-oss')) ? { reasoning_effort: p.name === 'gemini' && think >= 4000 ? 'high' : 'medium' } : {}),
       ...(json && p.json ? { response_format: { type: 'json_object' } } : {}),
       messages
     }),
@@ -176,7 +179,7 @@ async function cascade(run: (p: Provider) => Promise<string>, filter: (p: Provid
     } catch (err) {
       last = err;
       // Quelle que soit l'erreur (quota, panne, clé invalide…), on passe au suivant.
-      console.warn(`[ia] ${p.name} indisponible : ${(err as Error).message}`);
+      console.warn(`[ia] ${p.name} (${p.model}) indisponible : ${(err as Error).message}`);
     }
   }
   console.error(`[ia] toutes les IA ont échoué : ${(last as Error)?.message ?? ''}`);
