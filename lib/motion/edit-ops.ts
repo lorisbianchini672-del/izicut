@@ -96,7 +96,7 @@ function getParent(root: unknown, id: string): { obj: Record<string, unknown> | 
 const clampN = (v: unknown, min: number, max: number, def: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : def);
 
 /** Applique une opération ; renvoie le nouveau projet, ou null si l'opération est impossible. */
-function applyOne(p: MotionProject, op: Record<string, unknown>, o: { hasLogo: boolean; photos: number }): MotionProject | null | 'recreate' {
+function applyOne(p: MotionProject, op: Record<string, unknown>, o: { hasLogo: boolean; photos: number; scaled?: boolean }): MotionProject | null | 'recreate' {
   const next = JSON.parse(JSON.stringify(p)) as MotionProject;
   const sceneIdx = (k: string) => (typeof op[k] === 'number' ? Math.round(op[k] as number) : -1);
   switch (op.op) {
@@ -140,11 +140,10 @@ function applyOne(p: MotionProject, op: Record<string, unknown>, o: { hasLogo: b
         return next;
       }
       // Scène classique : taille réglée pour toute la pub, couleur via la couleur d'accent.
-      if (factor !== 1 && !color) {
-        next.theme = { ...next.theme, textScale: Math.round(clampN((next.theme.textScale ?? 1) * factor, 0.6, 1.8, 1) * 100) / 100 };
-        return next;
-      }
-      if (factor !== 1) next.theme = { ...next.theme, textScale: Math.round(clampN((next.theme.textScale ?? 1) * factor, 0.6, 1.8, 1) * 100) / 100 };
+      // (une seule fois par demande, même si l'IA vise plusieurs textes)
+      const scale = () => { if (!o.scaled) { next.theme = { ...next.theme, textScale: Math.round(clampN((next.theme.textScale ?? 1) * factor, 0.6, 1.8, 1) * 100) / 100 }; o.scaled = true; } };
+      if (factor !== 1 && !color) { scale(); return next; }
+      if (factor !== 1) scale();
       if (color && typeof holder[at.key] === 'string') {
         const s = (holder[at.key] as string).replace(/\*/g, '');
         holder[at.key] = `*${s}*`;
@@ -243,12 +242,13 @@ function applyOne(p: MotionProject, op: Record<string, unknown>, o: { hasLogo: b
 export function applyOps(p: MotionProject, raw: unknown, o: { hasLogo: boolean; photos: number }): { project: MotionProject; applied: number; recreate: boolean } {
   let cur = p;
   let applied = 0;
+  const state = { ...o, scaled: false };
   if (!Array.isArray(raw)) return { project: p, applied: 0, recreate: false };
   for (const op of raw.slice(0, 24)) {
     if (!op || typeof op !== 'object') continue;
     let r: MotionProject | null | 'recreate' = null;
     try {
-      r = applyOne(cur, op as Record<string, unknown>, o);
+      r = applyOne(cur, op as Record<string, unknown>, state);
     } catch {
       r = null;
     }
