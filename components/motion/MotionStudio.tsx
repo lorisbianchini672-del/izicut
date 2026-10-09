@@ -721,6 +721,7 @@ export function MotionStudio() {
             photos: photos.map((ph, i) => ({ index: i, name: ph.name })),
             hasLogo: Boolean(assets.logo),
             format: project.format,
+            currentScene: current,
             ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
             brand: brand.company || brand.notes.trim() || brand.brief || brand.site || brand.link ? { ...brand, site: brand.site ?? null, link: brand.link || undefined } : undefined
           })

@@ -144,6 +144,8 @@ async function call(p: Provider, model: string, messages: { role: string; conten
       model,
       temperature,
       max_tokens: maxTokens,
+      // IA gratuites qui savent « réfléchir » avant de répondre (Gemini, gpt-oss chez Groq).
+      ...(think > 0 && (p.name === 'gemini' || p.name === 'groq') ? { reasoning_effort: p.name === 'gemini' && think >= 4000 ? 'high' : 'medium' } : {}),
       ...(json && p.json ? { response_format: { type: 'json_object' } } : {}),
       messages
     }),

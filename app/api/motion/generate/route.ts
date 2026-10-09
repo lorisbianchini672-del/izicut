@@ -35,6 +35,8 @@ const BodySchema = z.object({
   /** Description des photos déjà faite lors d'un appel précédent. */
   photoNotes: z.string().max(6000).optional(),
   hasLogo: z.boolean().optional(),
+  /** Scène affichée dans l'aperçu quand le client écrit (« ce texte », « cette slide »). */
+  currentScene: z.number().int().min(0).max(30).optional(),
   format: z.enum(['9:16', '16:9', '1:1']).optional(),
   brand: z
     .object({
@@ -473,7 +475,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
   // ---------- Retouche : petites opérations ciblées (réponse courte, fiable avec les IA gratuites) ----------
   // Avec Claude, la retouche se fait sur le projet complet (liberté totale) ; sans Claude, par petites opérations.
   if (project && !claudeConfigured()) {
-    const editMsg = `Résumé de la pub actuelle :\n${summarize(project)}${photos?.length ? `\nPhotos du client : index 0 à ${photos.length - 1}.${photoNotes ? `\n${photoNotes.slice(0, 1500)}` : ''}` : ''}\n\nDemande du client : ${prompt}`;
+    const editMsg = `Résumé de la pub actuelle :\n${summarize(project)}${parsed.data.currentScene !== undefined ? `\nLe client regarde la scène ${parsed.data.currentScene} quand il écrit.` : ''}${photos?.length ? `\nPhotos du client : index 0 à ${photos.length - 1}.${photoNotes ? `\n${photoNotes.slice(0, 1500)}` : ''}` : ''}\n\nDemande du client : ${prompt}`;
     const t1 = Date.now();
     let recreate = false;
     let lastErr = '';
@@ -483,8 +485,9 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
         const raw = (await chatJson({
           system: EDIT_OPS_DOC,
           user: attempt === 0 ? editMsg : `${editMsg}\n\nATTENTION : ${lastErr || 'réponse précédente inexploitable'}. Réponds avec le JSON {"message":…,"ops":[…]} en utilisant les identifiants exacts.`,
-          maxTokens: 2500,
+          maxTokens: 3500,
           temperature: 0.3,
+          think: 2000,
           timeoutMs: 60_000,
           deadline: t1 + 200_000
         })) as Record<string, unknown>;
@@ -531,7 +534,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
         raw = await chatJson({
           system: project ? EDITOR : composer ? COMPOSER : LITE,
           user: attempt === 0 ? userMsg : `${userMsg}\n\n${lastError ? `ATTENTION : ta réponse précédente était invalide (${lastError}). ` : ''}Respecte exactement le format JSON, en restant concis.`,
-          maxTokens: composer ? 3500 : lite ? 5000 : 9000,
+          maxTokens: composer ? 4500 : lite ? 5000 : 9000,
           temperature: project ? 0.5 : 0.85,
           // Réflexion approfondie de Claude au premier essai.
           think: attempt === 0 ? (project ? 3000 : 4000) : 0,
