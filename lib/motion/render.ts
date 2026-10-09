@@ -2752,6 +2752,9 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
   const S = opts.scale ?? 1;
   const c: Ctx = { ctx, W, H, U: Math.min(W, H), vertical: H > W, theme: project.theme, font: opts.fontFamily, assets, brand: project.brand, S };
   ctx.save();
+  // Lettres placées au sous-pixel près (sans « accrochage » à la grille de pixels) : un texte qui glisse ou zoome ne scintille pas.
+  (ctx as CanvasRenderingContext2D & { textRendering?: string }).textRendering = 'geometricPrecision';
+  ctx.imageSmoothingQuality = 'high';
   // Le dessin est calculé en 1080p puis mis à l'échelle (1440p) : netteté maximale à l'export.
   ctx.setTransform(S, 0, 0, S, 0, 0);
   ctx.imageSmoothingEnabled = true;
