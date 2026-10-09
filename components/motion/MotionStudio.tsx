@@ -46,6 +46,7 @@ import { resolvePlanTier } from '@/lib/entitlements';
 import { drawFrame, locate, type MotionAssets } from '@/lib/motion/render';
 import { BACKDROPS, BACKDROP_LABELS, drawBackdrop, type BackdropKind } from '@/lib/motion/gl-bg';
 import { SoundPlayer, renderSoundtrack, type VoiceTrack } from '@/lib/motion/sound';
+import { exportExact, mixWithMedia } from '@/lib/motion/export';
 import {
   FORMAT_SIZE,
   MAX_PHOTOS,
@@ -257,8 +258,14 @@ export function MotionStudio() {
   const duration = totalDuration(project);
   const [quality, setQuality] = useState<'1080p' | '1440p'>('1080p');
   const renderScale = quality === '1440p' ? 4 / 3 : 1;
-  const scaleRef = useRef(1);
-  scaleRef.current = renderScale;
+  /**
+   * Aperçu calculé à la taille réellement affichée (souvent 3 à 4× moins de
+   * pixels que l'export) : lecture fluide même sur un ordinateur modeste.
+   * L'export, lui, est calculé à part en pleine définition (1080p / 1440p).
+   */
+  const [previewScale, setPreviewScale] = useState(0.6);
+  const scaleRef = useRef(0.6);
+  scaleRef.current = previewScale;
   const size = FORMAT_SIZE[project.format];
   const watermark = !isPaid;
 
@@ -348,6 +355,23 @@ export function MotionStudio() {
     },
     [watermark]
   );
+
+  // Définition de l'aperçu = taille affichée × densité de l'écran (bornée), recalculée si la fenêtre change.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const update = () => {
+      const w = el.getBoundingClientRect().width;
+      if (!w) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const k = Math.max(0.35, Math.min(1, (w * dpr) / size.width));
+      setPreviewScale((old) => (Math.abs(old - k) > 0.04 ? Math.round(k * 100) / 100 : old));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [size.width]);
 
   // Boucle d'animation de l'aperçu.
   useEffect(() => {
@@ -700,19 +724,99 @@ export function MotionStudio() {
     }
   };
 
+  /** Positionne exactement chaque vidéo importée sur l'image à exporter (export image par image). */
+  const seekMediaExact = async (t: number) => {
+    const list = mediaRef.current;
+    if (!list.length) return;
+    const proj = projectRef.current;
+    const { index, lt } = locate(proj, t);
+    const scene = proj.scenes[index];
+    await Promise.all(list.map((m, i) => {
+      const v = m.el;
+      if (!v.paused) v.pause();
+      if (!(scene?.type === 'video' && scene.media === i)) return undefined;
+      const target = Math.min(Math.max(0, m.duration - 0.05), scene.from + lt);
+      if (Math.abs(v.currentTime - target) < 0.004) return undefined;
+      return new Promise<void>((resolve) => {
+        const done = () => resolve();
+        v.addEventListener('seeked', done, { once: true });
+        window.setTimeout(done, 700);
+        v.currentTime = target;
+      });
+    }));
+  };
+
+  const downloadBlob = (blob: Blob, ext: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `izicut-motion-${projectRef.current.format.replace(':', 'x')}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
   const exportVideo = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas || exportingRef.current) return;
-    if (typeof MediaRecorder === 'undefined' || !canvas.captureStream) {
-      setNotice('Votre navigateur ne permet pas l’export vidéo. Utilisez Chrome, Edge ou Safari récent sur ordinateur.');
-      return;
-    }
-    const soundtrack = await renderSoundtrack(projectRef.current, voiceRef.current);
-    const { mime, ext } = pickMime(mediaRef.current.length > 0 || Boolean(soundtrack));
+    if (exportingRef.current) return;
+    const proj = projectRef.current;
+    const total = totalDuration(proj);
+    const S = renderScale;
+    // Canvas d'export dédié, en pleine définition (l'aperçu reste léger).
+    const out = document.createElement('canvas');
+    out.width = Math.round(size.width * S);
+    out.height = Math.round(size.height * S);
+    out.style.cssText = 'position:fixed;left:-100000px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.appendChild(out);
+    const octx = out.getContext('2d');
+    if (!octx) { out.remove(); return; }
     exportingRef.current = true;
     setExporting(0);
     setPlaying(false);
     playerRef.current?.stop();
+    const opts = { fontFamily: motionFont.style.fontFamily, watermark, scale: S };
+    try {
+      const soundtrack = await renderSoundtrack(proj, voiceRef.current);
+      // 1) Export image par image (WebCodecs) : 60 i/s parfaits, aucune image perdue.
+      const clips: { url: string; start: number; from: number; duration: number }[] = [];
+      let at = 0;
+      for (const sc of proj.scenes) {
+        const m = sc.type === 'video' ? mediaRef.current[sc.media] : undefined;
+        if (sc.type === 'video' && m) clips.push({ url: m.url, start: at, from: sc.from, duration: sc.duration });
+        at += sc.duration;
+      }
+      const audio = await mixWithMedia(soundtrack, clips, total).catch(() => soundtrack);
+      const blob = await exportExact({
+        canvas: out,
+        duration: total,
+        fps: 60,
+        bitrate: S > 1 ? 32_000_000 : 20_000_000,
+        audio,
+        renderFrame: async (t) => { await seekMediaExact(t); drawFrame(octx, proj, Math.min(t, total - 0.001), assetsRef.current, opts); },
+        onProgress: (r) => setExporting(Math.min(99, Math.round(r * 100)))
+      }).catch(() => null);
+      if (blob) {
+        downloadBlob(blob, 'mp4');
+        setNotice('Vidéo exportée en MP4 ✓ 60 images/s parfaitement fluides.');
+        return;
+      }
+      // 2) Navigateur sans WebCodecs : enregistrement en direct (secours).
+      await legacyExport(out, octx, proj, total, opts, soundtrack);
+    } finally {
+      out.remove();
+      mediaRef.current.forEach((m) => m.el.pause());
+      exportingRef.current = false;
+      setExporting(null);
+    }
+  };
+
+  const legacyExport = async (canvas: HTMLCanvasElement, octx: CanvasRenderingContext2D, proj: MotionProject, total: number, opts: { fontFamily: string; watermark: boolean; scale: number }, soundtrack: AudioBuffer | null) => {
+    if (typeof MediaRecorder === 'undefined' || !canvas.captureStream) {
+      setNotice('Votre navigateur ne permet pas l’export vidéo. Utilisez Chrome, Edge ou Safari récent sur ordinateur.');
+      return;
+    }
+    const { mime, ext } = pickMime(mediaRef.current.length > 0 || Boolean(soundtrack));
+    const draw = (t: number) => drawFrame(octx, proj, t, assetsRef.current, opts);
     // Son des vidéos importées + bande-son (musique, effets) dans l'export.
     let audioTracks: MediaStreamTrack[] = [];
     let soundSrc: AudioBufferSourceNode | null = null;
@@ -743,11 +847,10 @@ export function MotionStudio() {
       }
     }
     const stream = new MediaStream([...canvas.captureStream(60).getVideoTracks(), ...audioTracks]);
-    const recorder = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: scaleRef.current > 1 ? 32_000_000 : 20_000_000 });
+    const recorder = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: opts.scale > 1 ? 32_000_000 : 20_000_000 });
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     const done = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
-    const total = totalDuration(projectRef.current);
     draw(0);
     recorder.start(250);
     soundSrc?.start();
@@ -769,18 +872,10 @@ export function MotionStudio() {
     mediaRef.current.forEach((m) => m.el.pause());
     stream.getVideoTracks().forEach((tr) => tr.stop());
     const blob = new Blob(chunks, { type: mime || 'video/webm' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `izicut-motion-${projectRef.current.format.replace(':', 'x')}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    exportingRef.current = false;
-    setExporting(null);
-    setNotice(ext === 'mp4' ? 'Vidéo exportée en MP4 ✓' : 'Vidéo exportée (WebM). Astuce : sur Safari ou Chrome récent, l’export se fait en MP4.');
+    downloadBlob(blob, ext);
+    setNotice(ext === 'mp4' ? 'Vidéo exportée en MP4 ✓' : 'Vidéo exportée (WebM). Astuce : sur Chrome ou Safari récent, l’export se fait en MP4.');
   };
+
 
   const current = locate(project, time).index;
 
@@ -832,7 +927,7 @@ export function MotionStudio() {
             className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)]"
             style={{ aspectRatio: `${size.width} / ${size.height}`, maxWidth: `min(100%, calc(70vh * ${size.width / size.height}))` }}
           >
-            <canvas ref={canvasRef} width={Math.round(size.width * renderScale)} height={Math.round(size.height * renderScale)} className="block h-full w-full max-w-full" onClick={() => setPlaying((p) => !p)} />
+            <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className="block h-full w-full max-w-full" onClick={() => setPlaying((p) => !p)} />
             {exporting !== null ? (
               <div className="absolute inset-x-0 bottom-0 bg-black/70 px-4 py-3 text-center text-xs text-white">
                 Enregistrement de la vidéo… gardez cet onglet ouvert ({exporting} %)

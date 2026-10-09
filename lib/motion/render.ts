@@ -120,8 +120,10 @@ function backdropColors(theme: MotionProject['theme']): string[] {
   return [mixHex(theme.primary, '#000000', 0.55), theme.primary, theme.accent, mixHex(theme.accent, '#ffffff', 0.35)];
 }
 /** Fond GPU (WebGL) à pleine qualité ; false si indisponible (repli sur le fond 2D). */
+const SHARP_BACKDROPS = new Set(['grain', 'matrix', 'halftone', 'dots', 'hex', 'stripes', 'topo', 'lines', 'paper', 'marble', 'grid', 'warp', 'custom']);
 function gpuBackdrop(c: Ctx, b: Backdrop, t: number): boolean {
-  const k = (c.S ?? 1) * 0.8;
+  // Fonds doux (soie, aurore, mesh…) calculés en demi-définition puis lissés : invisible à l'œil, 4× moins de calcul.
+  const k = (c.S ?? 1) * (SHARP_BACKDROPS.has(b.kind) ? 0.9 : 0.5);
   return drawBackdrop(c.ctx, b, t, c.W, c.H, { w: c.W * k, h: c.H * k }, b.colors?.length ? [] : backdropColors(c.theme));
 }
 
