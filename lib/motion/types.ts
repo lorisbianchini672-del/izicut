@@ -267,7 +267,9 @@ export const MotionProjectSchema = z.object({
     /** Animation de texte par défaut de la pub. */
     anim: z.enum(TEXT_ANIMS).optional(),
     /** Fond animé haut de gamme (GPU) de toute la pub. */
-    backdrop: BackdropSchema.optional()
+    backdrop: BackdropSchema.optional(),
+    /** Taille des textes des scènes classiques (1 = normal). */
+    textScale: z.number().min(0.6).max(1.8).optional()
   }),
   transition: z.enum(TRANSITIONS).optional(),
   sound: z

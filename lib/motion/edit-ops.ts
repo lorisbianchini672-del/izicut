@@ -139,7 +139,12 @@ function applyOne(p: MotionProject, op: Record<string, unknown>, o: { hasLogo: b
         if (factor !== 1) holder.size = Math.round(clampN(holder.size, 8, 400, holder.kind === 'callout' ? 46 : 64) * factor);
         return next;
       }
-      // Scène classique : le texte passe en couleur d'accent (et l'accent prend la couleur voulue).
+      // Scène classique : taille réglée pour toute la pub, couleur via la couleur d'accent.
+      if (factor !== 1 && !color) {
+        next.theme = { ...next.theme, textScale: Math.round(clampN((next.theme.textScale ?? 1) * factor, 0.6, 1.8, 1) * 100) / 100 };
+        return next;
+      }
+      if (factor !== 1) next.theme = { ...next.theme, textScale: Math.round(clampN((next.theme.textScale ?? 1) * factor, 0.6, 1.8, 1) * 100) / 100 };
       if (color && typeof holder[at.key] === 'string') {
         const s = (holder[at.key] as string).replace(/\*/g, '');
         holder[at.key] = `*${s}*`;

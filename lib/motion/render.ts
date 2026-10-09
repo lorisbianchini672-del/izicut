@@ -138,6 +138,8 @@ function setFont(c: Ctx, weight: number, size: number) {
  * Renvoie la hauteur occupée.
  */
 function kinetic(c: Ctx, text: string, cx: number, cy: number, size: number, maxWidth: number, lt: number, opts: { weight?: number; stagger?: number; color?: string; start?: number; upper?: boolean } = {}): { top: number; bottom: number; lastLineWidth: number } {
+  // Taille des textes choisie par le client pour toute la pub.
+  size *= c.theme.textScale ?? 1;
   const { ctx } = c;
   const weight = opts.weight ?? 900;
   const stagger = opts.stagger ?? 0.07;
