@@ -41,7 +41,8 @@ import { CertificationPanel } from '@/components/motion/CertificationPanel';
 import { Button } from '@/components/ui/button';
 import type { BrandProfile } from '@/lib/brand/types';
 import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, type MotionQuota } from '@/lib/motion/plan';
-import { buildCinematicAd } from '@/lib/motion/autoad';
+import { buildCinematicAd, displayName } from '@/lib/motion/autoad';
+import { buildSignatureAd } from '@/lib/motion/signature';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { drawFrame, locate, type MotionAssets } from '@/lib/motion/render';
 import { BACKDROPS, BACKDROP_LABELS, drawBackdrop, type BackdropKind } from '@/lib/motion/gl-bg';
@@ -543,6 +544,32 @@ export function MotionStudio() {
    * on en tire couleurs / logo / visuels, l'IA rédige la fiche marque puis crée
    * la pub. Le client n'a plus qu'à demander ses modifications.
    */
+  /** Pub au rendu des grandes campagnes d'applis, montée tout de suite avec les photos du client. */
+  const signatureAd = (fromChat?: string) => {
+    const b = brandRef.current;
+    const name = b.company?.name || b.site?.title ? displayName(b) : project.brand || 'Votre marque';
+    const next = buildSignatureAd({
+      photos: photosRef.current.length,
+      brand: name,
+      theme: project.theme,
+      hasLogo: Boolean(assetsRef.current.logo),
+      tagline: b.brief?.pitch?.split(/[.!?]/)[0],
+      points: b.brief?.strengths,
+      labels: photosRef.current.map((ph) => ph.name),
+      link: b.link || b.site?.url?.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+      format: project.format
+    });
+    replaceProject(isPaid ? next : clampToFree(next));
+    setVoiceTrack(null);
+    setTab('ia');
+    if (fromChat) setMessages((m) => [...m, { role: 'user', text: fromChat }]);
+    setMessages((m) => [...m, {
+      role: 'ai',
+      text: `Voilà votre pub au rendu des grandes campagnes d’applis, montée avec vos ${photosRef.current.length} photo${photosRef.current.length > 1 ? 's' : ''} : révélation de la marque, carrousel numéroté, mur d’images incliné, carte en verre avec plongée de caméra et validation, liste défilante, signature finale. Tout se modifie : demandez-moi un autre texte, une autre couleur, un autre fond, ou changez l’ordre des scènes.`,
+      plan: ['Scène 1 (2,6 s) — le logo et le nom apparaissent, puis la phrase les pousse hors champ avec un flou de mouvement.', 'Scène 2 (2,6 s) — « Pensé pour vous » : vos photos glissent en carrousel, numérotées 01, 02…', 'Scène 3 (2,6 s) — mur de vos photos incliné qui défile derrière le titre.', 'Scène 4 (3,4 s) — carte en verre (photo, titre, barre de lecture), la caméra plonge sur le bouton, coche qui se dessine + notification.', 'Scène 5 (3 s) — vos points forts défilent dans une carte en verre.', 'Scène 6 (2,6 s) — signature : logo, nom, lien.']
+    }]);
+  };
+
   const autoAd = async (owner: boolean) => {
     if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour créer une pub automatique.'); return; }
     let b: BrandProfile = { ...brandRef.current };
@@ -655,6 +682,12 @@ export function MotionStudio() {
     const value = text.trim();
     if (!value || aiBusy) return false;
     if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour utiliser l’IA du Studio.'); return false; }
+    // « Le même rendu que la pub Spotify avec mes photos » : rendu signature garanti, monté tout de suite.
+    if (photos.length && /\b(spotify|apple|netflix|grandes? (applis?|marques?)|style appli|m[eê]me rendu|pub signature)\b/i.test(value) && !/\b(modifi|chang|remplac|enl[eè]ve|retire)/i.test(value)) {
+      setPrompt('');
+      signatureAd(value);
+      return true;
+    }
     setAiBusy(true);
     setPrompt('');
     const steps = ['Je lis votre demande et j’analyse la marque…', 'Je réfléchis au concept et à l’esthétique…', 'Je dessine les scènes, calque par calque…', 'J’anime : courbes, caméra, transitions…', 'Sound design : musique et bruitages…', 'Contrôle qualité final…'];
@@ -1174,6 +1207,11 @@ export function MotionStudio() {
                     </button>
                   </div>
                 ))}
+                {photos.length ? (
+                  <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => signatureAd()}>
+                    <Wand2 className="h-4 w-4" /> Pub signature « grandes applis » avec mes photos
+                  </Button>
+                ) : null}
                 {media.length || photos.length ? (
                   <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => { setTab('ia'); void askAi('Crée une pub professionnelle à partir de mes photos et vidéos : accroche forte, mes images en vedette avec des textes animés, mes points forts, et un appel à l’action', { fresh: true }); }}>
                     <Sparkles className="h-4 w-4" /> Créer une pub avec mes médias (IA)

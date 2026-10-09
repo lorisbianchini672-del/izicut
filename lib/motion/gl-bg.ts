@@ -7,9 +7,10 @@
  * du client. Sans WebGL, drawBackdrop renvoie false et le moteur 2D prend le relais.
  */
 
-export const BACKDROPS = ['silk', 'aurora', 'mesh', 'liquid', 'nebula', 'plasma', 'grid', 'bokeh', 'lines', 'waves', 'grain', 'paper', 'marble', 'fire', 'ocean', 'sky', 'smoke', 'holo', 'tunnel', 'warp', 'hex', 'halftone', 'topo', 'matrix', 'lava', 'rays', 'ink', 'sunset', 'dots', 'stripes', 'custom'] as const;
+export const BACKDROPS = ['glow', 'silk', 'aurora', 'mesh', 'liquid', 'nebula', 'plasma', 'grid', 'bokeh', 'lines', 'waves', 'grain', 'paper', 'marble', 'fire', 'ocean', 'sky', 'smoke', 'holo', 'tunnel', 'warp', 'hex', 'halftone', 'topo', 'matrix', 'lava', 'rays', 'ink', 'sunset', 'dots', 'stripes', 'custom'] as const;
 export type BackdropKind = (typeof BACKDROPS)[number];
 export const BACKDROP_LABELS: Record<BackdropKind, string> = {
+  glow: 'Halo de couleur',
   silk: 'Soie lumineuse',
   aurora: 'Aurore boréale',
   mesh: 'Dégradé mesh',
@@ -69,6 +70,17 @@ float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
 
 /** Corps « vec3 bg(vec2 uv, vec2 p, float t) » de chaque fond (uv 0-1, p centré et corrigé, t temps). */
 const BODIES: Record<Exclude<BackdropKind, 'custom'>, string> = {
+  glow: `vec3 bg(vec2 uv, vec2 p, float t){
+  // Grandes nappes de couleur très floues qui dérivent (fond des pubs d'applis haut de gamme).
+  vec2 q = p * 0.8;
+  vec2 w = vec2(fbm(q + vec2(t * 0.035, 0.0)), fbm(q + vec2(3.7, -t * 0.03)));
+  float f = fbm(q * 0.9 + 1.6 * w + vec2(0.0, t * 0.02));
+  float m = smoothstep(0.26, 0.7, f);
+  vec3 col = mix(uC0, uC1, smoothstep(0.15, 0.55, f));
+  col = mix(col, uC2, m * 0.9 * uIntensity);
+  col += uC3 * pow(m, 4.0) * 0.18 * uIntensity;
+  return col;
+}`,
   silk: `vec3 bg(vec2 uv, vec2 p, float t){
   vec2 w = vec2(fbm(p * 0.55 + vec2(0.0, t * 0.04)), fbm(p * 0.55 + vec2(4.1, -t * 0.032)));
   float f = fbm(p * 0.75 + 1.25 * w + vec2(t * 0.012, 0.0));
