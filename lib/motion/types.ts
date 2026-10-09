@@ -76,7 +76,7 @@ const keyed = <T extends z.ZodTypeAny>(v: T) => z.union([v, z.array(z.object({ t
 const anum = keyed(num);
 const acol = keyed(hex);
 const paint = z.union([hex, z.object({ from: hex, to: hex, angle: z.number().min(-360).max(360).optional(), radial: z.boolean().optional() })]);
-export const LAYER_KINDS = ['text', 'rect', 'ellipse', 'path', 'image', 'particles', 'glow', 'flow', 'group'] as const;
+export const LAYER_KINDS = ['text', 'rect', 'ellipse', 'path', 'image', 'callout', 'particles', 'glow', 'flow', 'group'] as const;
 const layerBase = {
   /** Position du centre en fraction de l'écran (0 = gauche / haut, 1 = droite / bas). */
   x: anum.optional(), y: anum.optional(),
@@ -131,12 +131,29 @@ const PathLayer = z.object({
   start: anum.optional(),
   cap: z.enum(['round', 'butt', 'square']).optional()
 });
-const ImageLayer = z.object({ kind: z.literal('image'), ...layerBase, src: z.string().regex(/^(logo|photo:\d{1,2}|search:.{2,60})$/), w: anum, h: anum.optional(), fit: z.enum(['cover', 'contain']).optional(), radius: z.number().min(0).max(1000).optional() });
+const ImageLayer = z.object({
+  kind: z.literal('image'), ...layerBase, src: z.string().regex(/^(logo|photo:\d{1,2}|search:.{2,60})$/), w: anum, h: anum.optional(), fit: z.enum(['cover', 'contain']).optional(), radius: z.number().min(0).max(1000).optional(),
+  /** Zoom DANS l'image (1 = cadrage normal, 2.5 = gros plan) vers le point (fx, fy) de l'image (0-1) : pour montrer un détail. */
+  zoom: anum.optional(), fx: anum.optional(), fy: anum.optional(),
+  /** Apparition de l'image : volet, iris, stores, partage en deux, montée. */
+  reveal: z.enum(['none', 'wipe', 'iris', 'blinds', 'split', 'rise']).optional(), revealAt: z.number().min(0).max(15).optional(), revealDur: z.number().min(0.1).max(4).optional(),
+  stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional()
+});
+/** Annotation : un point précis (x, y) relié par un trait à une étiquette (tx, ty) — pour expliquer une image ou une info. */
+const CalloutLayer = z.object({
+  kind: z.literal('callout'), ...layerBase,
+  tx: z.number().min(-0.2).max(1.2), ty: z.number().min(-0.2).max(1.2),
+  text: z.string().trim().min(1).max(60),
+  sub: z.string().trim().max(60).optional(),
+  color: hex.optional(),
+  size: z.number().min(16).max(120).optional(),
+  at: z.number().min(0).max(15).optional()
+});
 const ParticlesLayer = z.object({ kind: z.literal('particles'), ...layerBase, mode: z.enum(['float', 'burst', 'rain', 'orbit', 'sparkle', 'converge']), count: z.number().int().min(1).max(160), color: hex, color2: hex.optional(), size: z.number().min(1).max(80).optional(), spread: z.number().min(0.01).max(1.5).optional(), speed: z.number().min(0).max(5).optional(), at: z.number().min(0).max(15).optional() });
 const GlowLayer = z.object({ kind: z.literal('glow'), ...layerBase, color: acol, size: anum });
 const FlowLayer = z.object({ kind: z.literal('flow'), ...layerBase, colors: z.array(hex).min(1).max(4), intensity: z.number().min(0).max(2).optional() });
-type LayerIn = z.infer<typeof TextLayer> | z.infer<typeof RectLayer> | z.infer<typeof EllipseLayer> | z.infer<typeof PathLayer> | z.infer<typeof ImageLayer> | z.infer<typeof ParticlesLayer> | z.infer<typeof GlowLayer> | z.infer<typeof FlowLayer> | ({ kind: 'group'; children: LayerIn[] } & Partial<Record<keyof typeof layerBase, unknown>>);
-export const LeafLayer = z.discriminatedUnion('kind', [TextLayer, RectLayer, EllipseLayer, PathLayer, ImageLayer, ParticlesLayer, GlowLayer, FlowLayer]);
+type LayerIn = z.infer<typeof CalloutLayer> | z.infer<typeof TextLayer> | z.infer<typeof RectLayer> | z.infer<typeof EllipseLayer> | z.infer<typeof PathLayer> | z.infer<typeof ImageLayer> | z.infer<typeof ParticlesLayer> | z.infer<typeof GlowLayer> | z.infer<typeof FlowLayer> | ({ kind: 'group'; children: LayerIn[] } & Partial<Record<keyof typeof layerBase, unknown>>);
+export const LeafLayer = z.discriminatedUnion('kind', [TextLayer, RectLayer, EllipseLayer, PathLayer, ImageLayer, CalloutLayer, ParticlesLayer, GlowLayer, FlowLayer]);
 export const GroupLayer = z.object({ kind: z.literal('group'), ...layerBase, children: z.array(LeafLayer).min(1).max(24) });
 export const LayerSchema = z.union([LeafLayer, GroupLayer]);
 export type Layer = z.infer<typeof LayerSchema>;

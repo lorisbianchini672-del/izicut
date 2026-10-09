@@ -2275,19 +2275,121 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
       const w = kv(L.w, lt, 600);
       const ratio = img ? img.naturalHeight / img.naturalWidth : 1;
       const h = L.h !== undefined ? kv(L.h, lt, w) : w * ratio;
+      // Apparition (volet, iris, stores, partage, montée).
+      const rv = L.reveal ?? 'none';
+      const rp = rv === 'none' ? 1 : easeInOut(progress(lt, L.revealAt ?? 0, L.revealDur ?? 0.7));
+      if (rp <= 0) return;
+      ctx.save();
+      if (rv !== 'none' && rp < 1) {
+        ctx.beginPath();
+        if (rv === 'wipe') ctx.rect(-w / 2, -h / 2, w * rp, h);
+        else if (rv === 'iris') ctx.arc(0, 0, (Math.hypot(w, h) / 2) * rp, 0, Math.PI * 2);
+        else if (rv === 'blinds') { const n = 7; for (let i = 0; i < n; i++) { const k = clamp(rp * 1.6 - i * 0.09); ctx.rect(-w / 2 + (w / n) * i, -h / 2, (w / n) * k + 0.5, h); } }
+        else if (rv === 'split') { ctx.rect(-w / 2, -h / 2, w, (h / 2) * rp); ctx.rect(-w / 2, h / 2 - (h / 2) * rp, w, (h / 2) * rp); }
+        else if (rv === 'rise') { ctx.rect(-w / 2, h / 2 - h * rp, w, h * rp); }
+        ctx.clip();
+        if (rv === 'rise') ctx.translate(0, (1 - rp) * h * 0.25);
+      }
       ctx.save();
       if (L.radius) { roundRect(ctx, -w / 2, -h / 2, w, h, L.radius); ctx.clip(); }
       if (img) {
         const fit = L.fit ?? (L.src === 'logo' ? 'contain' : 'cover');
-        const k = fit === 'cover' ? Math.max(w / img.naturalWidth, h / img.naturalHeight) : Math.min(w / img.naturalWidth, h / img.naturalHeight);
+        const z = Math.max(1, kv(L.zoom, lt, 1));
+        const k = (fit === 'cover' ? Math.max(w / img.naturalWidth, h / img.naturalHeight) : Math.min(w / img.naturalWidth, h / img.naturalHeight)) * z;
         const iw = img.naturalWidth * k, ih = img.naturalHeight * k;
-        if (fit === 'cover') { ctx.beginPath(); ctx.rect(-w / 2, -h / 2, w, h); ctx.clip(); }
-        ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+        // Point de l'image à mettre au centre du cadre (gros plan sur un détail), sans jamais sortir de l'image.
+        const fxp = clamp(kv(L.fx, lt, 0.5)), fyp = clamp(kv(L.fy, lt, 0.5));
+        let ox = -iw / 2 + (0.5 - fxp) * iw, oy = -ih / 2 + (0.5 - fyp) * ih;
+        if (fit === 'cover' || z > 1) {
+          ox = Math.min(-w / 2, Math.max(w / 2 - iw, ox));
+          oy = Math.min(-h / 2, Math.max(h / 2 - ih, oy));
+          if (iw < w) ox = -iw / 2;
+          if (ih < h) oy = -ih / 2;
+          ctx.beginPath(); ctx.rect(-w / 2, -h / 2, w, h); ctx.clip();
+        }
+        ctx.drawImage(img, ox, oy, iw, ih);
       } else if (L.src !== 'logo') {
         ctx.fillStyle = rgba(c.theme.primary, 0.25);
         ctx.fillRect(-w / 2, -h / 2, w, h);
       }
       ctx.restore();
+      if (L.stroke) {
+        ctx.shadowColor = 'transparent';
+        roundRect(ctx, -w / 2, -h / 2, w, h, L.radius ?? 0);
+        ctx.lineWidth = L.stroke.width;
+        ctx.strokeStyle = L.stroke.color;
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+    case 'callout': {
+      // Annotation : point qui pulse → trait qui se dessine → étiquette qui apparaît.
+      const { W: SW, H: SH } = c;
+      const at = L.at ?? 0;
+      const k = lt - at;
+      if (k < 0) return;
+      const col = L.color ?? readableAccent(c);
+      const size = L.size ?? 46;
+      // Coordonnées d'écran (le calque est déjà centré sur x, y).
+      const dx = (L.tx - kv(L.x, lt, 0.5)) * SW;
+      const dy = (L.ty - kv(L.y, lt, 0.5)) * SH;
+      const pIn = easeOutBack(clamp(k / 0.35));
+      ctx.save();
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(0, 0, size * 0.22 * pIn, 0, Math.PI * 2); ctx.fill();
+      const pulse = (k % 1.4) / 1.4;
+      ctx.globalAlpha *= (1 - pulse) * clamp(k / 0.3);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = size * 0.07;
+      ctx.beginPath(); ctx.arc(0, 0, size * (0.3 + pulse * 0.9), 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      // Trait coudé jusqu'à l'étiquette.
+      const pl = easeInOut(clamp((k - 0.2) / 0.5));
+      if (pl > 0) {
+        const mx = dx * 0.55, my = dy;
+        const seg1 = Math.hypot(mx, my), seg2 = Math.abs(dx - mx), tot = seg1 + seg2;
+        ctx.save();
+        ctx.strokeStyle = col;
+        ctx.lineWidth = Math.max(2, size * 0.06);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        const d1 = Math.min(1, (pl * tot) / Math.max(1, seg1));
+        ctx.lineTo(mx * d1, my * d1);
+        if (pl * tot > seg1) ctx.lineTo(mx + (dx - mx) * Math.min(1, (pl * tot - seg1) / Math.max(1, seg2)), my);
+        ctx.stroke();
+        ctx.restore();
+      }
+      // Étiquette en verre sombre.
+      const pt = easeOutCubic(clamp((k - 0.6) / 0.4));
+      if (pt > 0) {
+        ctx.save();
+        ctx.translate(dx, dy);
+        ctx.globalAlpha *= pt;
+        setFont(c, 700, size);
+        const tw = ctx.measureText(L.text).width;
+        setFont(c, 500, size * 0.62);
+        const sw = L.sub ? ctx.measureText(L.sub).width : 0;
+        const bw = Math.max(tw, sw) + size * 0.9;
+        const bh = size * (L.sub ? 2.15 : 1.5);
+        const left = dx >= 0;
+        const bx = left ? 0 : -bw;
+        ctx.translate((1 - pt) * (left ? -size * 0.4 : size * 0.4), 0);
+        roundRect(ctx, bx, -bh / 2, bw, bh, size * 0.35);
+        ctx.fillStyle = 'rgba(10,10,14,0.78)';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = rgba(col, 0.9);
+        ctx.stroke();
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        setFont(c, 700, size);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(L.text, bx + size * 0.45, L.sub ? -bh * 0.18 : 0);
+        if (L.sub) { setFont(c, 500, size * 0.62); ctx.fillStyle = rgba('#ffffff', 0.72); ctx.fillText(L.sub, bx + size * 0.45, bh * 0.24); }
+        ctx.restore();
+      }
       return;
     }
     case 'particles': drawParticles(c, L, lt); return;

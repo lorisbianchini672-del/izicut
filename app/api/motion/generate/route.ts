@@ -31,7 +31,7 @@ const BodySchema = z.object({
   /** Planches contact numérotées des photos (JPEG en data URL), pour la vision. */
   photoSheets: z.array(z.string().startsWith('data:image/').max(1_500_000)).max(2).optional(),
   /** Description des photos déjà faite lors d'un appel précédent. */
-  photoNotes: z.string().max(3000).optional(),
+  photoNotes: z.string().max(6000).optional(),
   brand: z
     .object({
       company: CompanySchema.nullable(),
@@ -402,9 +402,11 @@ export async function POST(request: Request) {
     try {
       photoNotes = (await describeImages(
         photoSheets,
-        `Ces images sont des planches de photos numérotées (le numéro est en haut à gauche de chaque photo). Pour CHAQUE photo, écris une ligne "n : description | sujet : haut / centre / bas | zone vide : haut / bas" (ce qu'on voit, le cadrage, l'ambiance, si c'est un produit / un lieu / une personne / un logo, où se trouve le sujet principal ou le visage, et où il y a de la place pour du texte). En français, concis.`,
-        700
-      )).slice(0, 3000);
+        `Ces images sont des planches de photos numérotées (le numéro est en haut à gauche de chaque photo). Pour CHAQUE photo, écris une ligne :
+"n : description précise (ce qu'on voit, produit / lieu / personne / logo, ambiance, textes ou prix lisibles sur l'image) | sujet : haut / centre / bas | zone vide : haut / bas | points clés : (fx, fy) élément ; (fx, fy) élément ; (fx, fy) élément | à expliquer : l'information que cette image prouve ou montre"
+fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2 à 4 points clés par photo (le détail le plus parlant, le visage, le logo, le prix, le geste…). En français, concis.`,
+        1600
+      )).slice(0, 6000);
     } catch {
       photoNotes = '';
     }

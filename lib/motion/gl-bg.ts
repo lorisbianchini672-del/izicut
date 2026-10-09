@@ -7,7 +7,7 @@
  * du client. Sans WebGL, drawBackdrop renvoie false et le moteur 2D prend le relais.
  */
 
-export const BACKDROPS = ['silk', 'aurora', 'mesh', 'liquid', 'nebula', 'plasma', 'grid', 'bokeh', 'lines', 'waves', 'grain', 'paper', 'custom'] as const;
+export const BACKDROPS = ['silk', 'aurora', 'mesh', 'liquid', 'nebula', 'plasma', 'grid', 'bokeh', 'lines', 'waves', 'grain', 'paper', 'marble', 'fire', 'ocean', 'sky', 'smoke', 'holo', 'tunnel', 'warp', 'hex', 'halftone', 'topo', 'matrix', 'lava', 'rays', 'ink', 'sunset', 'dots', 'stripes', 'custom'] as const;
 export type BackdropKind = (typeof BACKDROPS)[number];
 export const BACKDROP_LABELS: Record<BackdropKind, string> = {
   silk: 'Soie lumineuse',
@@ -22,6 +22,24 @@ export const BACKDROP_LABELS: Record<BackdropKind, string> = {
   waves: 'Vagues douces',
   grain: 'Dégradé granuleux',
   paper: 'Papier (clair)',
+  marble: 'Marbre',
+  fire: 'Flammes',
+  ocean: 'Reflets d’eau',
+  sky: 'Ciel et nuages',
+  smoke: 'Fumée',
+  holo: 'Holographique',
+  tunnel: 'Tunnel néon',
+  warp: 'Hyper-espace',
+  hex: 'Alvéoles',
+  halftone: 'Trame pop art',
+  topo: 'Courbes de niveau',
+  matrix: 'Pluie numérique',
+  lava: 'Lampe à lave',
+  rays: 'Rayons de lumière',
+  ink: 'Encre dans l’eau',
+  sunset: 'Coucher de soleil',
+  dots: 'Points ondulants',
+  stripes: 'Rayures cinétiques',
   custom: 'Sur mesure (IA)'
 };
 
@@ -193,7 +211,200 @@ const BODIES: Record<Exclude<BackdropKind, 'custom'>, string> = {
   col -= 0.12 * smoothstep(0.35, 1.2, length(p));
   col = mix(col, uC1, 0.06 * smoothstep(0.0, 1.0, fbm(p * 1.3 + t * 0.02)) * uIntensity);
   return col;
+}`,
+  marble: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 q = p * 2.2 + vec2(t * 0.01, 0.0);
+  float n = fbm(q + fbm(q * 2.0 + t * 0.02) * 1.5);
+  float v = abs(sin(q.x * 2.0 + q.y * 1.3 + n * 7.0));
+  float vein = pow(1.0 - v, 22.0);
+  float vein2 = pow(1.0 - abs(sin(q.x * 3.7 - q.y * 2.1 + n * 11.0)), 40.0);
+  vec3 col = mix(uC0, uC1, smoothstep(0.2, 0.8, n));
+  col = mix(col, uC2, vein * 0.85 * uIntensity);
+  col += uC3 * vein2 * 0.6 * uIntensity;
+  return col;
+}`,
+  fire: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 q = vec2(p.x * 2.2, p.y * 1.6 - t * 0.55);
+  float n = fbm(q * 2.0 + vec2(0.0, -t * 0.3)) * 0.65 + fbm(q * 4.0 - vec2(0.0, t * 0.9)) * 0.35;
+  float h = clamp(0.5 - p.y + n * 0.9 - abs(p.x) * 0.7, 0.0, 1.0);
+  float flame = pow(h, 1.8);
+  vec3 col = pal(clamp(flame * (0.75 + 0.35 * n), 0.0, 1.0)) * smoothstep(0.0, 0.6, flame) * (0.75 + 0.4 * n) * uIntensity;
+  float emb = step(0.996, hash(floor(vec2(uv.x * 220.0, uv.y * 400.0 - t * 30.0)))) * smoothstep(0.6, -0.2, p.y);
+  return col + uC3 * emb * 0.8;
+}`,
+  ocean: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 q = p * 4.0;
+  float c = 0.0;
+  for (int i = 0; i < 3; i++){
+    float fi = float(i);
+    vec2 w = q * (1.0 + fi * 0.6) + vec2(t * (0.15 + fi * 0.05), -t * 0.1);
+    c += pow(abs(sin(w.x + sin(w.y * 1.3 + t * 0.4) + fbm(w * 0.5) * 2.0) * sin(w.y + sin(w.x * 1.1 - t * 0.3))), 0.25 + fi * 0.1);
+  }
+  c = pow(c / 3.0, 6.0);
+  vec3 col = mix(uC0, uC1, uv.y * 0.8 + 0.2);
+  return col + mix(uC2, uC3, c) * c * 1.4 * uIntensity;
+}`,
+  sky: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec3 col = mix(uC1, uC0, smoothstep(-0.5, 0.6, p.y));
+  vec2 q = vec2(p.x * 1.4 + t * 0.02, p.y * 2.4);
+  float cl = fbm(q * 2.0 + fbm(q * 3.0 + t * 0.01));
+  float m = smoothstep(0.45, 0.8, cl) * smoothstep(-0.55, 0.2, p.y);
+  vec3 cloud = mix(uC2, uC3, smoothstep(0.5, 0.9, cl));
+  col = mix(col, cloud, m * 0.9 * uIntensity);
+  col += uC3 * 0.35 * exp(-6.0 * dot(p - vec2(0.15, 0.25), p - vec2(0.15, 0.25)));
+  return col;
+}`,
+  smoke: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 q = p * 1.6 + vec2(0.0, -t * 0.04);
+  vec2 w = vec2(fbm(q + t * 0.03), fbm(q + 4.0 - t * 0.02));
+  float n = fbm(q * 1.5 + 2.5 * w);
+  vec3 col = uC0 * 0.15;
+  col += mix(uC1, uC2, w.x) * pow(n, 2.4) * 1.3 * uIntensity;
+  col += uC3 * pow(n, 6.0) * 0.6 * uIntensity;
+  return col;
+}`,
+  holo: `vec3 bg(vec2 uv, vec2 p, float t){
+  float n = fbm(p * 1.5 + t * 0.05);
+  float a = (p.x + p.y) * 3.0 + n * 4.0 + t * 0.2;
+  vec3 rainbow = 0.5 + 0.5 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + a * 0.25));
+  vec3 col = mix(pal(n), rainbow, 0.45);
+  float sheen = pow(0.5 + 0.5 * sin(a * 2.0), 12.0);
+  col = mix(col * 0.85, vec3(1.0), sheen * 0.35 * uIntensity);
+  return col * (0.7 + 0.3 * uIntensity);
+}`,
+  tunnel: `vec3 bg(vec2 uv, vec2 p, float t){
+  float r = length(p) + 0.001;
+  float a = atan(p.y, p.x);
+  float z = 0.25 / r + t * 0.5;
+  float ring = pow(0.5 + 0.5 * cos(z * 6.2831), 18.0);
+  float spoke = pow(0.5 + 0.5 * cos(a * 8.0 + z * 0.8), 30.0);
+  float fade = smoothstep(0.0, 0.18, r) * exp(-r * 1.5);
+  vec3 col = uC0 * 0.06 + pal(fract(z * 0.1)) * (ring + spoke * 0.5) * fade * 1.3 * uIntensity;
+  return col + uC3 * 0.35 * exp(-r * 25.0);
+}`,
+  warp: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec3 col = uC0 * 0.05;
+  float a = atan(p.y, p.x) / 6.2831 + 0.5;
+  float r = length(p);
+  for (int i = 0; i < 3; i++){
+    float fi = float(i);
+    float n = 60.0 + fi * 45.0;
+    float id = floor(a * n);
+    float h = hash(vec2(id, fi + 1.0));
+    float z = fract(h * 7.0 + t * (0.18 + 0.25 * h));
+    float head = z * 1.1;
+    float len = 0.04 + 0.25 * z * z;
+    float along = smoothstep(head - len, head, r) * step(r, head);
+    float across = smoothstep(0.5, 0.0, abs(fract(a * n) - 0.5) * 2.0 - 0.15 + 0.0) ;
+    col += pal(h) * along * across * z * 1.6 * uIntensity;
+  }
+  return col + uC3 * 0.3 * exp(-r * 12.0);
+}`,
+  hex: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 q = p * 9.0;
+  vec2 r = vec2(1.0, 1.732);
+  vec2 h = r * 0.5;
+  vec2 a = mod(q, r) - h, b = mod(q - h, r) - h;
+  vec2 g = dot(a, a) < dot(b, b) ? a : b;
+  vec2 id = q - g;
+  float edge = max(dot(abs(g), vec2(0.5, 0.866)), abs(g.x));
+  float line = smoothstep(0.44, 0.49, edge);
+  float pulse = 0.5 + 0.5 * sin(length(id) * 0.6 - t * 1.2 + hash(floor(id)) * 6.0);
+  vec3 col = uC0 * 0.12 + pal(pulse) * pow(pulse, 3.0) * 0.35 * uIntensity;
+  return col + uC2 * line * (0.25 + 0.5 * pulse) * uIntensity;
+}`,
+  halftone: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 q = rot(0.5) * p * 34.0;
+  vec2 cell = fract(q) - 0.5;
+  float v = 0.5 + 0.5 * sin(length(p) * 6.0 - t * 0.8 + fbm(p * 2.0) * 3.0);
+  float dot1 = smoothstep(v * 0.5 + 0.02, v * 0.5 - 0.02, length(cell));
+  return mix(uC0, mix(uC1, uC2, v), dot1 * (0.6 + 0.4 * uIntensity));
+}`,
+  topo: `vec3 bg(vec2 uv, vec2 p, float t){
+  float h = fbm(p * 1.8 + vec2(t * 0.015, 0.0)) * 12.0;
+  float l = abs(fract(h) - 0.5);
+  float line = smoothstep(0.05, 0.0, l - 0.01);
+  float major = smoothstep(0.06, 0.0, abs(fract(h / 5.0) - 0.5) - 0.005);
+  vec3 col = uC0;
+  col = mix(col, uC1, line * 0.6 * uIntensity);
+  return mix(col, uC2, major * 0.8 * uIntensity);
+}`,
+  matrix: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 grid = vec2(48.0, 80.0);
+  vec2 cell = floor(uv * grid);
+  float speed = 0.4 + hash(vec2(cell.x, 1.0)) * 0.8;
+  float y = fract(cell.y / grid.y + t * speed * 0.25 + hash(vec2(cell.x, 7.0)));
+  float trail = pow(y, 6.0);
+  float glyph = step(0.45, hash(cell + floor(t * 8.0 * speed)));
+  vec2 f = fract(uv * grid);
+  float shape = step(0.15, f.x) * step(f.x, 0.85) * step(0.1, f.y) * step(f.y, 0.9);
+  vec3 col = uC0 * 0.05 + mix(uC1, uC3, step(0.97, y)) * trail * glyph * shape * 1.3 * uIntensity;
+  return col;
+}`,
+  lava: `vec3 bg(vec2 uv, vec2 p, float t){
+  float f = 0.0;
+  for (int i = 0; i < 7; i++){
+    float fi = float(i);
+    vec2 c = vec2(0.35 * sin(t * (0.11 + fi * 0.03) + fi * 2.1), 0.42 * sin(t * (0.07 + fi * 0.025) + fi * 1.3));
+    float r = 0.08 + 0.05 * hash(vec2(fi, 2.0));
+    f += r * r / dot(p - c, p - c);
+  }
+  float m = smoothstep(0.9, 1.1, f);
+  vec3 col = mix(uC0, uC1, uv.y);
+  vec3 blob = mix(uC2, uC3, smoothstep(1.0, 3.0, f));
+  return mix(col, blob, m * (0.7 + 0.3 * uIntensity)) + uC3 * smoothstep(0.6, 1.0, f) * (1.0 - m) * 0.25;
+}`,
+  rays: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 src = vec2(-0.25, 0.62);
+  vec2 d = p - src;
+  float a = atan(d.x, -d.y);
+  float r = length(d);
+  float beams = pow(0.5 + 0.5 * sin(a * 18.0 + fbm(vec2(a * 3.0, t * 0.1)) * 6.0), 4.0) * 0.6 + pow(0.5 + 0.5 * sin(a * 7.0 - t * 0.15), 6.0) * 0.5;
+  vec3 col = mix(uC0, uC0 * 0.3, uv.y * 0.5);
+  col += pal(0.6 + 0.3 * sin(a * 2.0)) * beams * exp(-r * 1.2) * 1.2 * uIntensity;
+  float dust = step(0.995, hash(floor(uv * uRes / 2.0) + floor(t * 2.0))) * beams;
+  return col + uC3 * exp(-r * 6.0) * 0.6 + vec3(dust);
+}`,
+  ink: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 q = p * 1.3;
+  vec2 w = vec2(fbm(q + vec2(t * 0.03, 0.0)), fbm(q + vec2(5.2, t * 0.025)));
+  vec2 w2 = vec2(fbm(q + 3.0 * w + 1.7), fbm(q + 3.0 * w + 9.2));
+  float n = fbm(q + 3.5 * w2);
+  vec3 col = uC0;
+  col = mix(col, uC1, smoothstep(0.35, 0.65, n) * uIntensity);
+  col = mix(col, uC2, smoothstep(0.55, 0.85, w2.x) * 0.8 * uIntensity);
+  col += uC3 * pow(smoothstep(0.6, 0.95, n), 3.0) * 0.5;
+  return col;
+}`,
+  sunset: `vec3 bg(vec2 uv, vec2 p, float t){
+  float y = p.y + 0.03 * sin(p.x * 3.0 + t * 0.2);
+  vec3 col = mix(uC3, uC2, smoothstep(-0.2, 0.15, y));
+  col = mix(col, uC1, smoothstep(0.05, 0.35, y));
+  col = mix(col, uC0, smoothstep(0.3, 0.55, y));
+  vec2 sp = p - vec2(0.0, -0.08);
+  col += uC3 * 0.8 * smoothstep(0.16, 0.12, length(sp)) * uIntensity + uC3 * 0.35 * exp(-length(sp) * 4.0);
+  float sea = step(y, -0.15);
+  float sh = 0.5 + 0.5 * sin(p.y * 160.0 + fbm(vec2(p.x * 8.0, t * 0.5)) * 6.0);
+  return mix(col, mix(uC0 * 0.6, uC3, smoothstep(0.25, 0.0, abs(p.x)) * sh * 0.8), sea * 0.8);
+}`,
+  dots: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 q = p * 22.0;
+  vec2 id = floor(q);
+  vec2 f = fract(q) - 0.5;
+  float wave = 0.5 + 0.5 * sin(length(id) * 0.35 - t * 1.4 + fbm(id * 0.1) * 3.0);
+  float r = 0.12 + 0.28 * wave;
+  float d = smoothstep(r, r - 0.06, length(f));
+  return uC0 * 0.1 + pal(wave) * d * (0.5 + 0.6 * uIntensity);
+}`,
+  stripes: `vec3 bg(vec2 uv, vec2 p, float t){
+  vec2 q = rot(0.6) * p;
+  float w = q.x * 14.0 + sin(q.y * 3.0 + t * 0.6) * 1.2 + t * 0.5;
+  float s = smoothstep(0.45, 0.55, fract(w));
+  float id = floor(w);
+  vec3 c = pal(fract(id * 0.137));
+  return mix(uC0 * 0.15, c, s * (0.6 + 0.4 * uIntensity));
 }`
+
 };
 
 const VERT = 'attribute vec2 q; void main(){ gl_Position = vec4(q, 0.0, 1.0); }';
