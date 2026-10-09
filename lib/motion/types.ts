@@ -65,8 +65,8 @@ const layerBase = {
   /** Position du centre en fraction de l'écran (0 = gauche / haut, 1 = droite / bas). */
   x: anum.optional(), y: anum.optional(),
   scale: anum.optional(), sx: anum.optional(), sy: anum.optional(),
-  /** Rotation en degrés ; ry = pivot 3D autour de l'axe vertical (−80 à 80). */
-  rotate: anum.optional(), ry: anum.optional(),
+  /** Rotation en degrés ; ry / rx = bascule 3D autour de l'axe vertical / horizontal (−85 à 85). */
+  rotate: anum.optional(), ry: anum.optional(), rx: anum.optional(),
   opacity: anum.optional(),
   /** Flou en px (toutes les tailles sont en px sur un écran dont le petit côté fait 1080). */
   blur: anum.optional(),
@@ -100,7 +100,7 @@ const TextLayer = z.object({
   revealAt: z.number().min(0).max(15).optional(),
   revealDur: z.number().min(0.1).max(8).optional()
 });
-const RectLayer = z.object({ kind: z.literal('rect'), ...layerBase, w: anum, h: anum, radius: z.number().min(0).max(1000).optional(), fill: paint.optional(), color: acol.optional(), stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional(), progress: anum.optional() });
+const RectLayer = z.object({ kind: z.literal('rect'), ...layerBase, w: anum, h: anum, radius: anum.optional(), fill: paint.optional(), color: acol.optional(), stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional(), progress: anum.optional() });
 const EllipseLayer = z.object({ kind: z.literal('ellipse'), ...layerBase, w: anum, h: anum.optional(), fill: paint.optional(), color: acol.optional(), stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional(), progress: anum.optional() });
 const PathLayer = z.object({
   kind: z.literal('path'), ...layerBase,
@@ -111,9 +111,11 @@ const PathLayer = z.object({
   fill: paint.optional(),
   /** Part du tracé dessinée (0 → 1 = le trait se dessine). */
   progress: anum.optional(),
+  /** Début du trait (0 → 1 : la queue suit la tête, effet comète / ligne qui traverse). */
+  start: anum.optional(),
   cap: z.enum(['round', 'butt', 'square']).optional()
 });
-const ImageLayer = z.object({ kind: z.literal('image'), ...layerBase, src: z.string().regex(/^(logo|photo:\d{1,2})$/), w: anum, h: anum.optional(), fit: z.enum(['cover', 'contain']).optional(), radius: z.number().min(0).max(1000).optional() });
+const ImageLayer = z.object({ kind: z.literal('image'), ...layerBase, src: z.string().regex(/^(logo|photo:\d{1,2}|search:.{2,60})$/), w: anum, h: anum.optional(), fit: z.enum(['cover', 'contain']).optional(), radius: z.number().min(0).max(1000).optional() });
 const ParticlesLayer = z.object({ kind: z.literal('particles'), ...layerBase, mode: z.enum(['float', 'burst', 'rain', 'orbit', 'sparkle', 'converge']), count: z.number().int().min(1).max(160), color: hex, color2: hex.optional(), size: z.number().min(1).max(80).optional(), spread: z.number().min(0.01).max(1.5).optional(), speed: z.number().min(0).max(5).optional(), at: z.number().min(0).max(15).optional() });
 const GlowLayer = z.object({ kind: z.literal('glow'), ...layerBase, color: acol, size: anum });
 const FlowLayer = z.object({ kind: z.literal('flow'), ...layerBase, colors: z.array(hex).min(1).max(4), intensity: z.number().min(0).max(2).optional() });

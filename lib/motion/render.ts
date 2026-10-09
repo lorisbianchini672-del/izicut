@@ -22,6 +22,8 @@ export type MotionAssets = {
   videos?: (HTMLVideoElement | null)[];
   /** Photos du client (produits, locaux, équipe…). */
   photos?: (HTMLImageElement | null)[];
+  /** Images libres de droits trouvées sur le web (clé = « search:mots »). */
+  web?: Record<string, HTMLImageElement | null>;
 };
 export type RenderOptions = { fontFamily: string; watermark?: boolean; /** Facteur de résolution (1 = 1080p, 1.333 = 1440p). */ scale?: number };
 
@@ -2065,7 +2067,7 @@ function path2d(d: string): Path2D | null {
 }
 
 function imageOf(c: Ctx, src: string): HTMLImageElement | null {
-  const img = src === 'logo' ? c.assets.logo : c.assets.photos?.[Number(src.slice(6))];
+  const img = src === 'logo' ? c.assets.logo : src.startsWith('search:') ? c.assets.web?.[src] : c.assets.photos?.[Number(src.slice(6))];
   return img && img.complete && img.naturalWidth ? img : null;
 }
 
@@ -2211,7 +2213,7 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
       const h = kv(L.kind === 'rect' ? L.h : L.h ?? L.w, lt, w);
       const prog = L.progress === undefined ? 1 : clamp(kv(L.progress, lt, 1));
       ctx.beginPath();
-      if (L.kind === 'rect') roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(L.radius ?? 0, Math.min(w, h) / 2));
+      if (L.kind === 'rect') roundRect(ctx, -w / 2, -h / 2, w, h, Math.max(0, Math.min(kv(L.radius, lt, 0), Math.min(w, h) / 2)));
       else ctx.ellipse(0, 0, Math.max(0.1, w / 2), Math.max(0.1, h / 2), 0, 0, Math.PI * 2);
       const fill = L.fill ?? (L.color !== undefined ? kv(L.color as Keyed<string>, lt, '#ffffff') : L.stroke ? undefined : '#ffffff');
       if (fill) { ctx.fillStyle = paintStyle(ctx, fill as Paint, w, h); ctx.fill(); }
@@ -2238,7 +2240,9 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
         ctx.lineCap = L.cap ?? 'round';
         ctx.lineJoin = 'round';
         ctx.strokeStyle = kv(L.color as Keyed<string> | undefined, lt, '#ffffff');
-        if (prog < 1) { const len = svgLength(L.d); ctx.setLineDash([len * prog, len + 10]); }
+        const st = L.start === undefined ? 0 : clamp(kv(L.start, lt, 0));
+        if (st >= prog) { ctx.setLineDash([]); return; }
+        if (prog < 1 || st > 0) { const len = svgLength(L.d); ctx.setLineDash([len * (prog - st), len * 2 + 10]); ctx.lineDashOffset = -len * st; }
         ctx.stroke(p);
         ctx.setLineDash([]);
       }
@@ -2313,9 +2317,12 @@ function drawFreeLayer(c: Ctx, L: Layer, lt: number, ghost = false) {
   if (rot) ctx.rotate((rot * Math.PI) / 180);
   const s = kv(L.scale, lt, 1);
   const ry = (clamp(kv(L.ry, lt, 0), -85, 85) * Math.PI) / 180;
+  const rx = (clamp(kv(L.rx, lt, 0), -85, 85) * Math.PI) / 180;
   const sx = s * kv(L.sx, lt, 1) * Math.cos(ry);
-  const sy = s * kv(L.sy, lt, 1);
+  const sy = s * kv(L.sy, lt, 1) * Math.cos(rx);
+  // Bascules 3D simulées : écrasement + léger cisaillement (perspective).
   if (ry) ctx.transform(1, Math.sin(ry) * 0.12, 0, 1, 0, 0);
+  if (rx) ctx.transform(1, 0, Math.sin(rx) * 0.12, 1, 0, 0);
   if (sx !== 1 || sy !== 1) ctx.scale(sx || 0.0001, sy || 0.0001);
   const bl = kv(L.blur, lt, 0);
   if (bl > 0.4) setBlur(ctx, bl);
@@ -2506,5 +2513,28 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
     ctx.fillText('Réalisé avec IziCut', W / 2, H - c.U * 0.04);
     ctx.restore();
   }
+  ctx.restore();
+}
+
+/**
+ * Motion design par-dessus une vidéo (Montage IA des clips 9:16) : dessine une
+ * scène libre à l'instant lt, sans fond (sauf si demandé), à l'échelle du canvas.
+ */
+export function drawMotionOverlay(
+  ctx: CanvasRenderingContext2D,
+  scene: Pick<Extract<Scene, { type: 'free' }>, 'layers' | 'camera' | 'bg'>,
+  lt: number,
+  opts: { fontFamily: string; theme?: Partial<MotionProject['theme']>; assets?: MotionAssets }
+) {
+  const cw = ctx.canvas.width;
+  const ch = ctx.canvas.height;
+  const S = Math.min(cw, ch) / 1080;
+  const W = cw / S;
+  const H = ch / S;
+  const theme: MotionProject['theme'] = { background: '#000000', primary: '#c8ff3d', accent: '#ffffff', text: '#ffffff', style: 'neon', ...opts.theme };
+  const c: Ctx = { ctx, W, H, U: Math.min(W, H), vertical: H > W, theme, font: opts.fontFamily, assets: opts.assets ?? {}, brand: '' };
+  ctx.save();
+  ctx.setTransform(S, 0, 0, S, 0, 0);
+  sceneFree(c, { type: 'free', duration: 15, bg: scene.bg ?? undefined, camera: scene.camera, layers: scene.layers }, lt);
   ctx.restore();
 }

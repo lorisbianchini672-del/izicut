@@ -20,7 +20,8 @@ export class AiNotConfiguredError extends Error {
 }
 
 type Provider = { name: string; url: string; key: string; model: string; vision?: string; json: boolean; kind?: 'openai' | 'anthropic' };
-type ChatOptions = { system: string; user: string; maxTokens?: number; temperature?: number };
+/** think = budget de réflexion (tokens) : Claude réfléchit en profondeur avant de répondre. */
+type ChatOptions = { system: string; user: string; maxTokens?: number; temperature?: number; think?: number };
 type Part = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
 function providers(): Provider[] {
@@ -53,7 +54,7 @@ export function parseJsonObject(text: string): unknown {
 }
 
 /** Claude (API Messages d'Anthropic) : le système est à part, les images en base64. */
-async function callAnthropic(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean): Promise<string> {
+async function callAnthropic(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean, think = 0): Promise<string> {
   const system = messages.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n\n');
   const conv = messages.filter((m) => m.role !== 'system').map((m) => ({
     role: m.role === 'assistant' ? 'assistant' : 'user',
@@ -65,18 +66,22 @@ async function callAnthropic(p: Provider, model: string, messages: { role: strin
           return match ? { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } } : { type: 'image', source: { type: 'url', url: part.image_url.url } };
         })
   }));
-  const res = await fetch(p.url, {
+  const send = (withThinking: boolean) => fetch(p.url, {
     method: 'POST',
     headers: { 'x-api-key': p.key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
-      max_tokens: maxTokens,
-      temperature: Math.min(1, temperature),
+      max_tokens: maxTokens + (withThinking ? think : 0),
+      // Réflexion approfondie : Claude planifie la pub (concept, rythme, calques) avant d'écrire le JSON.
+      ...(withThinking ? { thinking: { type: 'enabled', budget_tokens: think } } : { temperature: Math.min(1, temperature) }),
       system: json ? `${system}\n\nRéponds uniquement par l'objet JSON demandé, sans texte autour ni balises de code.` : system || undefined,
       messages: conv
     }),
-    signal: AbortSignal.timeout(110_000)
+    signal: AbortSignal.timeout(withThinking ? 240_000 : 110_000)
   });
+  let res = await send(think > 0);
+  // Modèle sans réflexion étendue : on refait la demande sans elle.
+  if (think > 0 && res.status === 400) res = await send(false);
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
     throw Object.assign(new Error(`claude HTTP ${res.status} ${detail.slice(0, 120)}`), { retry: true });
@@ -87,8 +92,8 @@ async function callAnthropic(p: Provider, model: string, messages: { role: strin
   return text;
 }
 
-async function call(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean): Promise<string> {
-  if (p.kind === 'anthropic') return callAnthropic(p, model, messages, maxTokens, temperature, json);
+async function call(p: Provider, model: string, messages: { role: string; content: string | Part[] }[], maxTokens: number, temperature: number, json: boolean, think = 0): Promise<string> {
+  if (p.kind === 'anthropic') return callAnthropic(p, model, messages, maxTokens, temperature, json, think);
   const res = await fetch(p.url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${p.key}`, 'Content-Type': 'application/json' },
@@ -99,7 +104,7 @@ async function call(p: Provider, model: string, messages: { role: string; conten
       ...(json && p.json ? { response_format: { type: 'json_object' } } : {}),
       messages
     }),
-    signal: AbortSignal.timeout(40_000)
+    signal: AbortSignal.timeout(think > 0 ? 120_000 : 40_000)
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
@@ -132,9 +137,9 @@ async function cascade(run: (p: Provider) => Promise<string>, filter: (p: Provid
   throw Object.assign(new Error('Notre IA est très demandée en ce moment. Nouvel essai automatique dans quelques secondes…'), { busy: true });
 }
 
-export async function chatJson({ system, user, maxTokens = 1500, temperature = 0.7 }: ChatOptions): Promise<unknown> {
+export async function chatJson({ system, user, maxTokens = 1500, temperature = 0.7, think = 0 }: ChatOptions): Promise<unknown> {
   const content = await cascade((p) =>
-    call(p, p.model, [{ role: 'system', content: system }, { role: 'user', content: user }], maxTokens, temperature, true)
+    call(p, p.model, [{ role: 'system', content: system }, { role: 'user', content: user }], maxTokens, temperature, true, think)
   );
   return parseJsonObject(content);
 }

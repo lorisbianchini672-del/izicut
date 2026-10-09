@@ -2,6 +2,7 @@
  * Studio d'effets — moteur de rendu canvas : la vidéo du client + calques.
  * Même fonction pour l'aperçu et pour l'export (enregistrement du canvas).
  */
+import { drawMotionOverlay } from '../motion/render';
 import { parseRich } from '@/lib/motion/render';
 import type { Layer } from './types';
 
@@ -744,6 +745,7 @@ export function drawComposite(ctx: CanvasRenderingContext2D, video: HTMLVideoEle
       }
       case 'intro': drawIntro(ctx, l, t, W, H, opts.fontFamily); break;
       case 'endcard': drawEndcard(ctx, l, t, W, H, opts.fontFamily); break;
+      case 'motion': drawMotionOverlay(ctx, l, t - l.start, { fontFamily: opts.fontFamily }); break;
       case 'flash': {
         const p = clamp((t - l.start) / Math.max(0.05, l.end - l.start));
         ctx.globalAlpha = (1 - p) * 0.85;

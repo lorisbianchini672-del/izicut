@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { AiNotConfiguredError, chatJson, describeImages } from '@/lib/ai/chat';
+import { FREE_DOC } from '@/lib/motion/prompt';
+import { repairFree } from '@/lib/motion/repair';
 import { LayerSchema, LayersSchema, type Layer } from '@/lib/overlay/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -11,6 +13,8 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
  * les calques actuels, la durée et la transcription horodatée, et renvoie
  * la liste COMPLÈTE des calques mise à jour + un court message.
  */
+
+export const maxDuration = 300;
 
 const BodySchema = z.object({
   prompt: z.string().trim().min(2).max(1200),
@@ -29,7 +33,9 @@ const BodySchema = z.object({
 
 const RECIPES = ['velocity', 'hype', 'cinematic', 'beatzoom', 'smooth', 'product'] as const;
 
-const SYSTEM = `Tu es un monteur vidéo expert (style CapCut / clips TikTok). Tu modifies la vidéo du client avec des CALQUES : certains transforment la VIDÉO ELLE-MÊME (vitesse, coupes, arrêts sur image, effets d'image, zooms, filtres), d'autres s'AJOUTENT par-dessus (textes, emojis, formes, intro, carte de fin, barre, flash).
+const SYSTEM = `RÈGLE N°0 : le client est le réalisateur. Tu fais TOUT ce qu'il demande, même très précis ou inhabituel, en le traduisant en calques. Tu réfléchis comme un monteur ET un motion designer d'agence avant de répondre, et tu expliques en détail ce que tu as fait.
+
+Tu es un monteur vidéo expert (style CapCut / clips TikTok) ET un motion designer. Tu modifies la vidéo du client avec des CALQUES : certains transforment la VIDÉO ELLE-MÊME (vitesse, coupes, arrêts sur image, effets d'image, zooms, filtres), d'autres s'AJOUTENT par-dessus (textes, emojis, formes, intro, carte de fin, barre, flash).
 
 RÈGLE N°1 : fais EXACTEMENT ce que le client demande, rien de plus. N'ajoute JAMAIS de texte, d'emoji, d'intro, de carte de fin ou de barre de progression s'il ne l'a pas demandé (ou s'il demande un « montage complet »). S'il demande de modifier sa vidéo (ralenti, accéléré, rythme, effet, couper, style clip, danse…), utilise UNIQUEMENT les calques qui transforment la vidéo.
 RÈGLE N°3 : RÉFLÉCHIS comme un monteur pro avant de répondre : regarde ce que montre la vidéo (description fournie), où sont les moments les plus animés, les temps forts de la musique ; choisis un style cohérent avec le contenu (danse → velocity/hype, paysage/produit → cinematic/product, discussion → beatzoom doux + textes clés), puis ajoute des retouches précises (arrêt sur image sur le geste le plus fort, ralenti sur le moment spectaculaire…).
@@ -37,12 +43,12 @@ RÈGLE N°2 : les temps sont ceux de la vidéo d'origine (en secondes). Les "tem
 Tu as DEUX façons de répondre (UNIQUEMENT en JSON) :
 
 A) Demande de STYLE / montage global (« fais un montage », « style danse », « rends-la stylée / pro / cinéma », « plus énergique », « plus doux », « autre version »…) :
-{"message": "phrase en français qui explique tes choix (style, pourquoi, retouches)", "recipe": "velocity|hype|cinematic|beatzoom|smooth|product", "energy": 0-1, "layers": [retouches précises EN PLUS du style : arrêt sur image, ralenti ciblé, effet sur un moment précis… + textes/emojis SEULEMENT si demandés], "dropOverlays": true si le client veut retirer textes/emojis}
+{"message": "explication détaillée en français (3 à 6 phrases) : ce que tu as compris, le style choisi et pourquoi, les retouches et le motion design ajoutés, moment par moment", "recipe": "velocity|hype|cinematic|beatzoom|smooth|product", "energy": 0-1, "layers": [retouches précises EN PLUS du style : arrêt sur image, ralenti ciblé, effet sur un moment précis… + textes/emojis SEULEMENT si demandés], "dropOverlays": true si le client veut retirer textes/emojis}
    velocity = danse (accélérés/ralentis sur les temps forts, zooms, traînées) ; hype = glitch/flash/secousses ; cinematic = film, ralentis, étalonnage ; beatzoom = zooms alternés au rythme ; smooth = vlog doux ; product = pub produit premium.
    Un moteur professionnel génère alors un montage DENSE calé sur la musique et les mouvements de la vidéo. C'est la meilleure option pour la qualité : utilise-la dès que la demande est globale.
 
 B) Demande PRÉCISE (« ralenti entre 3 et 5 s », « mets BRAVO en jaune à 2 s », « enlève le glitch », « zoom sur la fin ») :
-{"message": "phrase en français", "layers": [ ...liste COMPLÈTE des calques mise à jour... ]}
+{"message": "explication détaillée en français (2 à 5 phrases) de ce que tu as fait, moment par moment", "layers": [ ...liste COMPLÈTE des calques mise à jour... ]}
 
 Types de calques (tous ont "id" texte unique, "start" et "end" en secondes, 0 <= start < end <= durée) :
 - {"type":"text","text":"max 140 car., mots clés entre *astérisques* pour la couleur d'accent","x":0-1,"y":0-1,"size":20-220 (px sur 1080 de large, 70-110 conseillé),"color":"#RRGGBB","accent":"#RRGGBB","box":"none|box|pill|highlight|outline","boxColor":"#RRGGBB","anim":"pop|fade|slide|bounce|zoom|typewriter|words","uppercase":true|false}
@@ -54,6 +60,9 @@ Types de calques (tous ont "id" texte unique, "start" et "end" en secondes, 0 <=
 - {"type":"endcard","title":"max 80","button":"optionnel max 30","brand":"optionnel","color":"#RRGGBB"}  (carte de fin, 2 à 3 s, finit à la durée totale)
 - {"type":"filter","filter":"bw|warm|cool|vibrant|vintage|cinema|dark","intensity":0-1}
 - {"type":"flash","color":"#RRGGBB"}  (flash de transition très court, 0.2 à 0.4 s)
+- {"type":"motion","name":"nom court","layers":[calques de création libre],"camera":optionnel,"bg":optionnel (sans "bg" = transparent par-dessus la vidéo)}  (MOTION DESIGN SUR MESURE par-dessus la vidéo : titres animés, accroches, pictos qui se dessinent, lignes, compteurs, lower-thirds, cadres, particules, logos, cartes… Les temps des images clés "t" sont comptés depuis "start" du calque. Utilise-le pour TOUT habillage graphique ambitieux que les autres calques ne savent pas faire.)
+  Langage des "layers" d'un calque "motion" (identique aux scènes libres) :
+${FREE_DOC.replace(/`/g, "'")}
 Calques qui TRANSFORMENT la vidéo :
 - {"type":"speed","rate":0.25-4}  (ralenti < 1, accéléré > 1, sur le passage start→end)
 - {"type":"cut"}  (supprime le passage start→end)
@@ -104,6 +113,15 @@ function repair(list: unknown[], duration: number): Layer[] {
     if (l.type === 'freeze') { l.hold = Math.min(5, Math.max(0.2, Number(l.hold) || 1)); l.end = Math.min(duration, Number(l.start) + 0.2); }
     if (l.type === 'effect') { l.intensity = Math.min(1, Math.max(0.05, Number(l.intensity) || 0.7)); if (typeof l.beat !== 'boolean') delete l.beat; }
     if (l.type === 'shape') { l.w = Math.min(1, Math.max(0.03, Number(l.w) || 0.3)); l.h = Math.min(1, Math.max(0.01, Number(l.h) || 0.15)); l.rotation = Number(l.rotation) || 0; }
+    if (l.type === 'motion') {
+      // Création libre : chaque calque interne est réparé, les irrécupérables sont retirés.
+      const fixed = repairFree({ type: 'free', duration: Math.max(1.5, Math.min(8, Number(l.end) - Number(l.start))), layers: l.layers, camera: l.camera, bg: l.bg ?? 'theme' });
+      if (!fixed) return;
+      l.layers = fixed.layers;
+      if (fixed.camera) l.camera = fixed.camera; else delete l.camera;
+      if (fixed.bg && fixed.bg !== 'theme') l.bg = fixed.bg; else delete l.bg;
+      if (typeof l.name === 'string') l.name = l.name.slice(0, 40);
+    }
     const parsed = LayerSchema.safeParse(l);
     if (parsed.success) out.push(parsed.data);
   });
@@ -111,7 +129,7 @@ function repair(list: unknown[], duration: number): Layer[] {
   const intro = out.find((l) => l.type === 'intro');
   const endcard = out.find((l) => l.type === 'endcard');
   const fixed = out.map((l) => {
-    const minLen = l.type === 'text' ? 1.4 : l.type === 'emoji' ? 1 : l.type === 'zoom' ? 0.6 : 0;
+    const minLen = l.type === 'text' ? 1.4 : l.type === 'emoji' ? 1 : l.type === 'zoom' ? 0.6 : l.type === 'motion' ? 1 : 0;
     let { start, end } = l;
     if ((l.type === 'text' || l.type === 'emoji') && intro && start < intro.end && end > intro.start) {
       const len = end - start;
@@ -162,10 +180,11 @@ Décris en français, de façon concise : 1) case par case (sujet, action, cadra
     const raw = (await chatJson({
       system: SYSTEM,
       user: `${vision ? `Ce que montre la vidéo (vu par l'IA) : ${vision.slice(0, 2500)}\n` : ''}Style actuel : ${style ?? 'aucun'} (énergie ${energy ?? 0.7}). ${motionText}\nDurée de la vidéo : ${duration.toFixed(1)} s.\nTemps forts de la musique (s) : ${beatText || '(non détectés)'}\nTranscription (secondes mot) : ${transcript || '(pas de parole)'}\nCalques actuels : ${JSON.stringify(current)}\n\nDemande du client : ${prompt}`,
-      maxTokens: 4000,
-      temperature: 0.5
+      maxTokens: 12000,
+      temperature: 0.5,
+      think: 3000
     })) as { message?: unknown; layers?: unknown; recipe?: unknown; energy?: unknown; dropOverlays?: unknown };
-    const message = typeof raw?.message === 'string' ? raw.message.slice(0, 300) : 'C’est fait.';
+    const message = typeof raw?.message === 'string' ? raw.message.slice(0, 1200) : 'C’est fait.';
     if (typeof raw?.recipe === 'string' && (RECIPES as readonly string[]).includes(raw.recipe)) {
       const extra = Array.isArray(raw.layers) ? repair(raw.layers, duration) : [];
       return NextResponse.json({

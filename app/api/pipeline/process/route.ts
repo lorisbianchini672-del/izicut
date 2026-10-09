@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { normalizeVideoUrl } from '@/components/upload/validate-intake';
+
 import { createProjectWithJob } from '@/lib/jobs';
 import { estimateCostSeconds } from '@/lib/pipeline-cost';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -29,7 +31,8 @@ const MAX_DECLARED_SECONDS = 24 * 60 * 60;
 const ProcessRequestSchema = z
   .object({
     source_type: z.enum(['upload_gallery', 'external_url']),
-    source_url: z.string().trim().url().max(2048).optional(),
+    // Liens sans « https:// », Shorts, youtu.be, embed… : remis au format standard.
+    source_url: z.preprocess((v) => (typeof v === 'string' ? normalizeVideoUrl(v) : v), z.string().trim().url().max(2048)).optional(),
     /** Clé d'objet DANS le bucket `raw-videos` : `<user_id>/<fichier>`. */
     storage_path: z.string().trim().min(3).max(1024).optional(),
     duration_seconds: z.number().int().min(0).max(MAX_DECLARED_SECONDS).optional()

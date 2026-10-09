@@ -5,6 +5,8 @@
  */
 import { z } from 'zod';
 
+import { FreeSceneSchema, LayerSchema as MotionLayerSchema } from '../motion/types';
+
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const unit = z.number().min(0).max(1);
 const base = { id: z.string().min(1).max(40), start: z.number().min(0).max(3600), end: z.number().min(0).max(3600) };
@@ -58,7 +60,9 @@ export const LayerSchema = z.discriminatedUnion('type', [
   /** Arrêt sur image : l'image de « start » reste figée « hold » secondes. */
   z.object({ ...base, type: z.literal('freeze'), hold: z.number().min(0.2).max(5) }),
   /** Effet visuel sur la vidéo ; « beat » = calé sur les temps forts de la musique. */
-  z.object({ ...base, type: z.literal('effect'), effect: z.enum(VIDEO_FX), intensity: unit, beat: z.boolean().optional() })
+  z.object({ ...base, type: z.literal('effect'), effect: z.enum(VIDEO_FX), intensity: unit, beat: z.boolean().optional() }),
+  /** Motion design libre par-dessus la vidéo : calques dessinés et animés par l'IA (titres, pictos, lignes, particules…). */
+  z.object({ ...base, type: z.literal('motion'), name: z.string().trim().max(40).optional(), layers: z.array(MotionLayerSchema).min(1).max(40), camera: FreeSceneSchema.shape.camera, bg: FreeSceneSchema.shape.bg })
 ]);
 
 export type Layer = z.infer<typeof LayerSchema>;
@@ -78,7 +82,8 @@ export const LAYER_LABELS: Record<LayerType, string> = {
   speed: 'Vitesse',
   cut: 'Coupe',
   freeze: 'Arrêt sur image',
-  effect: 'Effet vidéo'
+  effect: 'Effet vidéo',
+  motion: 'Motion design'
 };
 
 export const LAYER_COLORS: Record<LayerType, string> = {
@@ -94,7 +99,8 @@ export const LAYER_COLORS: Record<LayerType, string> = {
   speed: '#f472b6',
   cut: '#ef4444',
   freeze: '#60a5fa',
-  effect: '#e879f9'
+  effect: '#e879f9',
+  motion: '#7c5cff'
 };
 
 export const ANIM_LABELS: Record<(typeof TEXT_ANIMS)[number], string> = {
@@ -186,6 +192,15 @@ export function defaultLayer(type: LayerType, t: number, duration: number): Laye
       return { id, type, ...span(0.2), hold: 1 };
     case 'effect':
       return { id, type, ...span(2), effect: 'glitch', intensity: 0.7, beat: true };
+    case 'motion':
+      return {
+        id, type, ...span(2.5), name: 'Titre animé',
+        layers: [
+          { kind: 'rect', x: 0.5, y: 0.3, w: [{ t: 0, v: 0 }, { t: 0.45, v: 760, e: 'expo' }], h: 150, radius: 28, color: '#7c5cff', glow: { color: '#7c5cff', size: 40 } },
+          { kind: 'text', x: 0.5, y: 0.3, text: 'Votre *titre*', size: 84, weight: 900, upper: true, reveal: 'blur', revealAt: 0.3 },
+          { kind: 'particles', x: 0.5, y: 0.3, mode: 'burst', count: 40, color: '#ffffff', spread: 0.45, at: 0.4 }
+        ]
+      };
   }
 }
 

@@ -314,6 +314,9 @@ export class PermanentError extends Error {
 }
 
 /** Assez de parole pour une analyse IA de la transcription ? */
+/** Au-delà, la vidéo est découpée en clips ; en dessous, elle est gardée entière. */
+const SHORT_MAX_SECONDS = 90;
+
 function hasSpeech(words) {
   const count = Array.isArray(words) ? words.filter((w) => String(w?.word ?? '').trim()).length : 0;
   return count >= 25;
@@ -625,9 +628,9 @@ export async function runTranscribe(supabase, job, project, ctx) {
     console.log(`[worker] transcription : ${allWords.length} mots (${chunks.length} tranche(s))`);
   }
 
-  if (allWords.length === 0) {
-    throw new Error('Transcription vide : la vidéo contient-elle de la parole ?');
-  }
+  // Pas de parole (clip musical, danse, sport, Short 9:16…) : ce n'est plus une
+  // erreur. La suite choisit les moments d'après le son, ou garde la vidéo entière.
+  if (allWords.length === 0) console.log('[worker] aucune parole détectée → mode « moments visuels »');
 
   // Persistance : transcript + SRT de secours (repli si le rendu animé
   // échoue ; un clip avec son SRT reste exploitable).
@@ -1265,7 +1268,12 @@ export async function processJob(job) {
         await storeSourceInCache(project.id, ctx.sourcePath).catch(() => undefined);
       }
       ctx.words = (await runTranscribe(supabase, job, project, ctx)).words;
-      if (!hasSpeech(ctx.words)) {
+      if (ctx.durationSeconds <= SHORT_MAX_SECONDS) {
+        // Vidéo courte (Short / Reel / TikTok de 90 s max) : on la garde EN ENTIER
+        // en 9:16, prête pour le Montage IA (motion design + chat), sans la découper.
+        console.log(`[worker] vidéo courte (${ctx.durationSeconds} s) → un seul clip, la vidéo entière`);
+        ctx.visualCandidates = [{ start_time: 0, end_time: ctx.durationSeconds, virality_score: 80, title: 'Votre vidéo complète en 9:16', hook_text: '', summary: 'Vidéo complète, prête pour le Montage IA (motion design, textes, effets).' }];
+      } else if (!hasSpeech(ctx.words)) {
         // Peu ou pas de parole (musique, sport, animation, vlog sans voix) :
         // on choisit les moments forts d'après l'énergie du son.
         console.log('[worker] peu de parole → mode « moments visuels » (énergie audio)');

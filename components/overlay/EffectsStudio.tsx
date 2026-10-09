@@ -63,7 +63,7 @@ const AI_IDEAS = [
 const EMOJIS = ['🔥', '😂', '😱', '💯', '👀', '❤️', '🚀', '💰', '👇', '✅', '❌', '⚡', '🎯', '🤯', '👏', '✨'];
 const COLORS = ['#ffffff', '#c8ff3d', '#ffd400', '#ff3b6b', '#3de0ff', '#a855f7', '#ff8a00', '#000000'];
 const VIDEO_TYPES: LayerType[] = ['effect', 'speed', 'cut', 'freeze', 'zoom', 'filter'];
-const ADD_TYPES: LayerType[] = ['text', 'emoji', 'shape', 'intro', 'endcard', 'progress', 'flash'];
+const ADD_TYPES: LayerType[] = ['motion', 'text', 'emoji', 'shape', 'intro', 'endcard', 'progress', 'flash'];
 
 function readWords(value: unknown): Word[] {
   const list = Array.isArray(value) ? value : Array.isArray((value as { words?: unknown })?.words) ? (value as { words: unknown[] }).words : [];
@@ -761,6 +761,7 @@ function layerTitle(l: Layer): string {
     case 'cut': return 'Coupé';
     case 'freeze': return `Arrêt ${l.hold}s`;
     case 'effect': return `${FX_LABELS[l.effect]}${l.beat ? ' ♪' : ''}`;
+    case 'motion': return `Motion · ${l.name ?? (l.layers.find((x) => x.kind === 'text') as { text?: string } | undefined)?.text?.replace(/\*/g, '') ?? 'création IA'}`;
     default: return LAYER_LABELS[l.type];
   }
 }
@@ -1013,6 +1014,14 @@ function Inspector({ layer, duration, onChange, onDelete, onDuplicate }: { layer
 
       {layer.type === 'freeze' ? <Row label="Durée de l’arrêt sur image"><Slider value={layer.hold} min={0.2} max={5} step={0.1} onChange={(v) => set({ hold: v })} suffix="s" /></Row> : null}
 
+      {layer.type === 'motion' ? (
+        <>
+          <p className="text-xs text-fg-subtle">Motion design dessiné par l’IA ({layer.layers.length} calque{layer.layers.length > 1 ? 's' : ''}). Retouchez les textes ici ; pour les formes, couleurs et mouvements, décrivez-les à l’IA (« plus néon », « fais exploser le titre en particules »…).</p>
+          {layer.layers.map((x, k) => (x.kind === 'text' ? (
+            <input key={k} value={x.text} maxLength={120} onChange={(e) => set({ layers: layer.layers.map((y, j) => (j === k && y.kind === 'text' ? { ...y, text: e.target.value || ' ' } : y)) } as Partial<Layer>)} className="w-full rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-sm text-fg outline-none focus:border-neon/50" />
+          ) : null))}
+        </>
+      ) : null}
       {layer.type === 'effect' ? (
         <>
           <Row label="Effet"><Chips options={VIDEO_FX} value={layer.effect} labels={FX_LABELS} onChange={(v) => set({ effect: v })} /></Row>

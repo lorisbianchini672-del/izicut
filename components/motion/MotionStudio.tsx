@@ -85,7 +85,7 @@ const CONCEPT_KEY = 'izicut-motion-concept-v1';
 type Tab = 'ia' | 'marque' | 'medias' | 'scenes' | 'style';
 type Media = { name: string; url: string; duration: number; el: HTMLVideoElement; file: File };
 type Photo = { name: string; url: string; img: HTMLImageElement };
-type ChatMessage = { role: 'user' | 'ai'; text: string };
+type ChatMessage = { role: 'user' | 'ai'; text: string; plan?: string[] };
 
 const NEW_IDEAS = [
   'Pub de 15 s pour ma boulangerie : pain bio, livraison le matin, -20 % la 1re commande',
@@ -168,6 +168,10 @@ export function MotionStudio() {
   const router = useRouter();
   const [project, setProject] = useState<MotionProject>(TEMPLATES[0].project);
   const [assets, setAssets] = useState<MotionAssets>({});
+  /** Photos libres de droits demandées par l'IA (« search:… »), avec leur crédit. */
+  const [webImgs, setWebImgs] = useState<Record<string, HTMLImageElement | null>>({});
+  const [webCredits, setWebCredits] = useState<Record<string, string>>({});
+  const webPending = useRef(new Set<string>());
   const [media, setMedia] = useState<Media[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const photosRef = useRef<Photo[]>([]);
@@ -215,7 +219,35 @@ export function MotionStudio() {
   const assetsRef = useRef(assets);
   const exportingRef = useRef(false);
   projectRef.current = project;
-  assetsRef.current = { ...assets, videos: media.map((m) => m.el), photos: photos.map((ph) => ph.img) };
+  assetsRef.current = { ...assets, videos: media.map((m) => m.el), photos: photos.map((ph) => ph.img), web: webImgs };
+
+  // L'IA peut demander des photos du web (« search:croissant doré ») : on trouve une image libre de droits et on la charge.
+  useEffect(() => {
+    const wanted = new Set<string>();
+    const visit = (l: { kind: string; src?: string; children?: unknown[] }) => {
+      if (l.kind === 'image' && typeof l.src === 'string' && l.src.startsWith('search:')) wanted.add(l.src);
+      if (l.kind === 'group') (l.children as { kind: string; src?: string }[]).forEach(visit);
+    };
+    for (const sc of project.scenes) if (sc.type === 'free') sc.layers.forEach((l) => visit(l as { kind: string; src?: string; children?: unknown[] }));
+    const orientation = project.format === '9:16' ? 'portrait' : project.format === '16:9' ? 'landscape' : 'square';
+    for (const src of wanted) {
+      if (src in webImgs || webPending.current.has(src)) continue;
+      webPending.current.add(src);
+      void fetch(`/api/media/search?q=${encodeURIComponent(src.slice(7))}&o=${orientation}`)
+        .then((r) => r.json())
+        .then(async (j: { hits?: { url: string; credit: string }[] }) => {
+          for (const hit of (j.hits ?? []).slice(0, 3)) {
+            const img = new Image();
+            img.decoding = 'async';
+            const ok = await new Promise<boolean>((res) => { img.onload = () => res(true); img.onerror = () => res(false); img.src = `/api/brand/image?url=${encodeURIComponent(hit.url)}`; });
+            if (ok) { setWebImgs((w) => ({ ...w, [src]: img })); setWebCredits((c) => ({ ...c, [src]: hit.credit })); return; }
+          }
+          setWebImgs((w) => ({ ...w, [src]: null }));
+        })
+        .catch(() => setWebImgs((w) => ({ ...w, [src]: null })))
+        .finally(() => webPending.current.delete(src));
+    }
+  }, [project, webImgs]);
   mediaRef.current = media;
   photosRef.current = photos;
   playingRef.current = playing;
@@ -512,14 +544,16 @@ export function MotionStudio() {
         setAutoStep('Import du logo et des visuels…');
         photosNow = await importSite({ logo: b.site.logo, images: b.site.images ?? [] });
       }
-      // 1) Pub « démo cinématique » montée tout de suite à partir des vraies données (aucune attente, aucun échec possible).
-      const quick = buildCinematicAd(b, { photos: photosNow.length, format: project.format });
-      replaceProject(isPaid ? quick : clampToFree(quick));
-      setNotice('Votre pub est prête ✓ Le directeur de création IA la peaufine avec vos données…');
-      // 2) Le directeur de création IA l'affine (textes, faits, rythme) en gardant ce style.
-      setAutoStep('Le directeur de création IA peaufine la pub…');
+      // Création 100 % sur mesure par le directeur de création IA (aucun modèle imposé).
+      setAutoStep('Le directeur de création IA imagine une pub unique…');
       setTab('ia');
-      await askAi('Crée la meilleure pub possible pour cette entreprise en t’appuyant sur toutes ses données (registre, fiche marque, site web, couleurs, visuels). Utilise le STYLE « DÉMO PRODUIT CINÉMATIQUE » (motif "flow", transition "blur") : "logo" avec son vrai nom et son activité, "prompt" avec la vraie demande que ferait un de ses clients dans sa ville, "chips" avec ses vraies offres ou publics, "mockup" de son site avec ses vraies rubriques et sa meilleure photo en fond, puis ses photos en héros avec ses vrais faits, et une phrase finale en "curve". Adapte chaque mot à son secteur.', { fresh: true, brand: b, photos: photosNow });
+      const ok = await askAi('Crée une pub motion design UNIQUE et spectaculaire pour cette entreprise, en t’appuyant sur toutes ses données (registre, fiche marque, faits, site web, couleurs, logo, visuels). Invente l’esthétique qui lui correspond (n’applique aucun modèle), dessine-la avec des scènes libres, mets ses vraies photos en valeur et utilise des images du web libres de droits si elles servent l’idée.', { fresh: true, brand: b, photos: photosNow });
+      // Secours seulement si l'IA est indisponible : une pub montée à partir des vraies données, jamais d'écran vide.
+      if (!ok) {
+        const quick = buildCinematicAd(b, { photos: photosNow.length, format: project.format });
+        replaceProject(isPaid ? quick : clampToFree(quick));
+        setNotice('L’IA est très sollicitée : voici une première version montée avec vos données. Relancez la création dans un instant pour une pub sur mesure.');
+      }
     } finally {
       setAutoStep(null);
     }
@@ -588,18 +622,18 @@ export function MotionStudio() {
     rec.start();
   };
 
-  const askAi = async (text: string, opts: { fresh?: boolean; voice?: boolean; brand?: BrandProfile; photos?: Photo[] } = {}) => {
+  const askAi = async (text: string, opts: { fresh?: boolean; voice?: boolean; brand?: BrandProfile; photos?: Photo[] } = {}): Promise<boolean> => {
     const photos = opts.photos ?? photosRef.current;
     const brand = opts.brand ?? brandRef.current;
     const value = text.trim();
-    if (!value || aiBusy) return;
-    if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour utiliser l’IA du Studio.'); return; }
+    if (!value || aiBusy) return false;
+    if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour utiliser l’IA du Studio.'); return false; }
     setAiBusy(true);
     setPrompt('');
-    const steps = ['J’analyse la marque et vos images…', 'J’écris le concept et l’accroche…', 'Je monte les scènes et les apparitions…', 'Sound design : musique et bruitages…', 'Contrôle qualité final…'];
+    const steps = ['Je lis votre demande et j’analyse la marque…', 'Je réfléchis au concept et à l’esthétique…', 'Je dessine les scènes, calque par calque…', 'J’anime : courbes, caméra, transitions…', 'Sound design : musique et bruitages…', 'Contrôle qualité final…'];
     let stepIdx = 0;
     setAiStatus(steps[0]);
-    const stepTimer = window.setInterval(() => { stepIdx = Math.min(steps.length - 1, stepIdx + 1); setAiStatus(steps[stepIdx]); }, 6000);
+    const stepTimer = window.setInterval(() => { stepIdx = Math.min(steps.length - 1, stepIdx + 1); setAiStatus(steps[stepIdx]); }, 9000);
     const photoKey = photos.map((ph) => ph.url).join('|');
     setMessages((m) => [...m, { role: 'user', text: value }]);
     try {
@@ -641,15 +675,19 @@ export function MotionStudio() {
       }
       const aiSays = [typeof json.message === 'string' ? json.message : '', typeof json.question === 'string' ? json.question : ''].filter(Boolean).join(' ');
       if (json.concept) setVoiceTrack(null);
+      const plan = Array.isArray(json.plan) ? (json.plan as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 16) : undefined;
       setMessages((m) => [...m, {
         role: 'ai',
+        plan,
         text: aiSays ? `${aiSays}${json.concept ? `\n\n${json.project.scenes.length} scènes · ${Math.round(totalDuration(json.project))} s · concept complet dans « Direction artistique ».` : ''}` : json.concept
           ? `Votre pub est prête : ${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s, avec musique et effets sonores (activez le son sous l’aperçu). Le concept complet est dans « Direction artistique ». Demandez-moi n’importe quelle modification.`
           : `C’est fait : ${json.project.scenes.length} scènes, ${Math.round(totalDuration(json.project))} s. Demandez-moi une autre modification si besoin.`
       }]);
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       setMessages((m) => [...m, { role: 'ai', text: /Pro|gratuites|Connectez|Free/.test(msg) ? msg : 'Je n’ai pas réussi à terminer cette version, l’IA est très sollicitée. Réessayez dans un instant : votre pub actuelle est conservée.' }]);
+      return false;
     } finally {
       window.clearInterval(stepTimer);
       setAiStatus(null);
@@ -808,6 +846,9 @@ export function MotionStudio() {
               </div>
             ) : null}
           </div>
+          {Object.keys(webCredits).length ? (
+            <p className="mt-1.5 max-w-2xl text-center text-[10px] text-fg-subtle">Photos libres de droits : {[...new Set(Object.values(webCredits))].slice(0, 6).join(' · ')}</p>
+          ) : null}
           {/* Lecture + scènes */}
           <div className="mt-3 w-full max-w-2xl">
             <div className="flex items-center gap-3">
@@ -914,6 +955,14 @@ export function MotionStudio() {
                     messages.map((m, i) => (
                       <div key={i} className={cn('max-w-[90%] whitespace-pre-line rounded-2xl px-3 py-2 text-sm', m.role === 'user' ? 'ml-auto bg-neon text-ink-950' : 'bg-white/[0.06] text-fg')}>
                         {m.text}
+                        {m.plan?.length ? (
+                          <details className="mt-2 rounded-xl border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs" open={i === messages.length - 1}>
+                            <summary className="cursor-pointer select-none font-semibold text-neon">Le plan, scène par scène</summary>
+                            <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-fg-muted">
+                              {m.plan.map((step, k) => <li key={k}>{step}</li>)}
+                            </ol>
+                          </details>
+                        ) : null}
                       </div>
                     ))
                   )}

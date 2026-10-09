@@ -10,7 +10,35 @@
  */
 
 const YOUTUBE_PATTERN =
-  /^(https?:\/\/)?(www\.|m\.)?(youtube\.com\/(watch\?|shorts\/|live\/)|youtu\.be\/)/i;
+  /^(https?:\/\/)?(www\.|m\.|music\.)?(youtube\.com\/(watch\?|shorts\/|live\/|embed\/|v\/)|youtube-nocookie\.com\/embed\/|youtu\.be\/)/i;
+
+/**
+ * Remet un lien vidéo au propre avant de l'envoyer au serveur : ajoute
+ * « https:// » s'il manque, et transforme toutes les formes de liens YouTube
+ * (Shorts, youtu.be, embed, music, mobile, paramètres de partage « si= »…) en
+ * lien standard https://www.youtube.com/watch?v=ID. Les autres liens sont
+ * seulement complétés.
+ */
+export function normalizeVideoUrl(raw: string): string {
+  let value = raw.trim().replace(/^<|>$/g, '');
+  if (!value) return value;
+  if (!/^https?:\/\//i.test(value)) value = `https://${value.replace(/^\/+/, '')}`;
+  try {
+    const u = new URL(value);
+    const host = u.hostname.replace(/^(www\.|m\.|music\.)/i, '').toLowerCase();
+    let id: string | null = null;
+    if (host === 'youtu.be') id = u.pathname.split('/')[1] ?? null;
+    else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+      const parts = u.pathname.split('/').filter(Boolean);
+      if (u.pathname === '/watch') id = u.searchParams.get('v');
+      else if (['shorts', 'live', 'embed', 'v'].includes(parts[0] ?? '')) id = parts[1] ?? null;
+    }
+    if (id && /^[\w-]{6,20}$/.test(id)) return `https://www.youtube.com/watch?v=${id}`;
+    return u.toString();
+  } catch {
+    return value;
+  }
+}
 
 const TWITCH_PATTERN = /^(https?:\/\/)?(www\.)?twitch\.tv\/videos\//i;
 
@@ -31,7 +59,10 @@ export type VideoFileDescriptor = { name: string; size: number };
 export function validateVideoUrl(raw: string): string | null {
   const value = raw.trim();
   if (!value) return 'Collez le lien de votre vidéo pour commencer.';
-  if (YOUTUBE_PATTERN.test(value) || TWITCH_PATTERN.test(value)) return null;
+  if (YOUTUBE_PATTERN.test(value) || TWITCH_PATTERN.test(value)) {
+    if (YOUTUBE_PATTERN.test(value) && !/[?&]v=[\w-]{6,}|\/(shorts|live|embed|v)\/[\w-]{6,}|youtu\.be\/[\w-]{6,}/i.test(value)) return 'Ce lien YouTube est incomplet : ouvrez la vidéo puis copiez son lien (bouton « Partager »).';
+    return null;
+  }
   return 'Pour l’instant, seuls les liens YouTube et les rediffusions Twitch sont pris en charge.';
 }
 
