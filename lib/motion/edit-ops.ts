@@ -67,7 +67,7 @@ OPÉRATIONS POSSIBLES :
 - {"op":"music","music":"pop"|"electro"|"chill"|"epic"|"acoustic"|"hiphop"|"none","bpm":60-170}
 - {"op":"format","value":"9:16"|"16:9"|"1:1"}
 - {"op":"recreate"} — UNIQUEMENT si le client veut une pub totalement nouvelle (autre sujet ou autre marque).
-Utilise exactement les identifiants donnés. Plusieurs opérations si besoin. Ne change rien que le client n'a pas demandé. Tout en français.
+Utilise exactement les identifiants donnés. Dans "message", parle comme un humain : la scène 0 est « la 1re scène », la scène 1 « la 2e scène », etc. Plusieurs opérations si besoin. Ne change rien que le client n'a pas demandé. Tout en français.
 ${BLOCKS_DOC}`;
 
 function getParent(root: unknown, id: string): { obj: Record<string, unknown> | unknown[]; key: string } | null {
