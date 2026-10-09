@@ -128,7 +128,8 @@ function gpuBackdrop(c: Ctx, b: Backdrop, t: number): boolean {
 }
 
 function setFont(c: Ctx, weight: number, size: number) {
-  c.ctx.font = `${weight} ${Math.round(size)}px ${c.font}`;
+  // Taille au dixième de pixel : un texte qui grandit ou rétrécit le fait en douceur (pas par à-coups d'1 px).
+  c.ctx.font = `${weight} ${Math.round(size * 10) / 10}px ${c.font}`;
 }
 
 /**
@@ -784,7 +785,7 @@ function sceneCta(c: Ctx, s: Extract<Scene, { type: 'cta' }>, lt: number) {
     const label = s.button.replace(/\*/g, '');
     const tw = ctx.measureText(label).width;
     const bw = tw + U * 0.16, bh = U * 0.11;
-    const pulse = 1 + 0.035 * Math.sin(Math.max(0, lt - 1.4) * 5);
+    const pulse = 1;
     ctx.save();
     ctx.translate(W / 2, box.bottom + U * 0.16);
     ctx.scale(bp * pulse, bp * pulse);
@@ -1071,7 +1072,7 @@ function drawMagic(c: Ctx, m: Magic, lt: number, d: number, k: number) {
       const w = tw + U * 0.09 + (m.emoji ? fs * 1.2 : 0);
       const h = fs * 1.9;
       ctx.translate(W / 2, y);
-      ctx.rotate(-0.06 + Math.sin(lt * 5) * 0.025);
+      ctx.rotate(-0.05);
       ctx.scale(pIn, pIn);
       ctx.save();
       ctx.shadowColor = 'rgba(0,0,0,0.35)';
@@ -1088,7 +1089,7 @@ function drawMagic(c: Ctx, m: Magic, lt: number, d: number, k: number) {
       ctx.fillText(m.text, sx, U * 0.003);
       if (m.emoji) { ctx.font = `${Math.round(fs)}px ${EMOJI_FONT}`; ctx.fillText(m.emoji, sx + tw + fs * 0.25, U * 0.003); }
       // Flèche animée.
-      const bounce = Math.sin(lt * 7) * U * 0.012;
+      const bounce = Math.sin(lt * 3) * U * 0.008;
       ctx.strokeStyle = theme.primary;
       ctx.lineWidth = U * 0.012;
       ctx.lineCap = 'round';
@@ -1138,7 +1139,7 @@ function drawMagic(c: Ctx, m: Magic, lt: number, d: number, k: number) {
       const h = fs * 2.2;
       const click = clamp((t - 0.9) / 0.25);
       const press = click > 0 && click < 1 ? 0.94 : 1;
-      const pulse = 1 + Math.sin(lt * 6) * 0.025;
+      const pulse = 1;
       ctx.translate(W / 2, y);
       ctx.scale(pIn * press * pulse, pIn * press * pulse);
       ctx.save();
@@ -1174,7 +1175,7 @@ function drawMagic(c: Ctx, m: Magic, lt: number, d: number, k: number) {
     case 'emoji': {
       // Objet qui surgit en « 3D » : rebond, rotation, ombre portée, halo.
       const size = U * 0.26;
-      const bob = Math.sin(lt * 2.4) * U * 0.015;
+      const bob = 0;
       const ex = W / 2 + (k % 2 ? 1 : 0) * W * 0.24;
       const ey = y + bob + (1 - pIn) * U * 0.4;
       ctx.save();
@@ -1187,7 +1188,7 @@ function drawMagic(c: Ctx, m: Magic, lt: number, d: number, k: number) {
       ctx.fillStyle = 'rgba(0,0,0,0.25)';
       ctx.beginPath(); ctx.ellipse(ex, ey + size * 0.55, size * 0.35 * pIn, size * 0.07, 0, 0, Math.PI * 2); ctx.fill();
       ctx.translate(ex, ey);
-      ctx.rotate(Math.sin(lt * 1.8) * 0.12 + (1 - pIn) * 0.8);
+      ctx.rotate((1 - pIn) * 0.8);
       ctx.scale(pIn, pIn);
       ctx.font = `${Math.round(size)}px ${EMOJI_FONT}`;
       ctx.textAlign = 'center';
@@ -2101,7 +2102,7 @@ function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: numb
   const size = L.size ?? 80;
   const weight = L.weight ?? 800;
   const family = L.serif ? 'Georgia, "Times New Roman", serif' : c.font;
-  ctx.font = `${L.italic ? 'italic ' : ''}${weight} ${Math.round(size)}px ${family}`;
+  ctx.font = `${L.italic ? 'italic ' : ''}${weight} ${Math.round(size * 10) / 10}px ${family}`;
   const words = parseRich(L.upper ? L.text.toUpperCase() : L.text);
   const lines = wrap(ctx, words, (L.maxWidth ?? 0.9) * W);
   const track = (L.tracking ?? 0) * size;
@@ -2158,7 +2159,7 @@ function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: numb
       case 'scale': sc = easeOutBack(p); alpha = clamp(p * 2); break;
       case 'split': { const r1 = rand(u.idx * 31 + 3), r2 = rand(u.idx * 17 + 5); const k = 1 - easeOutBack(p); tx += k * (r1 - 0.5) * size * 3; ty += k * (r2 - 0.5) * size * 3; rot = k * (r1 - 0.5) * 2; alpha = clamp(p * 2); break; }
       case 'curve': { const k = 1 - e; tx += k * size * 1.6; ty += k * k * size * 4.2 + k * size * 0.6; rot = k * 1.1; alpha = clamp(p * 3); break; }
-      case 'wave': ty += (1 - easeOutBack(p)) * size * 0.5 + Math.sin(lt * 4 + u.idx * 0.45) * size * 0.06 * e; alpha = clamp(p * 1.6); break;
+      case 'wave': ty += (1 - easeOutBack(p)) * size * 0.5 ; alpha = clamp(p * 1.6); break;
       case 'mask': {
         ctx.beginPath();
         ctx.rect(u.x - size * 0.1, u.y - lh * 0.56, u.w + size * 0.2 + track, lh * 1.12);
@@ -2727,7 +2728,6 @@ function sceneFree(c: Ctx, s: Extract<Scene, { type: 'free' }>, lt: number) {
     const cy = kv(cam.y, lt, 0) * H;
     const r = (kv(cam.rotate, lt, 0) * Math.PI) / 180;
     ctx.translate(W / 2, H / 2);
-    if (cam.shake) ctx.translate((Math.sin(lt * 37) + Math.sin(lt * 23)) * cam.shake * U * 0.006, (Math.cos(lt * 31) + Math.sin(lt * 19)) * cam.shake * U * 0.006);
     if (r) ctx.rotate(r);
     ctx.scale(z, z);
     ctx.translate(-W / 2 - cx, -H / 2 - cy);
@@ -2782,19 +2782,6 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
   ctx.save();
   ctx.globalAlpha = tr === 'slide' || tr === 'wipe' ? 1 : clamp(enter) * (1 - exit);
   ctx.translate(W / 2, H / 2);
-  // Secousse de caméra sur les impacts (décroissante, déterministe).
-  if ((scene.sfx === 'impact' || c.anim === 'slam') && lt < 0.4) {
-    const amp = c.U * 0.012 * (1 - lt / 0.4);
-    const k = Math.floor(lt * 60);
-    ctx.translate((rand(k + index * 97) - 0.5) * 2 * amp, (rand(k + index * 53 + 7) - 0.5) * 2 * amp);
-  }
-  // Pulsation calée sur le tempo de la musique (le montage « respire » au rythme).
-  if (project.sound && project.sound.music !== 'none') {
-    const beat = 60 / project.sound.bpm;
-    const ph = (t % beat) / beat;
-    const pulse = 1 + 0.012 * Math.exp(-ph * 9);
-    ctx.scale(pulse, pulse);
-  }
   if (tr === 'zoom') {
     const z = (1 + exit * 0.9) * (index === 0 ? 1 : 0.6 + 0.4 * clamp(enter));
     ctx.scale(z, z);
