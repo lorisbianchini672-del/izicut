@@ -36,6 +36,11 @@ function providers(): Provider[] {
   return list;
 }
 
+/** Claude (clé Anthropic) est-il branché ? Il sait alors réécrire toute une pub sans se perdre. */
+export function claudeConfigured(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY);
+}
+
 export function aiConfigured(): boolean {
   return providers().length > 0;
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { AiNotConfiguredError, chatJson, describeImages } from '@/lib/ai/chat';
+import { AiNotConfiguredError, chatJson, claudeConfigured, describeImages } from '@/lib/ai/chat';
 import { BrandBriefSchema, CompanySchema, SiteSchema } from '@/lib/brand/types';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, isAdminEmail } from '@/lib/motion/plan';
@@ -471,7 +471,8 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
     : '';
 
   // ---------- Retouche : petites opérations ciblées (réponse courte, fiable avec les IA gratuites) ----------
-  if (project) {
+  // Avec Claude, la retouche se fait sur le projet complet (liberté totale) ; sans Claude, par petites opérations.
+  if (project && !claudeConfigured()) {
     const editMsg = `Résumé de la pub actuelle :\n${summarize(project)}${photos?.length ? `\nPhotos du client : index 0 à ${photos.length - 1}.${photoNotes ? `\n${photoNotes.slice(0, 1500)}` : ''}` : ''}\n\nDemande du client : ${prompt}`;
     const t1 = Date.now();
     let recreate = false;
