@@ -76,7 +76,7 @@ const keyed = <T extends z.ZodTypeAny>(v: T) => z.union([v, z.array(z.object({ t
 const anum = keyed(num);
 const acol = keyed(hex);
 const paint = z.union([hex, z.object({ from: hex, to: hex, angle: z.number().min(-360).max(360).optional(), radial: z.boolean().optional() })]);
-export const LAYER_KINDS = ['text', 'rect', 'ellipse', 'path', 'image', 'callout', 'particles', 'glow', 'flow', 'group'] as const;
+export const LAYER_KINDS = ['text', 'rect', 'ellipse', 'path', 'image', 'callout', 'gallery', 'list', 'particles', 'glow', 'flow', 'group'] as const;
 const layerBase = {
   /** Position du centre en fraction de l'écran (0 = gauche / haut, 1 = droite / bas). */
   x: anum.optional(), y: anum.optional(),
@@ -116,7 +116,7 @@ const TextLayer = z.object({
   revealAt: z.number().min(0).max(15).optional(),
   revealDur: z.number().min(0.1).max(8).optional()
 });
-const RectLayer = z.object({ kind: z.literal('rect'), ...layerBase, w: anum, h: anum, radius: anum.optional(), fill: paint.optional(), color: acol.optional(), stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional(), progress: anum.optional() });
+const RectLayer = z.object({ kind: z.literal('rect'), ...layerBase, w: anum, h: anum, radius: anum.optional(), /** Verre dépoli : ce qui est derrière est flouté (cartes d'interface façon Apple). */ glass: z.boolean().optional(), fill: paint.optional(), color: acol.optional(), stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional(), progress: anum.optional() });
 const EllipseLayer = z.object({ kind: z.literal('ellipse'), ...layerBase, w: anum, h: anum.optional(), fill: paint.optional(), color: acol.optional(), stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional(), progress: anum.optional() });
 const PathLayer = z.object({
   kind: z.literal('path'), ...layerBase,
@@ -139,6 +139,25 @@ const ImageLayer = z.object({
   reveal: z.enum(['none', 'wipe', 'iris', 'blinds', 'split', 'rise']).optional(), revealAt: z.number().min(0).max(15).optional(), revealDur: z.number().min(0.1).max(4).optional(),
   stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional()
 });
+/** Galerie d'images animée : carrousel, mur incliné qui défile, pile de cartes, grille. */
+const GalleryLayer = z.object({
+  kind: z.literal('gallery'), ...layerBase,
+  items: z.array(z.object({ src: z.string().regex(/^(logo|photo:\d{1,2}|search:.{2,60})$/), label: z.string().trim().max(40).optional(), sub: z.string().trim().max(50).optional() })).min(1).max(16),
+  layout: z.enum(['row', 'wall', 'stack', 'grid']),
+  cardW: z.number().min(60).max(1400).optional(), cardH: z.number().min(60).max(1800).optional(),
+  radius: z.number().min(0).max(200).optional(), gap: z.number().min(0).max(200).optional(),
+  angle: z.number().min(-90).max(90).optional(), speed: z.number().min(0).max(1500).optional(),
+  at: z.number().min(0).max(15).optional(), badges: z.boolean().optional(), color: hex.optional(), cols: z.number().int().min(1).max(4).optional()
+});
+/** Liste qui défile, ligne active mise en avant (paroles, étapes, menu, avantages, horaires…). */
+const ListLayer = z.object({
+  kind: z.literal('list'), ...layerBase,
+  lines: z.array(z.string().trim().min(1).max(80)).min(1).max(14),
+  active: anum.optional(),
+  size: z.number().min(16).max(160).optional(), weight: z.number().min(100).max(900).optional(),
+  color: hex.optional(), width: z.number().min(100).max(1600).optional(), visible: z.number().min(1).max(9).optional(),
+  align: z.enum(['left', 'center']).optional()
+});
 /** Annotation : un point précis (x, y) relié par un trait à une étiquette (tx, ty) — pour expliquer une image ou une info. */
 const CalloutLayer = z.object({
   kind: z.literal('callout'), ...layerBase,
@@ -152,8 +171,8 @@ const CalloutLayer = z.object({
 const ParticlesLayer = z.object({ kind: z.literal('particles'), ...layerBase, mode: z.enum(['float', 'burst', 'rain', 'orbit', 'sparkle', 'converge']), count: z.number().int().min(1).max(160), color: hex, color2: hex.optional(), size: z.number().min(1).max(80).optional(), spread: z.number().min(0.01).max(1.5).optional(), speed: z.number().min(0).max(5).optional(), at: z.number().min(0).max(15).optional() });
 const GlowLayer = z.object({ kind: z.literal('glow'), ...layerBase, color: acol, size: anum });
 const FlowLayer = z.object({ kind: z.literal('flow'), ...layerBase, colors: z.array(hex).min(1).max(4), intensity: z.number().min(0).max(2).optional() });
-type LayerIn = z.infer<typeof CalloutLayer> | z.infer<typeof TextLayer> | z.infer<typeof RectLayer> | z.infer<typeof EllipseLayer> | z.infer<typeof PathLayer> | z.infer<typeof ImageLayer> | z.infer<typeof ParticlesLayer> | z.infer<typeof GlowLayer> | z.infer<typeof FlowLayer> | ({ kind: 'group'; children: LayerIn[] } & Partial<Record<keyof typeof layerBase, unknown>>);
-export const LeafLayer = z.discriminatedUnion('kind', [TextLayer, RectLayer, EllipseLayer, PathLayer, ImageLayer, CalloutLayer, ParticlesLayer, GlowLayer, FlowLayer]);
+type LayerIn = z.infer<typeof GalleryLayer> | z.infer<typeof ListLayer> | z.infer<typeof CalloutLayer> | z.infer<typeof TextLayer> | z.infer<typeof RectLayer> | z.infer<typeof EllipseLayer> | z.infer<typeof PathLayer> | z.infer<typeof ImageLayer> | z.infer<typeof ParticlesLayer> | z.infer<typeof GlowLayer> | z.infer<typeof FlowLayer> | ({ kind: 'group'; children: LayerIn[] } & Partial<Record<keyof typeof layerBase, unknown>>);
+export const LeafLayer = z.discriminatedUnion('kind', [TextLayer, RectLayer, EllipseLayer, PathLayer, ImageLayer, CalloutLayer, GalleryLayer, ListLayer, ParticlesLayer, GlowLayer, FlowLayer]);
 export const GroupLayer = z.object({ kind: z.literal('group'), ...layerBase, children: z.array(LeafLayer).min(1).max(24) });
 export const LayerSchema = z.union([LeafLayer, GroupLayer]);
 export type Layer = z.infer<typeof LayerSchema>;

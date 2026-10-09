@@ -2227,6 +2227,227 @@ function drawParticles(c: Ctx, L: Extract<LeafLayerT, { kind: 'particles' }>, lt
   }
 }
 
+/** Verre dépoli : floute ce qui est déjà dessiné derrière la forme (cartes d'interface haut de gamme). */
+function glassBehind(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, blurPx: number) {
+  const m = ctx.getTransform();
+  const scale = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
+  const pad = blurPx * scale * 2;
+  const pts = [[x, y], [x + w, y], [x, y + h], [x + w, y + h]].map(([px, py]) => [m.a * px + m.c * py + m.e, m.b * px + m.d * py + m.f]);
+  const cw = ctx.canvas.width, chh = ctx.canvas.height;
+  const x0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p[0])) - pad));
+  const y0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p[1])) - pad));
+  const x1 = Math.min(cw, Math.ceil(Math.max(...pts.map((p) => p[0])) + pad));
+  const y1 = Math.min(chh, Math.ceil(Math.max(...pts.map((p) => p[1])) + pad));
+  const bw = x1 - x0, bh = y1 - y0;
+  if (bw < 4 || bh < 4) return;
+  // Travail à demi-définition : flou identique, 4× moins coûteux.
+  const off = offscreen('glass', bw / 2, bh / 2);
+  if (!off) return;
+  const g = off.ctx;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, off.canvas.width, off.canvas.height);
+  setBlur(g, (blurPx * scale) / 2);
+  g.drawImage(ctx.canvas as CanvasImageSource, x0, y0, bw, bh, 0, 0, off.canvas.width, off.canvas.height);
+  setBlur(g, 0);
+  ctx.save();
+  roundRect(ctx, x, y, w, h, r);
+  ctx.clip();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.shadowColor = 'transparent';
+  ctx.drawImage(off.canvas as CanvasImageSource, x0, y0, bw, bh);
+  ctx.restore();
+}
+
+/** Carte image (photo + étiquette + numéro), utilisée par les galeries. */
+function drawGalleryCard(c: Ctx, img: HTMLImageElement | null, w: number, h: number, r: number, item: { label?: string; sub?: string }, badge: number | null, accent: string) {
+  const { ctx } = c;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = 30;
+  ctx.shadowOffsetY = 12;
+  roundRect(ctx, -w / 2, -h / 2, w, h, r);
+  ctx.fillStyle = '#15151a';
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  roundRect(ctx, -w / 2, -h / 2, w, h, r);
+  ctx.clip();
+  if (img) {
+    const k = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+    ctx.drawImage(img, -img.naturalWidth * k / 2, -img.naturalHeight * k / 2, img.naturalWidth * k, img.naturalHeight * k);
+  } else {
+    const g = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
+    g.addColorStop(0, rgba(c.theme.primary, 0.5));
+    g.addColorStop(1, rgba(c.theme.accent, 0.35));
+    ctx.fillStyle = g;
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+  }
+  ctx.restore();
+  if (badge !== null) {
+    const bs = Math.max(26, w * 0.16);
+    ctx.save();
+    ctx.translate(w / 2 - bs * 0.75, h / 2 - bs * 0.62);
+    roundRect(ctx, -bs * 0.6, -bs * 0.4, bs * 1.2, bs * 0.8, bs * 0.18);
+    ctx.fillStyle = accent;
+    ctx.fill();
+    setFont(c, 800, bs * 0.5);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = isLight(accent) ? '#0d0d10' : '#ffffff';
+    ctx.fillText(String(badge).padStart(2, '0'), 0, bs * 0.02);
+    ctx.restore();
+  }
+  if (item.label) {
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    const fs = Math.max(18, Math.min(34, w * 0.1));
+    setFont(c, 700, fs);
+    ctx.fillStyle = c.theme.text;
+    ctx.fillText(item.label, -w / 2, h / 2 + fs * 0.5, w);
+    if (item.sub) { setFont(c, 500, fs * 0.72); ctx.fillStyle = rgba(c.theme.text, 0.6); ctx.fillText(item.sub, -w / 2, h / 2 + fs * 1.75, w); }
+    ctx.restore();
+  }
+}
+
+function drawGallery(c: Ctx, L: Extract<LeafLayerT, { kind: 'gallery' }>, lt: number) {
+  const { ctx, W, H } = c;
+  const items = L.items;
+  const n = items.length;
+  const at = L.at ?? 0;
+  const k = lt - at;
+  if (k < 0) return;
+  const accent = L.color ?? readableAccent(c);
+  const layout = L.layout;
+  const cw = L.cardW ?? (layout === 'wall' ? 260 : layout === 'stack' ? 620 : layout === 'grid' ? 300 : 300);
+  const ch = L.cardH ?? (layout === 'wall' ? 340 : layout === 'stack' ? 780 : cw);
+  const r = L.radius ?? (layout === 'wall' ? 18 : 26);
+  const gap = L.gap ?? (layout === 'wall' ? 22 : 30);
+  const speed = L.speed ?? (layout === 'wall' ? 140 : 70);
+  const imgs = items.map((it) => imageOf(c, it.src));
+  if (layout === 'row') {
+    // Carrousel : les cartes glissent depuis la droite en décalé, puis défilent doucement.
+    const total = n * cw + (n - 1) * gap;
+    const scroll = -Math.max(0, k - 0.9) * speed;
+    for (let i = 0; i < n; i++) {
+      const p = progress(k, i * 0.07, 0.65);
+      if (p <= 0) continue;
+      const e = easeOutCubic(p);
+      const x = -total / 2 + cw / 2 + i * (cw + gap) + scroll + (1 - e) * W * 0.7;
+      if (x < -W || x > W) continue;
+      ctx.save();
+      ctx.globalAlpha *= clamp(p * 1.8);
+      ctx.translate(x, 0);
+      if (p < 1) setBlur(ctx, (1 - e) * 14);
+      drawGalleryCard(c, imgs[i], cw, ch, r, items[i], L.badges ? i + 1 : null, accent);
+      ctx.restore();
+    }
+    return;
+  }
+  if (layout === 'wall') {
+    // Mur d'images incliné : colonnes qui défilent en sens alterné.
+    const diag = Math.hypot(W, H);
+    const cols = Math.ceil(diag / (cw + gap)) + 2;
+    const rows = Math.ceil(diag / (ch + gap)) + 3;
+    const span = rows * (ch + gap);
+    const ein = easeOutCubic(clamp(k / 0.9));
+    ctx.save();
+    ctx.globalAlpha *= clamp(k / 0.4);
+    ctx.rotate(((L.angle ?? -24) * Math.PI) / 180);
+    ctx.scale(1.25 - 0.25 * ein, 1.25 - 0.25 * ein);
+    for (let col = 0; col < cols; col++) {
+      const dir = col % 2 ? 1 : -1;
+      const x = (col - (cols - 1) / 2) * (cw + gap);
+      const off = (((k * speed * dir) % span) + span) % span;
+      for (let row = 0; row < rows; row++) {
+        let y = (row - rows / 2) * (ch + gap) + off;
+        if (y > span / 2) y -= span;
+        if (Math.abs(y) > diag / 2 + ch) continue;
+        const idx = (col * 5 + row * 3) % n;
+        ctx.save();
+        ctx.translate(x, y);
+        drawGalleryCard(c, imgs[idx], cw, ch, r, {}, null, accent);
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+    return;
+  }
+  if (layout === 'stack') {
+    // Pile de cartes : la carte de devant s'envole, la suivante avance (rythme d'une seconde environ).
+    const T = 1.15;
+    const cyc = Math.max(0, k - 0.6) / T;
+    const step = Math.floor(cyc);
+    const f = cyc - step;
+    const leave = easeInCubic(clamp((f - 0.6) / 0.4));
+    const enterAll = easeOutBack(clamp(k / 0.6));
+    const depth = Math.min(4, n);
+    for (let d = depth - 1; d >= 0; d--) {
+      const idx = (step + d) % n;
+      const dd = d - leave;
+      ctx.save();
+      if (d === 0) {
+        ctx.translate(-leave * W * 0.9, -leave * 60);
+        ctx.rotate(-leave * 0.35);
+      } else {
+        ctx.translate(0, Math.max(0, dd) * 34);
+        ctx.rotate(((d % 2 ? 1 : -1) * Math.max(0, dd) * 2.5 * Math.PI) / 180);
+      }
+      const sc = (1 - Math.max(0, dd) * 0.07) * (0.7 + 0.3 * enterAll);
+      ctx.scale(sc, sc);
+      ctx.globalAlpha *= clamp(1 - Math.max(0, dd) * 0.22) * clamp(k / 0.3);
+      drawGalleryCard(c, imgs[idx], cw, ch, r, d === 0 ? items[idx] : {}, L.badges ? idx + 1 : null, accent);
+      ctx.restore();
+    }
+    return;
+  }
+  // Grille : les cases apparaissent en vague.
+  const cols = L.cols ?? (c.vertical ? 2 : 3);
+  const rowsN = Math.ceil(n / cols);
+  const tw = cols * cw + (cols - 1) * gap;
+  const th = rowsN * ch + (rowsN - 1) * gap;
+  for (let i = 0; i < n; i++) {
+    const cx = -tw / 2 + cw / 2 + (i % cols) * (cw + gap);
+    const cy = -th / 2 + ch / 2 + Math.floor(i / cols) * (ch + gap);
+    const p = progress(k, (i % cols) * 0.08 + Math.floor(i / cols) * 0.12, 0.6);
+    if (p <= 0) continue;
+    ctx.save();
+    ctx.translate(cx, cy + (1 - easeOutCubic(p)) * 60);
+    const sc = 0.85 + 0.15 * easeOutBack(p);
+    ctx.scale(sc, sc);
+    ctx.globalAlpha *= clamp(p * 1.6);
+    drawGalleryCard(c, imgs[i], cw, ch, r, items[i], L.badges ? i + 1 : null, accent);
+    ctx.restore();
+  }
+}
+
+/** Liste défilante : la ligne active est nette et blanche, les autres s'estompent (paroles, étapes, menu…). */
+function drawList(c: Ctx, L: Extract<LeafLayerT, { kind: 'list' }>, lt: number) {
+  const { ctx } = c;
+  const size = L.size ?? 54;
+  const lh = size * 1.45;
+  const a = kv(L.active, lt, 0);
+  const vis = L.visible ?? 5;
+  const width = L.width ?? 860;
+  const left = (L.align ?? 'left') === 'left';
+  ctx.textAlign = left ? 'left' : 'center';
+  ctx.textBaseline = 'middle';
+  L.lines.forEach((line, i) => {
+    const d = i - a;
+    if (Math.abs(d) > vis / 2 + 0.6) return;
+    const near = clamp(1 - Math.abs(d));
+    ctx.save();
+    ctx.globalAlpha *= clamp(1 - Math.abs(d) / (vis / 2 + 0.6)) * (0.28 + 0.72 * near);
+    ctx.translate(left ? -width / 2 : 0, d * lh);
+    const sc = 1 + 0.06 * near;
+    ctx.scale(sc, sc);
+    setFont(c, L.weight ?? 800, size);
+    ctx.fillStyle = near > 0.5 ? (L.color ?? c.theme.text) : rgba(L.color ?? c.theme.text, 0.75);
+    ctx.fillText(line, 0, 0, width / sc);
+    ctx.restore();
+  });
+}
+
 function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
   const { ctx, W, H } = c;
   switch (L.kind) {
@@ -2236,11 +2457,27 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
       const w = kv(L.w, lt, 200);
       const h = kv(L.kind === 'rect' ? L.h : L.h ?? L.w, lt, w);
       const prog = L.progress === undefined ? 1 : clamp(kv(L.progress, lt, 1));
+      if (L.kind === 'rect' && L.glass) glassBehind(ctx, -w / 2, -h / 2, w, h, Math.max(0, Math.min(kv(L.radius, lt, 0), Math.min(w, h) / 2)), 26);
       ctx.beginPath();
       if (L.kind === 'rect') roundRect(ctx, -w / 2, -h / 2, w, h, Math.max(0, Math.min(kv(L.radius, lt, 0), Math.min(w, h) / 2)));
       else ctx.ellipse(0, 0, Math.max(0.1, w / 2), Math.max(0.1, h / 2), 0, 0, Math.PI * 2);
-      const fill = L.fill ?? (L.color !== undefined ? kv(L.color as Keyed<string>, lt, '#ffffff') : L.stroke ? undefined : '#ffffff');
-      if (fill) { ctx.fillStyle = paintStyle(ctx, fill as Paint, w, h); ctx.fill(); }
+      const glass = L.kind === 'rect' && L.glass;
+      const fill = L.fill ?? (L.color !== undefined ? kv(L.color as Keyed<string>, lt, '#ffffff') : L.stroke || glass ? undefined : '#ffffff');
+      if (glass) {
+        // Teinte du verre (la couleur choisie, très transparente) + reflet en haut + liseré fin.
+        ctx.save();
+        ctx.globalAlpha *= fill ? 0.38 : 1;
+        ctx.fillStyle = fill ? paintStyle(ctx, fill as Paint, w, h) : 'rgba(18,18,24,0.42)';
+        ctx.fill();
+        ctx.restore();
+        const hl = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+        hl.addColorStop(0, 'rgba(255,255,255,0.14)');
+        hl.addColorStop(0.4, 'rgba(255,255,255,0.03)');
+        hl.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = hl;
+        ctx.fill();
+        if (!L.stroke) { ctx.save(); ctx.shadowColor = 'transparent'; ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.stroke(); ctx.restore(); }
+      } else if (fill) { ctx.fillStyle = paintStyle(ctx, fill as Paint, w, h); ctx.fill(); }
       if (L.stroke && prog > 0) {
         ctx.shadowColor = 'transparent';
         ctx.lineWidth = L.stroke.width;
@@ -2394,6 +2631,8 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
       }
       return;
     }
+    case 'gallery': drawGallery(c, L, lt); return;
+    case 'list': drawList(c, L, lt); return;
     case 'particles': drawParticles(c, L, lt); return;
     case 'glow': {
       const r = Math.max(1, kv(L.size, lt, 400));
@@ -2430,7 +2669,7 @@ function drawFreeLayer(c: Ctx, L: Layer, lt: number, ghost = false) {
     const dy = (kv(L.y, lt, 0.5) - kv(L.y, lt - 0.04, 0.5)) * H;
     const ds = Math.abs(kv(L.scale, lt, 1) - kv(L.scale, lt - 0.04, 1));
     if (Math.hypot(dx, dy) > 6 || ds > 0.03) {
-      for (let g = 3; g >= 1; g--) { ctx.save(); ctx.globalAlpha *= 0.18; drawFreeLayer(c, L, lt - g * 0.014, true); ctx.restore(); }
+      for (let g = 5; g >= 1; g--) { ctx.save(); ctx.globalAlpha *= 0.13; drawFreeLayer(c, L, lt - g * 0.011, true); ctx.restore(); }
     }
   }
   ctx.save();

@@ -227,11 +227,12 @@ export function MotionStudio() {
   // L'IA peut demander des photos du web (« search:croissant doré ») : on trouve une image libre de droits et on la charge.
   useEffect(() => {
     const wanted = new Set<string>();
-    const visit = (l: { kind: string; src?: string; children?: unknown[] }) => {
+    const visit = (l: { kind: string; src?: string; children?: unknown[]; items?: { src?: string }[] }) => {
       if (l.kind === 'image' && typeof l.src === 'string' && l.src.startsWith('search:')) wanted.add(l.src);
+      if (l.kind === 'gallery') for (const it of l.items ?? []) if (typeof it.src === 'string' && it.src.startsWith('search:')) wanted.add(it.src);
       if (l.kind === 'group') (l.children as { kind: string; src?: string }[]).forEach(visit);
     };
-    for (const sc of project.scenes) if (sc.type === 'free') sc.layers.forEach((l) => visit(l as { kind: string; src?: string; children?: unknown[] }));
+    for (const sc of project.scenes) if (sc.type === 'free') sc.layers.forEach((l) => visit(l as { kind: string; src?: string; children?: unknown[]; items?: { src?: string }[] }));
     const orientation = project.format === '9:16' ? 'portrait' : project.format === '16:9' ? 'landscape' : 'square';
     for (const src of wanted) {
       if (src in webImgs || webPending.current.has(src)) continue;
