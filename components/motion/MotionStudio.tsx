@@ -183,6 +183,23 @@ export function MotionStudio() {
     setDocsBusy(true);
     try {
       for (const f of Array.from(files).slice(0, 3)) {
+        // Vidéo d'inspiration : analysée dans le navigateur (rythme, couleurs), seule une planche réduite part pour décrire le style.
+        if (f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/i.test(f.name)) {
+          try {
+            const { analyzeVideoRef } = await import('@/lib/motion/video-ref');
+            const ref = await analyzeVideoRef(f);
+            let text = ref.text;
+            if (ref.sheet) {
+              const r = await fetch('/api/motion/docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet: ref.sheet }) });
+              const j = await r.json().catch(() => ({}));
+              if (typeof j.style === 'string' && j.style) text += `\nStyle observé : ${j.style}`;
+            }
+            setDocs((d) => [...d.filter((x) => x.name !== ref.name), { name: ref.name, text }].slice(-3));
+          } catch {
+            setNotice(`${f.name} : vidéo illisible dans ce navigateur.`);
+          }
+          continue;
+        }
         const fd = new FormData();
         fd.append('file', f);
         const res = await fetch('/api/motion/docs', { method: 'POST', body: fd });
@@ -1235,10 +1252,10 @@ export function MotionStudio() {
                 ) : null}
                 <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
                   <p className="flex items-center gap-1.5 text-sm font-semibold text-fg"><FileText className="h-4 w-4 text-neon" /> Documents d’inspiration</p>
-                  <p className="mt-1 text-[11px] text-fg-muted">Brochure, menu, fiche produit, brief, charte… L’IA s’en inspire (ton, produits, arguments) sans recopier. Confidentiel : emails, téléphones et numéros sont masqués, rien n’est enregistré, et ces documents ne sont envoyés qu’à des IA qui ne s’entraînent pas sur vos données.</p>
+                  <p className="mt-1 text-[11px] text-fg-muted">Brochure, menu, fiche produit, brief, charte, ou une vidéo qui vous plaît (rythme, couleurs, style)… L’IA s’en inspire (ton, produits, arguments) sans recopier. Confidentiel : emails, téléphones et numéros sont masqués, rien n’est enregistré, et ces documents ne sont envoyés qu’à des IA qui ne s’entraînent pas sur vos données.</p>
                   <label className={cn('mt-2 flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-neon/40 px-3 py-2 text-xs font-semibold text-fg hover:bg-neon/[0.04]', docsBusy && 'pointer-events-none opacity-60')}>
-                    {docsBusy ? 'Lecture…' : 'Ajouter un document (PDF, Word, texte)'}
-                    <input type="file" accept=".pdf,.docx,.txt,.md,.csv,application/pdf,text/plain" multiple className="sr-only" onChange={(e) => { void addDocs(e.target.files); e.target.value = ''; }} />
+                    {docsBusy ? 'Analyse…' : 'Ajouter un document ou une vidéo d’inspiration'}
+                    <input type="file" accept=".pdf,.docx,.txt,.md,.csv,application/pdf,text/plain,video/*,.mov" multiple className="sr-only" onChange={(e) => { void addDocs(e.target.files); e.target.value = ''; }} />
                   </label>
                   {docs.length ? (
                     <ul className="mt-2 space-y-1">

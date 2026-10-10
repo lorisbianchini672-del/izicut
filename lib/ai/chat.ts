@@ -208,9 +208,9 @@ export async function chatJson({ system, user, maxTokens = 1500, temperature = 0
  * Vision : l'IA regarde une ou plusieurs images (data URL JPEG/PNG) et répond
  * en texte. Utilisé par le Montage IA pour « voir » la vidéo avant de monter.
  */
-export async function describeImages(images: string[], instruction: string, maxTokens = 700): Promise<string> {
+export async function describeImages(images: string[], instruction: string, maxTokens = 700, confidential = false): Promise<string> {
   return cascade(
     (p) => call(p, p.vision!, [{ role: 'user', content: [{ type: 'text', text: instruction }, ...images.slice(0, 3).map((url) => ({ type: 'image_url' as const, image_url: { url } }))] }], maxTokens, 0.3, false),
-    (p) => Boolean(p.vision)
+    (p) => Boolean(p.vision) && (!confidential || !TRAINS_ON_FREE.has(p.name))
   );
 }

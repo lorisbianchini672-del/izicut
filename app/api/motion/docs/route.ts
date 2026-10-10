@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { describeImages } from '@/lib/ai/chat';
 import { cleanText, MAX_DOC_CHARS } from '@/lib/motion/docs';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -16,6 +17,17 @@ export async function POST(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous pour ajouter des documents.' }, { status: 401 });
+  // Vidéo d'inspiration : planche de 6 images (déjà réduite dans le navigateur) → description du STYLE uniquement.
+  if ((request.headers.get('content-type') ?? '').includes('application/json')) {
+    const body = (await request.json().catch(() => ({}))) as { sheet?: unknown };
+    if (typeof body.sheet !== 'string' || !body.sheet.startsWith('data:image/') || body.sheet.length > 1_500_000) return NextResponse.json({ error: 'Image invalide.' }, { status: 400 });
+    try {
+      const style = await describeImages([body.sheet], `Ces 6 images sont extraites, dans l'ordre, d'une vidéo qui sert d'INSPIRATION pour une pub motion design. Décris uniquement son STYLE en 6 à 10 lignes concises, en français : mise en page et cadrage, typographie (taille, graisse, position, animation probable), couleurs et lumière, éléments graphiques (cartes, formes, icônes, textures), type de mouvements et transitions, ambiance et rythme, structure (accroche, développement, fin). Ne décris pas et n'identifie pas les personnes, ne recopie aucun texte long, aucune donnée personnelle ni information confidentielle visible.`, 600, true);
+      return NextResponse.json({ style: cleanText(style).slice(0, 1500) });
+    } catch {
+      return NextResponse.json({ style: '' });
+    }
+  }
   let file: File | null = null;
   try {
     const form = await request.formData();
