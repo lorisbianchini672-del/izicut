@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   ArrowDown,
   FileText,
+  Paperclip,
   ArrowUp,
   Download,
   ImagePlus,
@@ -737,7 +738,7 @@ export function MotionStudio() {
     // Nouvelle pub (et non retouche) : premier message, toile vierge, ou demande explicite d'une autre pub.
     const wantsNew = /\b(fais|fait|faire|cr[ée]e[rz]?|g[ée]n[èe]re[rz]?|r[ée]alise[rz]?|imagine[rz]?|monte[rz]?|refais|nouvelle|autre)\b[^.?!]{0,40}\b(pub|publicit[ée]|vid[ée]o|spot|annonce|clip|reel|tiktok)\b/i.test(value) && !/\b(modifi|chang|remplac|garde|ajoute|enl[eè]ve|retire|corrige|plus |moins )/i.test(value);
     const fresh = Boolean(opts.fresh) || !messages.length || isBlankProject(project) || wantsNew;
-    setMessages((m) => [...m, { role: 'user', text: value }]);
+    setMessages((m) => [...m, { role: 'user', text: docs.length ? `${value}\n📎 ${docs.map((d) => d.name).join(' · ')}` : value }]);
     try {
       // Jusqu'à 3 essais : si l'IA est saturée ou se trompe de format, on relance
       // automatiquement sans afficher d'erreur technique au client.
@@ -1143,10 +1144,40 @@ export function MotionStudio() {
                     ))}
                   </div>
                 ) : null}
+                {docs.length || photos.length || docsBusy ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {docsBusy ? <span className="rounded-full bg-neon/15 px-2.5 py-1 text-[11px] font-semibold text-neon">Analyse de la pièce jointe…</span> : null}
+                    {docs.map((d) => (
+                      <span key={d.name} className="inline-flex max-w-[220px] items-center gap-1 rounded-full border border-neon/40 bg-neon/10 px-2.5 py-1 text-[11px] text-fg">
+                        <Paperclip className="h-3 w-3 shrink-0 text-neon" />
+                        <span className="truncate">{d.name}</span>
+                        <button type="button" aria-label="Retirer la pièce jointe" onClick={() => setDocs((x) => x.filter((y) => y.name !== d.name))} className="cursor-pointer text-red-300">×</button>
+                      </span>
+                    ))}
+                    {photos.length ? <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-fg-muted">{photos.length} photo{photos.length > 1 ? 's' : ''} jointe{photos.length > 1 ? 's' : ''}</span> : null}
+                  </div>
+                ) : null}
                 <form
                   onSubmit={(e) => { e.preventDefault(); void askAi(prompt); }}
                   className="flex items-end gap-2"
                 >
+                  <label className={cn('grid h-[52px] w-12 shrink-0 cursor-pointer place-items-center rounded-xl border border-white/10 text-fg-muted transition hover:border-neon/40 hover:text-fg', docsBusy && 'pointer-events-none opacity-50')} title="Joindre une vidéo, un document ou des photos (l’IA s’en inspire)" aria-label="Joindre un fichier">
+                    <Paperclip className="h-4 w-4" />
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,video/*,.mov,.pdf,.docx,.txt,.md,.csv"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const all = Array.from(e.target.files ?? []);
+                        const imgs = all.filter((f) => f.type.startsWith('image/'));
+                        const rest = all.filter((f) => !f.type.startsWith('image/'));
+                        if (imgs.length) { const dt = new DataTransfer(); imgs.forEach((f) => dt.items.add(f)); addPhotos(dt.files); }
+                        if (rest.length) { const dt = new DataTransfer(); rest.forEach((f) => dt.items.add(f)); void addDocs(dt.files); }
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
                   <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
@@ -1164,7 +1195,7 @@ export function MotionStudio() {
                   >
                     {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                   </button>
-                  <Button type="submit" variant="gradient" className="h-[52px] rounded-xl" disabled={aiBusy || !prompt.trim()} aria-label="Envoyer à l’IA">
+                  <Button type="submit" variant="gradient" className="h-[52px] rounded-xl" disabled={aiBusy || docsBusy || !prompt.trim()} aria-label="Envoyer à l’IA">
                     <Send className="h-4 w-4" />
                   </Button>
                 </form>

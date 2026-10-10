@@ -237,6 +237,28 @@ Réponds UNIQUEMENT par un objet JSON COMPACT :
 
 const pick = <T extends readonly string[]>(list: T, v: unknown): T[number] | undefined => (list as readonly unknown[]).includes(v) ? (v as T[number]) : undefined;
 
+/**
+ * Vidéo d'inspiration jointe : ses couleurs dominantes et son rythme sont
+ * appliqués à coup sûr (même si l'IA les a oubliés).
+ */
+function inspiredStyle(style: z.infer<typeof StyleSchema>, docs: { name: string; text: string }[]): z.infer<typeof StyleSchema> {
+  const ref = docs.find((d) => d.text.includes("vidéo d'inspiration"));
+  if (!ref) return style;
+  const out = { ...style };
+  const pal = ref.text.match(/Couleurs dominantes : ([#0-9a-fA-F, ]+)/)?.[1].match(/#[0-9a-fA-F]{6}/g) ?? [];
+  if (pal.length >= 2) {
+    const lum = (h: string) => { const n = parseInt(h.slice(1), 16); return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114; };
+    const sat = (h: string) => { const n = parseInt(h.slice(1), 16); const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255]; return Math.max(...c) - Math.min(...c); };
+    const sorted = [...pal].sort((a, b) => lum(a) - lum(b));
+    const vivid = [...pal].sort((a, b) => sat(b) - sat(a))[0];
+    out.colors = [sorted[0], sorted[Math.min(1, sorted.length - 1)], vivid, sorted[sorted.length - 1]];
+    if (sat(vivid) > 60) out.accent = vivid;
+  }
+  const shot = Number(ref.text.match(/toutes les ([\d.]+) s/)?.[1]);
+  if (shot > 0) out.bpm = shot < 0.8 ? 140 : shot < 1.6 ? 124 : shot < 3 ? 108 : 88;
+  return out;
+}
+
 /** Style de l'IA : on garde chaque champ valide séparément (un fond inconnu n'annule pas les couleurs). */
 function safeStyle(raw: unknown): z.infer<typeof StyleSchema> {
   const full = StyleSchema.safeParse(raw);
@@ -537,7 +559,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
 
   const userMsg = project
     ? `Projet actuel :\n${JSON.stringify(project)}${mediaInfo}${brandInfo}${docsInfo}\n\nModification demandée : ${prompt}`
-    : `Demande du client : ${prompt}${mediaInfo}${brandInfo}${docsInfo}\n\nCrée le concept puis le projet.`;
+    : `${docs.length ? `⚠️ PRIORITÉ : le client a joint ${docs.length} fichier(s) d'inspiration (voir plus bas). Ta pub DOIT s'en inspirer clairement et visiblement : mêmes couleurs dominantes (style.colors / accent), même rythme (vidéo rapide → blocs courts et bpm élevé ; lent → moins de blocs, bpm bas), même ambiance, mêmes arguments / produits. Dans "message", explique au client ce que tu as repris de ses fichiers.\n\n` : ''}Demande du client : ${prompt}${mediaInfo}${brandInfo}${docsInfo}\n\nCrée le concept puis le projet.`;
 
   try {
     let lastError = '';
@@ -578,7 +600,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
         }
         const fmt = pick(['9:16', '16:9', '1:1'] as const, r.format) ?? parsed.data.format ?? '9:16';
         const brandName = (typeof r.brand === 'string' && r.brand.trim() ? r.brand.trim() : brand?.company?.name ?? 'Votre marque').slice(0, 40);
-        composed = composeProject(blocks, safeStyle(r.style), { brand: brandName, hasLogo: Boolean(parsed.data.hasLogo), format: fmt, photos: photos?.length ?? 0 });
+        composed = composeProject(blocks, inspiredStyle(safeStyle(r.style), docs), { brand: brandName, hasLogo: Boolean(parsed.data.hasLogo), format: fmt, photos: photos?.length ?? 0 });
         raw = { message: r.message, plan: r.plan, question: r.question, project: composed };
       }
       const wrapped = Boolean(raw && typeof raw === 'object' && 'project' in (raw as Record<string, unknown>));
