@@ -558,7 +558,8 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
       let composed: MotionProject | null = null;
       if (composer) {
         const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-        const blocks = parseBlocks(r.blocks);
+        // Lien inventé par l'IA : on ne garde que le vrai lien du client.
+        const blocks = parseBlocks(r.blocks).map((b) => (b.block === 'cta' && b.link && !brand?.link && !brand?.site ? { ...b, link: undefined } : b));
         if (blocks.length < 3) {
           lastError = 'il faut un champ "blocks" avec au moins 3 blocs valides';
           continue;
