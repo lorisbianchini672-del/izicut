@@ -225,6 +225,7 @@ RÈGLES :
 - PHOTOS DU CLIENT = INFORMATIONS : utilise CHAQUE photo au moins une fois. Pour la photo la plus parlante, un bloc "explain" avec 1 à 3 annotations placées sur les points clés indiqués (x = fx, y = fy). Avec 3 photos ou plus : un "carousel" ou un "wall". Deux photos du même sujet avant/après : "compare".
 - Sans photo du client : utilise "search:mots-clés en anglais" (photos libres de droits) dans 1 à 3 blocs, et privilégie kinetic, card, list, stat (stat UNIQUEMENT avec un vrai chiffre donné par le client), cta.
 - Textes très courts : 2 à 6 mots par ligne. Aucun faux avis, faux chiffre ni fausse promo.
+- N'INVENTE AUCUNE INFORMATION FACTUELLE que le client n'a pas donnée (horaires, adresse, site web, téléphone, prix, services précis, équipements) : formule de façon générale et évocatrice (« Ton nouveau QG sportif » plutôt que « Ouvert 7j/7 6h-23h »). Le "link" du bloc cta UNIQUEMENT s'il est fourni (lien_cta ou site web), sinon ne mets pas de link.
 - Style : fond et couleurs aux couleurs de la marque (site web fourni = sa charte). Fonds clairs : "paper" seulement si la marque est très claire ; sinon "glow", "silk", "aurora", "mesh", "liquid", "nebula"… Musique et bpm adaptés à l'émotion.
 - Format : "9:16" par défaut, "16:9" pour YouTube, "1:1" pour un post carré.
 
