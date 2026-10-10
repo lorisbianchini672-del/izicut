@@ -22,7 +22,7 @@ export class AiNotConfiguredError extends Error {
 
 type Provider = { name: string; url: string; key: string; model: string; vision?: string; json: boolean; kind?: 'openai' | 'anthropic' };
 /** think = budget de réflexion (tokens) : Claude réfléchit en profondeur avant de répondre. */
-type ChatOptions = { system: string; user: string; maxTokens?: number; temperature?: number; think?: number; /** Temps max par fournisseur (ms) : une grosse création JSON prend 1 à 2 min. */ timeoutMs?: number; /** Heure limite globale (Date.now()) : on n'essaie plus de fournisseur après. */ deadline?: number };
+type ChatOptions = { system: string; user: string; maxTokens?: number; temperature?: number; think?: number; /** Temps max par fournisseur (ms) : une grosse création JSON prend 1 à 2 min. */ timeoutMs?: number; /** Heure limite globale (Date.now()) : on n'essaie plus de fournisseur après. */ deadline?: number; /** Contenu confidentiel : uniquement les IA qui n'utilisent pas les données envoyées pour s'entraîner. */ confidential?: boolean };
 type Part = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
 function providers(): Provider[] {
@@ -189,7 +189,10 @@ async function cascade(run: (p: Provider) => Promise<string>, filter: (p: Provid
   throw Object.assign(new Error('Notre IA est très demandée en ce moment. Nouvel essai automatique dans quelques secondes…'), { busy: true });
 }
 
-export async function chatJson({ system, user, maxTokens = 1500, temperature = 0.7, think = 0, timeoutMs = 40_000, deadline = Infinity }: ChatOptions): Promise<unknown> {
+/** Offres gratuites dont les données peuvent servir à entraîner l'IA ou être relues : exclues pour les documents confidentiels. */
+const TRAINS_ON_FREE = new Set(['gemini', 'openrouter', 'mistral']);
+
+export async function chatJson({ system, user, maxTokens = 1500, temperature = 0.7, think = 0, timeoutMs = 40_000, deadline = Infinity, confidential = false }: ChatOptions): Promise<unknown> {
   // Chaque fournisseur doit répondre avec un JSON lisible ; sinon on passe au suivant.
   const content = await cascade((p) => {
     const left = deadline === Infinity ? timeoutMs : Math.max(10_000, Math.min(timeoutMs, deadline - Date.now() - 5_000));
@@ -197,7 +200,7 @@ export async function chatJson({ system, user, maxTokens = 1500, temperature = 0
       parseJsonObject(text);
       return text;
     });
-  }, () => true, deadline);
+  }, (p) => !confidential || !TRAINS_ON_FREE.has(p.name), deadline);
   return parseJsonObject(content);
 }
 

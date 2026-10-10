@@ -12,6 +12,7 @@ import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, Magi
 import { FREE_DOC } from '@/lib/motion/prompt';
 import { BLOCKS_DOC, StyleSchema, composeProject, parseBlocks } from '@/lib/motion/compose';
 import { EDIT_OPS_DOC, applyOps, quickOps, summarize } from '@/lib/motion/edit-ops';
+import { MAX_DOCS, MAX_DOC_CHARS, cleanText, docsPrompt } from '@/lib/motion/docs';
 import { coerce, repairFree } from '@/lib/motion/repair';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -35,6 +36,8 @@ const BodySchema = z.object({
   /** Description des photos déjà faite lors d'un appel précédent. */
   photoNotes: z.string().max(6000).optional(),
   hasLogo: z.boolean().optional(),
+  /** Documents d'inspiration (texte déjà extrait et nettoyé par /api/motion/docs). */
+  docs: z.array(z.object({ name: z.string().max(80), text: z.string().max(MAX_DOC_CHARS + 200) })).max(MAX_DOCS).optional(),
   /** Scène affichée dans l'aperçu quand le client écrit (« ce texte », « cette slide »). */
   currentScene: z.number().int().min(0).max(30).optional(),
   format: z.enum(['9:16', '16:9', '1:1']).optional(),
@@ -473,10 +476,17 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
       })}`
     : '';
 
+  // Documents du client : re-nettoyés côté serveur (données personnelles masquées), jamais enregistrés.
+  // Budget total limité (les IA gratuites refusent les demandes trop longues).
+  const rawDocs = parsed.data.docs ?? [];
+  const docs = rawDocs.map((d) => ({ name: d.name, text: cleanText(d.text).slice(0, Math.floor(6000 / Math.max(1, rawDocs.length))) })).filter((d) => d.text.length > 0);
+  const docsInfo = docsPrompt(docs);
+  const confidential = docs.length > 0;
+
   // ---------- Retouche : petites opérations ciblées (réponse courte, fiable avec les IA gratuites) ----------
   // Avec Claude, la retouche se fait sur le projet complet (liberté totale) ; sans Claude, par petites opérations.
   if (project && !claudeConfigured()) {
-    const editMsg = `Résumé de la pub actuelle :\n${summarize(project)}${parsed.data.currentScene !== undefined ? `\nLe client regarde la scène ${parsed.data.currentScene} quand il écrit.` : ''}${photos?.length ? `\nPhotos du client : index 0 à ${photos.length - 1}.${photoNotes ? `\n${photoNotes.slice(0, 1500)}` : ''}` : ''}\n\nDemande du client : ${prompt}`;
+    const editMsg = `Résumé de la pub actuelle :\n${summarize(project)}${parsed.data.currentScene !== undefined ? `\nLe client regarde la scène ${parsed.data.currentScene} quand il écrit.` : ''}${photos?.length ? `\nPhotos du client : index 0 à ${photos.length - 1}.${photoNotes ? `\n${photoNotes.slice(0, 1500)}` : ''}` : ''}${docsInfo}\n\nDemande du client : ${prompt}`;
     const t1 = Date.now();
     let recreate = false;
     let lastErr = '';
@@ -489,6 +499,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
           maxTokens: 3500,
           temperature: 0.3,
           think: 2000,
+          confidential,
           timeoutMs: 60_000,
           deadline: t1 + 200_000
         })) as Record<string, unknown>;
@@ -525,8 +536,8 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
   }
 
   const userMsg = project
-    ? `Projet actuel :\n${JSON.stringify(project)}${mediaInfo}${brandInfo}\n\nModification demandée : ${prompt}`
-    : `Demande du client : ${prompt}${mediaInfo}${brandInfo}\n\nCrée le concept puis le projet.`;
+    ? `Projet actuel :\n${JSON.stringify(project)}${mediaInfo}${brandInfo}${docsInfo}\n\nModification demandée : ${prompt}`
+    : `Demande du client : ${prompt}${mediaInfo}${brandInfo}${docsInfo}\n\nCrée le concept puis le projet.`;
 
   try {
     let lastError = '';
@@ -547,6 +558,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
           // Réflexion approfondie de Claude au premier essai.
           think: attempt === 0 ? (project ? 3000 : 4000) : 0,
           timeoutMs: 150_000,
+          confidential,
           deadline: t0 + 280_000
         });
       } catch (err) {

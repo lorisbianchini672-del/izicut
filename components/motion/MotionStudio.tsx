@@ -12,6 +12,7 @@ import { Montserrat } from 'next/font/google';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDown,
+  FileText,
   ArrowUp,
   Download,
   ImagePlus,
@@ -173,6 +174,26 @@ export function MotionStudio() {
   const router = useRouter();
   const [project, setProject] = useState<MotionProject>(BLANK_PROJECT);
   const [assets, setAssets] = useState<MotionAssets>({});
+  // Documents d'inspiration : gardés en mémoire seulement (jamais enregistrés dans le navigateur ni sur le serveur).
+  const [docs, setDocs] = useState<{ name: string; text: string }[]>([]);
+  const [docsBusy, setDocsBusy] = useState(false);
+  const addDocs = async (files: FileList | null) => {
+    if (!files?.length) return;
+    if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour ajouter des documents.'); return; }
+    setDocsBusy(true);
+    try {
+      for (const f of Array.from(files).slice(0, 3)) {
+        const fd = new FormData();
+        fd.append('file', f);
+        const res = await fetch('/api/motion/docs', { method: 'POST', body: fd });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || typeof j.text !== 'string') { setNotice(`${f.name} : ${j.error ?? 'lecture impossible'}`); continue; }
+        setDocs((d) => [...d.filter((x) => x.name !== j.name), { name: j.name, text: j.text }].slice(-3));
+      }
+    } finally {
+      setDocsBusy(false);
+    }
+  };
   /** Photos libres de droits demandées par l'IA (« search:… »), avec leur crédit. */
   const [webImgs, setWebImgs] = useState<Record<string, HTMLImageElement | null>>({});
   const [webCredits, setWebCredits] = useState<Record<string, string>>({});
@@ -720,6 +741,7 @@ export function MotionStudio() {
             media: media.map((m, i) => ({ index: i, name: m.name, duration: Math.round(m.duration * 10) / 10 })),
             photos: photos.map((ph, i) => ({ index: i, name: ph.name })),
             hasLogo: Boolean(assets.logo),
+            ...(docs.length ? { docs } : {}),
             format: project.format,
             currentScene: current,
             ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
@@ -1211,6 +1233,24 @@ export function MotionStudio() {
                     <Sparkles className="h-4 w-4" /> Créer une pub avec mes médias (IA)
                   </Button>
                 ) : null}
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-fg"><FileText className="h-4 w-4 text-neon" /> Documents d’inspiration</p>
+                  <p className="mt-1 text-[11px] text-fg-muted">Brochure, menu, fiche produit, brief, charte… L’IA s’en inspire (ton, produits, arguments) sans recopier. Confidentiel : emails, téléphones et numéros sont masqués, rien n’est enregistré, et ces documents ne sont envoyés qu’à des IA qui ne s’entraînent pas sur vos données.</p>
+                  <label className={cn('mt-2 flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-neon/40 px-3 py-2 text-xs font-semibold text-fg hover:bg-neon/[0.04]', docsBusy && 'pointer-events-none opacity-60')}>
+                    {docsBusy ? 'Lecture…' : 'Ajouter un document (PDF, Word, texte)'}
+                    <input type="file" accept=".pdf,.docx,.txt,.md,.csv,application/pdf,text/plain" multiple className="sr-only" onChange={(e) => { void addDocs(e.target.files); e.target.value = ''; }} />
+                  </label>
+                  {docs.length ? (
+                    <ul className="mt-2 space-y-1">
+                      {docs.map((d) => (
+                        <li key={d.name} className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.04] px-2 py-1 text-xs text-fg">
+                          <span className="min-w-0 truncate">{d.name}</span>
+                          <button type="button" aria-label="Retirer le document" onClick={() => setDocs((x) => x.filter((y) => y.name !== d.name))} className="cursor-pointer text-red-300">×</button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Upload label="Logo" hint="scène finale" loaded={Boolean(assets.logo)} onFile={(f) => loadImage(f, 'logo')} onClear={() => setAssets((a) => ({ ...a, logo: null }))} />
                   <Upload label="Capture d’écran" hint="scène « capture produit »" loaded={Boolean(assets.screenshot)} onFile={(f) => loadImage(f, 'screenshot')} onClear={() => setAssets((a) => ({ ...a, screenshot: null }))} />
