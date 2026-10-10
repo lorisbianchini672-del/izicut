@@ -9,6 +9,7 @@
  *   GEMINI_API_KEY     → Google Gemini (gratuite, voit les images)
  *   GROQ_API_KEY       → Groq (rapide, secours)
  *   OPENROUTER_API_KEY → OpenRouter (modèles « :free »)
+ *   CEREBRAS_API_KEY   → Cerebras (gratuit, gros volume, rapide)
  *   MISTRAL_API_KEY    → Mistral (offre gratuite « Experiment »)
  *   OPENAI_API_KEY     → OpenAI (payant, dernier recours)
  */
@@ -28,6 +29,8 @@ function providers(): Provider[] {
   const list: Provider[] = [];
   const env = process.env;
   if (env.ANTHROPIC_API_KEY) list.push({ name: 'claude', kind: 'anthropic', url: 'https://api.anthropic.com/v1/messages', key: env.ANTHROPIC_API_KEY, model: env.ANTHROPIC_MODEL || 'claude-opus-5-5', vision: env.ANTHROPIC_MODEL || 'claude-opus-5-5', json: false });
+  // Cerebras : offre gratuite très généreuse (gros volume par jour), rapide.
+  if (env.CEREBRAS_API_KEY) for (const m of [env.CEREBRAS_CHAT_MODEL || 'gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507']) list.push({ name: 'cerebras', url: 'https://api.cerebras.ai/v1/chat/completions', key: env.CEREBRAS_API_KEY, model: m, json: true });
   if (env.GEMINI_API_KEY) list.push({ name: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: env.GEMINI_API_KEY, model: env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash', vision: env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash', json: true });
   // Quotas gratuits comptés PAR MODÈLE : si l'un est épuisé, un modèle voisin prend le relais.
   if (env.GEMINI_API_KEY) for (const m of ['gemini-flash-latest', 'gemini-flash-lite-latest']) if (m !== env.GEMINI_CHAT_MODEL) list.push({ name: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: env.GEMINI_API_KEY, model: m, vision: m, json: true });

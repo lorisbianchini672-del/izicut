@@ -259,3 +259,51 @@ export function applyOps(p: MotionProject, raw: unknown, o: { hasLogo: boolean; 
   }
   return { project: cur, applied, recreate: false };
 }
+
+// ---------- Secours sans IA : les retouches les plus courantes comprises directement ----------
+const COLORS: [RegExp, string][] = [
+  [/jaune/, '#FFD400'], [/orange/, '#FF8A00'], [/rouge/, '#FF2D3D'], [/rose/, '#FF4D9D'], [/violet|mauve/, '#8B5CF6'],
+  [/bleu ciel|turquoise|cyan/, '#22D3EE'], [/bleu/, '#3B82F6'], [/vert/, '#22C55E'], [/dor[ée]|\bor\b/, '#E6C375'],
+  [/noir/, '#0B0B0F'], [/blanc/, '#FFFFFF'], [/gris/, '#9CA3AF'], [/marron|brun/, '#8B5A2B'], [/beige|cr[èe]me/, '#F5F0E1']
+];
+const EMOJI_RE = /\p{Extended_Pictographic}(️|‍\p{Extended_Pictographic})*/gu;
+
+/** Identifiant du texte principal d'une scène (titre, ou plus gros texte d'une scène libre). */
+function mainText(p: MotionProject, scene: number): string | null {
+  const own = textEntries(p).filter((e) => e.id.startsWith(`scenes/${scene}/`));
+  const title = own.find((e) => e.id === `scenes/${scene}/title`);
+  if (title) return title.id;
+  let best: { id: string; size: number } | null = null;
+  for (const e of own) {
+    const m = e.extra?.match(/taille (\d+)/);
+    const size = m ? Number(m[1]) : 0;
+    if (e.id.endsWith('/text') && (!best || size > best.size)) best = { id: e.id, size };
+  }
+  return best?.id ?? own[0]?.id ?? null;
+}
+
+export function quickOps(prompt: string, p: MotionProject, currentScene = 0): Record<string, unknown>[] {
+  const q = prompt.toLowerCase();
+  const ops: Record<string, unknown>[] = [];
+  const num = q.match(/(?:sc[èe]ne|slide|diapo)\s*(\d{1,2})/);
+  const scene = num ? Math.max(0, Number(num[1]) - 1) : Math.min(currentScene, p.scenes.length - 1);
+  const color = COLORS.find(([re]) => re.test(q))?.[1];
+  if (/(enl[èe]ve|supprime|retire|vire|sans).{0,20}emoji/.test(q)) {
+    const all = new Set(textEntries(p).flatMap((e) => e.value.match(EMOJI_RE) ?? []));
+    for (const em of all) ops.push({ op: 'replace', find: em, value: '' });
+  }
+  if (/(supprime|enl[èe]ve|retire|vire).{0,15}(sc[èe]ne|slide|diapo)/.test(q)) ops.push({ op: 'delete', scene });
+  if (/plus (rapide|dynamique|nerveu|punchy)|acc[ée]l[èe]re/.test(q)) ops.push({ op: 'speed', factor: 0.8 });
+  if (/plus lent|ralenti|moins rapide/.test(q)) ops.push({ op: 'speed', factor: 1.25 });
+  const target = mainText(p, scene);
+  if (/(texte|titre|[ée]criture|police|lettres?).{0,25}(plus (grand|gros)|trop petit|agrandi)|(plus (grand|gros)|agrandi).{0,25}(texte|titre)/.test(q) && target) ops.push({ op: 'style', id: target, size: 1.25 });
+  if (/(texte|titre|[ée]criture|police|lettres?).{0,25}(plus petit|trop (grand|gros)|r[ée]dui)/.test(q) && target) ops.push({ op: 'style', id: target, size: 0.8 });
+  if (color) {
+    if (/fond|arri[èe]re.plan|background/.test(q)) {
+      ops.push({ op: 'theme', background: color });
+      if (p.theme.backdrop) ops.push({ op: 'backdrop', kind: p.theme.backdrop.kind, colors: [color, color, p.theme.primary, p.theme.accent] });
+    } else if (/titre|texte|[ée]criture|mot/.test(q) && target) ops.push({ op: 'style', id: target, color });
+    else ops.push({ op: 'theme', primary: color });
+  }
+  return ops;
+}

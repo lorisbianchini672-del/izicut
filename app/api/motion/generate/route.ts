@@ -11,7 +11,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, BackdropSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { FREE_DOC } from '@/lib/motion/prompt';
 import { BLOCKS_DOC, StyleSchema, composeProject, parseBlocks } from '@/lib/motion/compose';
-import { EDIT_OPS_DOC, applyOps, summarize } from '@/lib/motion/edit-ops';
+import { EDIT_OPS_DOC, applyOps, quickOps, summarize } from '@/lib/motion/edit-ops';
 import { coerce, repairFree } from '@/lib/motion/repair';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -504,6 +504,13 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
         lastErr = '';
         console.warn('[motion] retouche essai', attempt + 1, ':', (err as Error).message);
         await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      }
+    }
+    // Toutes les IA sont saturées : les retouches courantes sont comprises sans IA.
+    if (!recreate) {
+      const quick = applyOps(project, quickOps(prompt, project, parsed.data.currentScene ?? 0), { hasLogo: Boolean(parsed.data.hasLogo), photos: photos?.length ?? 0 });
+      if (quick.applied > 0) {
+        return NextResponse.json({ project: free ? clampToFree(quick.project) : quick.project, message: 'C’est fait ✓', quota: { tier, used, limit: free ? FREE_MOTION_CREATIONS : null } });
       }
     }
     if (!recreate) {
