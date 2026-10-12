@@ -642,6 +642,14 @@
   -webkit-text-fill-color: transparent;
   animation: gradient-x 8s ease infinite;
 }
+/* Titres animés mot par mot : les mots sont dans des blocs (inline-block) qui cassent le dégradé
+   « clip: text » du parent → on leur redonne le dégradé eux-mêmes (sinon le mot devient invisible). */
+.izi-title-gradient .inline-block:not(.izi-neon-text) {
+  background: linear-gradient(100deg, #ffffff 0%, #ffe2b8 60%, #ffb020 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
 
 /* Entrée de page */
 @keyframes izi-page-in {
