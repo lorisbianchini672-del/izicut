@@ -98,7 +98,7 @@ function MomentsVisual() {
 function CaptionsVisual() {
   const { words, active } = useKaraoke(undefined, 420);
   return (
-    <div aria-hidden className="w-full rounded-2xl border border-line bg-ink-950/60 px-4 py-6 text-lg">
+    <div aria-hidden className="w-full rounded-2xl border border-line bg-[#0b1020] px-4 py-6 text-lg">
       <CaptionLine template="karaoke_box" words={words} active={active} />
     </div>
   );
