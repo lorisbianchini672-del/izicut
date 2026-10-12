@@ -1,8 +1,9 @@
 import Link from 'next/link';
 
+import { LogoMark } from '@/components/landing/LogoMark';
 import { cn } from '@/lib/utils';
 
-/** Logo IziCut — charte « studio de nuit » (pastille néon citron + mot-symbole). */
+/** Logo IziCut — pictogramme « lecture coupée » + mot-symbole. */
 export type LogoSize = 'sm' | 'md' | 'lg' | 'xl';
 
 export interface LogoProps {
@@ -16,26 +17,13 @@ export interface LogoProps {
   className?: string;
 }
 
-const MARK: Record<LogoSize, string> = {
-  sm: 'h-7 w-7 text-[10px] rounded-md',
-  md: 'h-8 w-8 text-xs rounded-lg',
-  lg: 'h-10 w-10 text-sm rounded-xl',
-  xl: 'h-14 w-14 text-lg rounded-2xl',
-};
+const MARK: Record<LogoSize, string> = { sm: 'h-7 w-7', md: 'h-8 w-8', lg: 'h-10 w-10', xl: 'h-14 w-14' };
 const TEXT: Record<LogoSize, string> = { sm: 'text-base', md: 'text-[17px]', lg: 'text-xl', xl: 'text-3xl' };
 
 export function Logo({ size = 'md', iconOnly = false, subtitle, href = '/', className }: LogoProps) {
   const content = (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
-      <span
-        aria-hidden
-        className={cn(
-          'grid place-items-center bg-neon font-code font-bold text-ink-950 shadow-[0_0_20px_-4px_rgb(169_144_255/0.7)]',
-          MARK[size]
-        )}
-      >
-        IZ
-      </span>
+      <LogoMark className={cn('shrink-0 drop-shadow-[0_0_18px_rgb(255_140_40/0.45)]', MARK[size])} />
       {iconOnly ? (
         <span className="sr-only">IziCut</span>
       ) : (

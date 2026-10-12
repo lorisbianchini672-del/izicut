@@ -37,7 +37,7 @@ export function Hero() {
   const my = useMotionValue(-1000);
   const sx = useSpring(mx, { stiffness: 90, damping: 20 });
   const sy = useSpring(my, { stiffness: 90, damping: 20 });
-  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${sx}px ${sy}px, rgb(169 144 255 / 0.09), transparent 65%)`;
+  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${sx}px ${sy}px, rgb(255 176 32 / 0.09), transparent 65%)`;
 
   // Sortie de scène : l'aperçu monte, se redresse et recule
   const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start start', 'end start'] });

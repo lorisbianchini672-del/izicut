@@ -357,7 +357,7 @@ function ClipCard({
           href={`/montage/${clip.id}`}
           aria-disabled={!ready}
           className={cn(
-            'flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-neon to-[#ffbe76] px-3 py-2 text-xs font-bold text-ink-950 transition hover:opacity-90',
+            'flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-neon to-[#ff6b3d] px-3 py-2 text-xs font-bold text-ink-950 transition hover:opacity-90',
             !ready && 'pointer-events-none opacity-40'
           )}
         >

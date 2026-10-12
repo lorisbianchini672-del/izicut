@@ -80,7 +80,7 @@ export function CaptionLine({ template, words, active, color = '#c8ff3d' }: Capt
             break;
           case 'karaoke_box':
             style = on
-              ? { background: color, color: '#05060a', borderRadius: '0.25em', padding: '0 0.18em' }
+              ? { background: color, color: '#09090b', borderRadius: '0.25em', padding: '0 0.18em' }
               : { color: '#fff', padding: '0 0.18em', textShadow: '0 2px 10px rgb(0 0 0 / 0.7)' };
             break;
           case 'neon':

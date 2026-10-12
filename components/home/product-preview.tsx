@@ -113,7 +113,7 @@ export function ProductPreview() {
                     transition={{ duration: 0.3 }}
                   />
                 ))}
-                <span aria-hidden className="absolute inset-y-0 w-px animate-scan bg-cyan shadow-[0_0_12px_#ffbe76]" />
+                <span aria-hidden className="absolute inset-y-0 w-px animate-scan bg-cyan shadow-[0_0_12px_#ff6b3d]" />
               </div>
               <div className="mt-2 flex justify-between font-code text-[10px] text-fg-subtle" aria-hidden>
                 <span>00:00</span><span>14:33</span><span>29:06</span><span>43:39</span><span>58:12</span>

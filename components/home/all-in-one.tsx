@@ -56,7 +56,7 @@ function CertBadge() {
             <circle cx="60" cy="60" r={R} fill="none" stroke="url(#izi-cert)" strokeWidth="9" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - score / 100)} />
             <defs>
               <linearGradient id="izi-cert" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stopColor="#a990ff" />
+                <stop offset="0" stopColor="#ffb020" />
                 <stop offset="1" stopColor="#ffcf86" />
               </linearGradient>
             </defs>

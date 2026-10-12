@@ -272,7 +272,7 @@ export function ClipEditor(props: ClipEditorProps) {
                 <h4 className="text-sm font-semibold">Couleurs</h4>
                 {(
                   [
-                    { key: 'primary' as const, label: 'Couleur principale', default: styleConfig.colors?.primary ?? '#8B5CF6' },
+                    { key: 'primary' as const, label: 'Couleur principale', default: styleConfig.colors?.primary ?? '#f59e0b' },
                     { key: 'text' as const, label: 'Texte', default: styleConfig.colors?.text ?? '#FFFFFF' },
                     { key: 'highlight' as const, label: 'Surlignage', default: styleConfig.colors?.highlight ?? '#000000' },
                   ]

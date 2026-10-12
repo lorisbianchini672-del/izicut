@@ -49,7 +49,7 @@ function Step({
 }: (typeof STEPS)[number] & { index: number; progress: MotionValue<number>; reduce: boolean }) {
   const start = index / STEPS.length;
   const on = useTransform(progress, [start, start + 0.18], [0, 1]);
-  const iconColor = useTransform(on, [0, 1], ['rgb(238 240 245)', 'rgb(169 144 255)']);
+  const iconColor = useTransform(on, [0, 1], ['rgb(238 240 245)', 'rgb(255 176 32)']);
   const iconBorder = useTransform(on, [0, 1], ['rgba(255,255,255,0.14)', 'rgba(200,255,61,0.55)']);
   const glow = useTransform(on, [0, 1], ['0 0 0 0 rgba(200,255,61,0)', '0 0 28px -4px rgba(200,255,61,0.55)']);
 

@@ -1007,7 +1007,7 @@ export function MotionStudio() {
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         {/* ---------- Aperçu ---------- */}
-        <div className="sticky top-0 z-30 -mx-4 flex min-w-0 flex-col items-center bg-[var(--color-ink-950,#05060a)]/95 px-4 pb-2 pt-2 backdrop-blur-xl lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none">
+        <div className="sticky top-0 z-30 -mx-4 flex min-w-0 flex-col items-center bg-[var(--color-ink-950,#09090b)]/95 px-4 pb-2 pt-2 backdrop-blur-xl lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none">
 
           <div
             className="relative w-full max-w-[min(100%,calc(34dvh*var(--r)))] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] lg:max-w-[min(100%,calc(68vh*var(--r)))]"
@@ -1291,7 +1291,7 @@ export function MotionStudio() {
                     <button
                       type="button"
                       onClick={() => { setPendingVideo(m.file); router.push('/montage/nouveau'); }}
-                      className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-neon to-[#ffbe76] px-2 py-1.5 text-xs font-bold text-ink-950"
+                      className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-neon to-[#ff6b3d] px-2 py-1.5 text-xs font-bold text-ink-950"
                     >
                       <Wand2 className="h-3.5 w-3.5" /> Modifier directement cette vidéo (ralentis, effets, rythme…)
                     </button>

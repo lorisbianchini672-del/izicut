@@ -58,7 +58,7 @@ const captionFont = Montserrat({ subsets: ['latin'], weight: ['800', '900'], dis
 
 type Tool = 'style' | 'couleur' | 'texte' | 'format' | 'titre' | 'couper' | null;
 
-const PRO_COLORS = ['#FFD400', '#22D3EE', '#4ADE80', '#FF3B6B', '#A855F7', '#FF8A00', '#FFFFFF'];
+const PRO_COLORS = ['#FFD400', '#22D3EE', '#4ADE80', '#FF3B6B', '#f97316', '#FF8A00', '#FFFFFF'];
 const TEXT_COLORS = ['#FFFFFF', '#FFD400', '#000000'];
 
 const TEMPLATE_LOOK: Record<CaptionTemplate, { words: number; size: number }> = {

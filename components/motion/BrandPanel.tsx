@@ -89,7 +89,7 @@ export function BrandPanel({
     const sat = (h: string) => { const n = parseInt(h.slice(1), 16); const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255; return Math.max(r, g, b) - Math.min(r, g, b); };
     const vivid = [...site.colors].sort((a, b) => sat(b) - sat(a));
     const dark = [...site.colors].sort((a, b) => lum(a) - lum(b))[0];
-    return { primary: vivid[0] ?? '#a990ff', accent: vivid[1] ?? vivid[0] ?? '#ffbe76', background: dark && lum(dark) < 60 ? dark : '#0b0920' };
+    return { primary: vivid[0] ?? '#ffb020', accent: vivid[1] ?? vivid[0] ?? '#ff6b3d', background: dark && lum(dark) < 60 ? dark : '#0b0920' };
   };
   const timer = useRef<number | null>(null);
 

@@ -39,12 +39,12 @@ void main(){
   // Les voiles occupent le haut / la droite : le contenu (gauche, bas) reste lisible.
   float zone = smoothstep(-0.45, 0.55, p.y * 0.95 + (p.x / ar) * 0.55);
   zone = 0.1 + 0.9 * zone;
-  vec3 base = vec3(0.016, 0.012, 0.045);
-  vec3 deep = vec3(0.09, 0.06, 0.28);
-  vec3 violet = vec3(0.47, 0.33, 0.98);
-  vec3 orchid = vec3(0.82, 0.45, 1.0);
-  vec3 pearl = vec3(0.93, 0.90, 1.0);
-  vec3 amber = vec3(1.0, 0.70, 0.40);
+  vec3 base = vec3(0.035, 0.034, 0.04);
+  vec3 deep = vec3(0.16, 0.07, 0.02);
+  vec3 violet = vec3(0.98, 0.56, 0.12);
+  vec3 orchid = vec3(1.0, 0.36, 0.18);
+  vec3 pearl = vec3(1.0, 0.95, 0.88);
+  vec3 amber = vec3(1.0, 0.78, 0.38);
   // Teinte qui glisse du violet à l'orchidée selon le pli : reflets irisés.
   vec3 tint = mix(violet, orchid, smoothstep(0.35, 0.75, f));
   vec3 col = base;

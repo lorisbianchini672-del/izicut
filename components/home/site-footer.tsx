@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { LogoMark } from '@/components/landing/LogoMark';
 
 const COLUMNS = [
   { title: 'Produit', links: [['Fonctionnalités', '/#features'], ['Studio', '/#studio'], ['Tarifs', '/#pricing'], ['Importer une vidéo', '/upload']] },
@@ -12,7 +13,7 @@ export function SiteFooter() {
       <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 md:grid-cols-[1.3fr_repeat(3,1fr)] lg:px-8">
         <div>
           <Link href="/" className="izi-focus inline-flex items-center gap-2.5 rounded-lg">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-neon font-code text-xs font-bold text-ink-950" aria-hidden>IZ</span>
+            <LogoMark className="h-8 w-8" />
             <span className="text-lg font-semibold tracking-tight text-fg">IziCut</span>
           </Link>
           <p className="mt-4 max-w-xs text-sm leading-relaxed text-fg-muted">
