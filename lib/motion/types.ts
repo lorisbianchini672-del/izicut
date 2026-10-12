@@ -412,7 +412,7 @@ export const THEME_PRESETS: { name: string; theme: MotionProject['theme'] }[] = 
 export const BLANK_PROJECT: MotionProject = {
   format: '9:16',
   brand: '',
-  theme: { background: '#06050d', primary: '#a990ff', accent: '#ffbe76', text: '#ffffff', style: 'clean', motif: 'none' },
+  theme: { background: '#09090b', primary: '#ffb020', accent: '#ff6b3d', text: '#ffffff', style: 'clean', motif: 'none' },
   scenes: [
     {
       type: 'free',

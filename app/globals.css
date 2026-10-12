@@ -522,7 +522,7 @@
 .izi-card:hover::before { opacity: 1; }
 
 .izi-neon-text {
-  background: linear-gradient(100deg, #b9a6ff 0%, #ffb020 35%, #f3b8d6 65%, #ffcf86 100%);
+  background: linear-gradient(100deg, #ffd79a 0%, #ffb020 35%, #ff8a3d 65%, #ffcf86 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -582,7 +582,7 @@
 .izi-cta {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, #ffd79a 0%, #ffb020 45%, #8a6cff 100%);
+  background: linear-gradient(135deg, #ffd79a 0%, #ffb020 45%, #ff5a2e 100%);
   color: #0f0f13;
   box-shadow: 0 18px 50px -15px rgb(249 115 22 / 0.85), inset 0 1px 0 rgb(255 255 255 / 0.5);
 }
@@ -635,7 +635,7 @@
 
 /* Titre de page avec dégradé animé */
 .izi-title-gradient {
-  background: linear-gradient(100deg, #ffffff 0%, #d9d0ff 40%, #ffb020 70%, #ffcf86 100%);
+  background: linear-gradient(100deg, #ffffff 0%, #ffe2b8 40%, #ffb020 70%, #ffcf86 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;

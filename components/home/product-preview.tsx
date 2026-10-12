@@ -38,7 +38,7 @@ export function ProductPreview() {
   return (
     <div className="relative">
       {/* halo */}
-      <div aria-hidden className="absolute -inset-x-10 -top-10 bottom-0 -z-10 rounded-[3rem] bg-[radial-gradient(60%_50%_at_50%_40%,rgb(169_144_255/0.12),transparent_70%)]" />
+      <div aria-hidden className="absolute -inset-x-10 -top-10 bottom-0 -z-10 rounded-[3rem] bg-[radial-gradient(60%_50%_at_50%_40%,rgb(255_176_32/0.12),transparent_70%)]" />
 
       <div className="overflow-hidden rounded-2xl border border-line-strong bg-ink-900/90 shadow-[0_50px_140px_-40px_rgb(0_0_0/0.95)] backdrop-blur">
         {/* Barre de fenêtre */}
