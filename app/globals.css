@@ -658,3 +658,6 @@
 }
 .izi-page-enter { animation: izi-page-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 @media (prefers-reduced-motion: reduce) { .izi-page-enter { animation: none; } }
+
+/* Aucun débordement horizontal sur mobile (décors lumineux plus larges que l’écran). */
+html, body { overflow-x: clip; }

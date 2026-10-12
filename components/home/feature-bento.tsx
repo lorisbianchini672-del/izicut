@@ -17,7 +17,7 @@ export function FeatureBento() {
           description="Tout ce qui fait qu'un short retient le spectateur, appliqué automatiquement à chaque clip — et modifiable à la main quand vous le voulez."
         />
 
-        <Stagger className="mt-16 grid auto-rows-[minmax(220px,auto)] gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <Stagger className="mt-16 grid auto-rows-[minmax(220px,auto)] grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2 lg:grid-cols-3">
           <Card className="md:col-span-2 lg:row-span-2" icon={Gauge} title="Les moments forts, notés sur 100"
             text="L'IA lit la transcription horodatée et retient les extraits autonomes : accroche dès la première phrase, une idée complète, une chute nette. Les bornes sont recalées sur de vraies phrases.">
             <MomentsVisual />
