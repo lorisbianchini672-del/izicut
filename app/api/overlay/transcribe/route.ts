@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       if (!res.ok) { last = `HTTP ${res.status}`; continue; }
       const j = (await res.json()) as { words?: { word: string; start: number; end: number }[]; language?: string };
       const words = (j.words ?? [])
-        .filter((w) => typeof w.word === 'string' && w.word.trim() && Number.isFinite(w.start))
+        .filter((w) => typeof w.word === 'string' && /[\p{L}\p{N}]/u.test(w.word) && Number.isFinite(w.start))
         .map((w) => ({ word: w.word.trim(), start: Math.round((w.start + offset) * 100) / 100, end: Math.round((w.end + offset) * 100) / 100 }));
       return NextResponse.json({ words, language: j.language });
     } catch (e) {
