@@ -69,7 +69,7 @@ export type BackdropT = z.infer<typeof BackdropSchema>;
 
 // ---------- Scène libre : le motion designer IA dessine ce qu'il veut ----------
 /** Courbes d'animation disponibles pour les images clés. */
-export const EASES = ['linear', 'in', 'out', 'inOut', 'back', 'elastic', 'bounce', 'expo'] as const;
+export const EASES = ['linear', 'in', 'out', 'inOut', 'back', 'elastic', 'bounce', 'expo', 'smooth', 'spring'] as const;
 const num = z.number().min(-10000).max(10000);
 /** Valeur animée : un nombre / une couleur fixe, ou des images clés [{ t (s), v, e (courbe) }]. */
 const keyed = <T extends z.ZodTypeAny>(v: T) => z.union([v, z.array(z.object({ t: z.number().min(0).max(15), v, e: z.enum(EASES).optional() })).min(1).max(12)]);
@@ -111,7 +111,7 @@ const TextLayer = z.object({
   serif: z.boolean().optional(),
   stroke: z.object({ color: hex, width: z.number().min(0.5).max(20) }).optional(),
   /** Révélation lettre par lettre ou mot par mot. */
-  reveal: z.enum(['none', 'type', 'rise', 'blur', 'curve', 'split', 'mask', 'scale', 'wave']).optional(),
+  reveal: z.enum(['none', 'type', 'rise', 'blur', 'curve', 'split', 'mask', 'scale', 'wave', 'karaoke']).optional(),
   revealBy: z.enum(['char', 'word', 'line']).optional(),
   revealAt: z.number().min(0).max(15).optional(),
   revealDur: z.number().min(0.1).max(8).optional()

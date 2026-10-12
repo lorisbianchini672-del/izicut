@@ -1973,6 +1973,21 @@ function sceneMockup(c: Ctx, s: Extract<Scene, { type: 'mockup' }>, lt: number) 
 // x / y sont des fractions de l'écran (0,5 = centre), ce qui rend chaque
 // création valable en 9:16, 16:9 et 1:1.
 
+/** Courbe de Bézier cubique (comme en CSS) résolue par Newton, pour des easings identiques à After Effects / CSS. */
+function cubicBezier(x1: number, y1: number, x2: number, y2: number, x: number): number {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  let t = x;
+  for (let i = 0; i < 6; i++) {
+    const fx = ((ax * t + bx) * t + cx) * t - x;
+    const d = (3 * ax * t + 2 * bx) * t + cx;
+    if (Math.abs(fx) < 1e-5 || Math.abs(d) < 1e-6) break;
+    t -= fx / d;
+  }
+  t = Math.min(1, Math.max(0, t));
+  return ((ay * t + by) * t + cy) * t;
+}
+
 type EaseName = (typeof EASES)[number];
 const EASE_FN: Record<EaseName, (x: number) => number> = {
   linear: (x) => clamp(x),
@@ -1981,6 +1996,10 @@ const EASE_FN: Record<EaseName, (x: number) => number> = {
   inOut: easeInOut,
   back: easeOutBack,
   expo: (x) => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * clamp(x))),
+  // Courbe « motion designer » cubic-bezier(0.16, 1, 0.3, 1) : départ vif, arrivée très douce.
+  smooth: (x) => cubicBezier(0.16, 1, 0.3, 1, clamp(x)),
+  // Ressort amorti (masse 0.5, amortissement 12, raideur 200 ≈ ζ 0.6) : léger dépassement puis stabilisation.
+  spring: (x) => { const c = clamp(x); if (c >= 1) return 1; const z = 0.6, w = 10, wd = w * Math.sqrt(1 - z * z); return 1 - Math.exp(-z * w * c) * (Math.cos(wd * c) + (z / Math.sqrt(1 - z * z)) * Math.sin(wd * c)); },
   elastic: (x) => { const c = clamp(x); return c === 0 || c === 1 ? c : Math.pow(2, -10 * c) * Math.sin((c * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1; },
   bounce: (x) => {
     let c = clamp(x);
@@ -2110,7 +2129,8 @@ function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: numb
   const track = (L.tracking ?? 0) * size;
   const lh = size * 1.12;
   const align = L.align ?? 'center';
-  const space = ctx.measureText(' ').width + track;
+  // Karaoké : espaces élargis pour que le mot actif (×1.15) ne touche jamais ses voisins.
+  const space = ctx.measureText(' ').width * (L.reveal === 'karaoke' ? 2.2 : 1) + track;
   // Mise en page caractère par caractère (pour l'espacement et les révélations).
   type U = { ch: string; x: number; y: number; w: number; accent: boolean; word: number; line: number; idx: number };
   const units: U[] = [];
@@ -2140,8 +2160,12 @@ function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: numb
   const groups = by === 'char' ? units.length : by === 'word' ? new Set(units.map((u) => u.word)).size : lines.length;
   const at = L.revealAt ?? 0;
   const dur = L.revealDur ?? Math.min(1.6, 0.25 + groups * (by === 'char' ? 0.035 : 0.12));
-  const step = groups > 1 ? dur / groups : 0;
-  const unitDur = Math.max(0.25, Math.min(0.7, dur * 0.6));
+  // Karaoké : un mot toutes les ~0,38 s (lisible), sauf durée imposée.
+  const step = mode === 'karaoke' ? (L.revealDur ? L.revealDur / Math.max(1, groups) : 0.38) : groups > 1 ? dur / groups : 0;
+  const unitDur = mode === 'karaoke' ? 0.32 : Math.max(0.25, Math.min(0.7, dur * 0.6));
+  // Centre de chaque mot (le mot actif grossit autour de son centre, pas lettre par lettre).
+  const wordBox = new Map<number, { a: number; b: number }>();
+  for (const u of units) { const bx = wordBox.get(u.word); if (bx) { bx.a = Math.min(bx.a, u.x); bx.b = Math.max(bx.b, u.x + u.w); } else wordBox.set(u.word, { a: u.x, b: u.x + u.w }); }
   const fillBase = L.fill ? paintStyle(ctx, L.fill as Paint, maxW, totalH) : kv(L.color as Keyed<string> | undefined, lt, c.theme.text);
   const accent = readableAccent(c);
   const wordOrder = [...new Set(units.map((u) => u.word))];
@@ -2154,7 +2178,7 @@ function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: numb
     if (p <= 0) continue;
     const e = easeOutCubic(p);
     ctx.save();
-    let tx = u.x, ty = u.y, sc = 1, rot = 0, alpha = 1, bl = 0;
+    let tx = u.x, ty = u.y, sc = 1, rot = 0, alpha = 1, bl = 0, kActive = 0;
     switch (mode) {
       case 'rise': ty += (1 - easeOutBack(p)) * size * 0.6; alpha = clamp(p * 1.6); break;
       case 'blur': bl = (1 - e) * size * 0.3; sc = 1.25 - 0.25 * e; alpha = clamp(p * 1.5); break;
@@ -2170,13 +2194,30 @@ function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: numb
         break;
       }
       case 'type': p = 1; break;
+      case 'karaoke': {
+        // Pop d'entrée (ressort + montée + fondu), puis le mot prononcé grossit (×1.15), passe en couleur vive avec un halo.
+        const ent = EASE_FN.spring(p);
+        const nextAt = at + (g + 1) * step;
+        const isLast = g === wordOrder.length - 1;
+        const on = lt < nextAt + (isLast ? 0.5 : 0) ? clamp((lt - t0) / 0.12) * clamp((nextAt + (isLast ? 0.5 : 0) - lt) / 0.12) : 0;
+        const k = 0.7 + 0.3 * ent + 0.15 * EASE_FN.smooth(on);
+        const box = wordBox.get(u.word)!;
+        const wc = (box.a + box.b) / 2;
+        tx = wc + (u.x + u.w / 2 - wc) * k - u.w / 2;
+        ty += (1 - ent) * size * 0.35;
+        sc = k;
+        alpha = clamp(p * 2.5);
+        if (on > 0.02) { ctx.shadowColor = accent; ctx.shadowBlur = size * 0.35 * on; }
+        kActive = on;
+        break;
+      }
     }
     ctx.globalAlpha *= alpha;
     if (bl > 0.4) setBlur(ctx, bl);
     ctx.translate(tx + u.w / 2, ty);
     if (rot) ctx.rotate(rot);
     if (sc !== 1) ctx.scale(sc, sc);
-    ctx.fillStyle = u.accent ? accent : fillBase;
+    ctx.fillStyle = u.accent || kActive > 0.5 ? accent : fillBase;
     if (L.stroke) {
       ctx.lineWidth = L.stroke.width;
       ctx.strokeStyle = L.stroke.color;

@@ -10,7 +10,8 @@
 import { z } from 'zod';
 
 import { BACKDROPS } from './gl-bg';
-import { MUSIC, SFX, type Layer, type MotionProject, type Scene } from './types';
+import { repairFree } from './repair';
+import { MUSIC, SFX, SceneSchema, type Layer, type MotionProject, type Scene } from './types';
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const img = z.string().regex(/^(logo|photo:\d{1,2}|search:.{2,60})$/);
@@ -18,7 +19,7 @@ const txt = (n: number) => z.string().trim().min(1).max(n);
 
 export const BlockSchema = z.discriminatedUnion('block', [
   z.object({ block: z.literal('reveal'), brand: txt(40), line: z.string().trim().max(90).optional() }),
-  z.object({ block: z.literal('kinetic'), lines: z.array(txt(60)).min(1).max(3), style: z.enum(['push', 'blur', 'slam', 'mask', 'curve']).optional() }),
+  z.object({ block: z.literal('kinetic'), lines: z.array(txt(60)).min(1).max(3), style: z.enum(['push', 'blur', 'slam', 'mask', 'curve', 'karaoke']).optional() }),
   z.object({ block: z.literal('carousel'), title: z.string().trim().max(50).optional(), items: z.array(z.object({ img, label: z.string().trim().max(32).optional(), sub: z.string().trim().max(40).optional() })).min(1).max(10) }),
   z.object({ block: z.literal('wall'), title: txt(60), imgs: z.array(img).min(1).max(12) }),
   z.object({ block: z.literal('grid'), title: z.string().trim().max(50).optional(), items: z.array(z.object({ img, label: z.string().trim().max(32).optional() })).min(2).max(6) }),
@@ -28,6 +29,8 @@ export const BlockSchema = z.discriminatedUnion('block', [
   z.object({ block: z.literal('explain'), img, title: z.string().trim().max(60).optional(), notes: z.array(z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1), text: txt(40), sub: z.string().trim().max(50).optional() })).min(1).max(3) }),
   z.object({ block: z.literal('compare'), before: img, after: img, labelBefore: z.string().trim().max(24).optional(), labelAfter: z.string().trim().max(24).optional(), title: z.string().trim().max(60).optional() }),
   z.object({ block: z.literal('photo'), img, caption: z.string().trim().max(70).optional() }),
+  // Scène 100 % sur mesure quand aucun bloc ne convient (calques libres, validés avant d'être gardés).
+  z.object({ block: z.literal('free'), duration: z.number().min(1.2).max(8), name: z.string().max(40).optional(), layers: z.array(z.record(z.string(), z.unknown())).min(1).max(16), camera: z.record(z.string(), z.unknown()).optional() }),
   z.object({ block: z.literal('cta'), title: txt(60), button: z.string().trim().max(28).optional(), link: z.string().trim().max(60).optional() })
 ]);
 export type Block = z.infer<typeof BlockSchema>;
@@ -42,7 +45,9 @@ export const StyleSchema = z.object({
 export type ComposeStyle = z.infer<typeof StyleSchema>;
 
 const LIGHT_BACKDROPS = new Set(['paper']);
-const e = (t: number, v: number, ease: 'expo' | 'back' | 'out' | 'inOut' | 'in' | 'linear' = 'expo') => ({ t, v, e: ease });
+type Ease = 'expo' | 'back' | 'out' | 'inOut' | 'in' | 'linear' | 'smooth' | 'spring';
+// Courbes de motion designer : 'expo' → cubic-bezier(0.16,1,0.3,1), 'back' → ressort amorti.
+const e = (t: number, v: number, ease: Ease = 'smooth') => ({ t, v, e: (ease === 'expo' ? 'smooth' : ease === 'back' ? 'spring' : ease) as Ease });
 
 function lum(h: string): number {
   const n = parseInt(h.slice(1), 16);
@@ -82,6 +87,14 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
       const style = b.style ?? (['push', 'blur', 'mask', 'slam'] as const)[i % 4];
       const layers: Layer[] = [];
       const step = 0.75;
+      if (style === 'karaoke') {
+        // Sous-titres mot à mot façon Hormozi : le mot prononcé grossit, s'allume et brille.
+        const all = b.lines.join(' ');
+        layers.push({ kind: 'text', x: 0.5, y: 0.5, text: all, size: 96, weight: 900, maxWidth: 0.86, color: c.text, reveal: 'karaoke', revealBy: 'word', revealAt: 0.15 });
+        const words = all.split(/\s+/).length;
+        const dur = Math.min(6, 0.6 + words * 0.38 + 0.6);
+        return { ...base, duration: dur, name: 'Sous-titres', camera: { zoom: [e(0, 1, 'linear'), e(dur, 1.05, 'inOut')] }, layers, cues: [{ at: 0.1, sfx: 'pop' }] };
+      }
       if (style === 'push') {
         b.lines.forEach((l, k) => layers.push(pushText(l, 0.47, b.lines.length > 1 ? 88 : 104, k * step, k < b.lines.length - 1 ? (k + 1) * step - 0.1 : null, c)));
       } else {
@@ -192,7 +205,7 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
       ];
       b.notes.forEach((nt, k) => layers.push({ kind: 'callout', x: nt.x, y: nt.y, tx: nt.x < 0.5 ? Math.min(0.9, nt.x + 0.3) : Math.max(0.1, nt.x - 0.3), ty: Math.max(0.12, Math.min(0.85, nt.y - 0.12)), text: nt.text, sub: nt.sub, at: 0.6 + k * 0.5, to: 1.6, color: c.accent }));
       layers.push({ kind: 'callout', x: 0.5, y: 0.5, tx: n.x < 0.5 ? 0.8 : 0.2, ty: 0.3, text: n.text, sub: n.sub, at: 2.7, color: c.accent });
-      if (b.title) layers.push({ kind: 'text', x: 0.5, y: 0.82, text: b.title, size: 60, weight: 800, maxWidth: 0.86, shadow: true, reveal: 'rise', revealBy: 'word', revealAt: 0.4, color: '#ffffff', to: 2.5 });
+      if (b.title) layers.push({ kind: 'text', x: 0.5, y: 0.74, text: b.title, size: 60, weight: 800, maxWidth: 0.86, shadow: true, reveal: 'rise', revealBy: 'word', revealAt: 0.4, color: '#ffffff', to: 2.5 });
       return { ...base, duration: 3.6, name: 'Image expliquée', layers, cues: [{ at: 0.05, sfx: 'whoosh' }, { at: 0.6, sfx: 'pop' }, { at: 2.7, sfx: 'click' }] };
     }
     case 'compare':
@@ -204,7 +217,7 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
           { kind: 'rect', x: [e(1, 0, 'linear'), e(2, 1, 'inOut')], y: 0.5, w: 8, h: 2200, color: '#ffffff', glow: { color: c.accent, size: 30 }, from: 1, to: 2.05 },
           { kind: 'text', x: 0.25, y: 0.16, text: b.labelBefore ?? 'Avant', size: 54, weight: 800, color: '#ffffff', shadow: true, to: 1.6 },
           { kind: 'text', x: 0.75, y: 0.16, text: b.labelAfter ?? 'Après', size: 54, weight: 800, color: '#ffffff', shadow: true, from: 1.5, reveal: 'blur', revealAt: 1.5 },
-          ...(b.title ? [{ kind: 'text' as const, x: 0.5, y: 0.84, text: b.title, size: 58, weight: 800, maxWidth: 0.86, shadow: true, color: '#ffffff', reveal: 'rise' as const, revealAt: 2.1 }] : [])
+          ...(b.title ? [{ kind: 'text' as const, x: 0.5, y: 0.74, text: b.title, size: 58, weight: 800, maxWidth: 0.86, shadow: true, color: '#ffffff', reveal: 'rise' as const, revealAt: 2.1 }] : [])
         ],
         cues: [{ at: 1, sfx: 'swipe' }]
       };
@@ -214,12 +227,14 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
         layers: [
           { kind: 'image', src: b.img, x: 0.5, y: 0.5, w: 1080, h: 1920, fit: 'cover', reveal: (['iris', 'blinds', 'split', 'wipe'] as const)[i % 4], revealDur: 0.7, zoom: [e(0, 1.04, 'linear'), e(2.4, 1.16, 'linear')] },
           ...(b.caption ? [
-            { kind: 'rect' as const, x: 0.5, y: 0.8, w: 960, h: 170, radius: 36, glass: true, opacity: [e(0.5, 0, 'linear'), e(0.8, 1, 'out')] },
-            { kind: 'text' as const, x: 0.5, y: 0.8, text: b.caption, size: 50, weight: 800, maxWidth: 0.8, color: '#ffffff', reveal: 'blur' as const, revealBy: 'word' as const, revealAt: 0.6 }
+            { kind: 'rect' as const, x: 0.5, y: 0.74, w: 960, h: 170, radius: 36, glass: true, opacity: [e(0.5, 0, 'linear'), e(0.8, 1, 'out')] },
+            { kind: 'text' as const, x: 0.5, y: 0.74, text: b.caption, size: 50, weight: 800, maxWidth: 0.8, color: '#ffffff', reveal: 'blur' as const, revealBy: 'word' as const, revealAt: 0.6 }
           ] : [])
         ],
         cues: [{ at: 0.05, sfx: 'whoosh' }]
       };
+    case 'free':
+      return { type: 'free', bg: 'theme', duration: b.duration, name: b.name ?? 'Sur mesure', layers: b.layers as unknown as Layer[], ...(b.camera ? { camera: b.camera as Scene extends { camera?: infer C } ? C : never } : {}) } as Scene;
     case 'cta':
       return {
         ...base, duration: 3, name: 'Signature',
@@ -265,7 +280,16 @@ export function parseBlocks(raw: unknown): Block[] {
   const out: Block[] = [];
   for (const b of raw) {
     const r = BlockSchema.safeParse(b);
-    if (r.success) out.push(r.data);
+    if (!r.success) continue;
+    if (r.data.block === 'free') {
+      // Scène libre écrite par l'IA : réparée puis vérifiée, sinon ignorée (jamais de pub cassée).
+      const fixed = repairFree({ type: 'free', bg: 'theme', duration: r.data.duration, name: r.data.name, layers: r.data.layers, camera: r.data.camera });
+      const ok = fixed ? SceneSchema.safeParse(fixed) : null;
+      if (!ok?.success || ok.data.type !== 'free') continue;
+      out.push({ ...r.data, layers: ok.data.layers as unknown as Record<string, unknown>[], camera: ok.data.camera as Record<string, unknown> | undefined });
+      continue;
+    }
+    out.push(r.data);
   }
   return out;
 }
@@ -283,6 +307,13 @@ export const BLOCKS_DOC = `BLOCS DISPONIBLES (chacun devient une scène motion d
 - { "block": "compare", "before": "photo:N", "after": "photo:M", "labelBefore": "Avant", "labelAfter": "Après", "title": "…" } — avant / après avec volet lumineux.
 - { "block": "photo", "img": "photo:N", "caption": "…" } — photo plein écran qui se dévoile (iris, stores…) avec légende en verre.
 - { "block": "cta", "title": "…", "button": "…", "link": "…" } — signature finale : logo, phrase, bouton cliqué, lien.
+- "kinetic" avec "style": "karaoke" — sous-titres mot à mot façon TikTok (le mot prononcé grossit et s'allume) : idéal pour une phrase forte ou un message parlé.
+- { "block": "free", "duration": 2-5, "name": "…", "layers": [ … ], "camera": { "zoom": [{"t":0,"v":1},{"t":3,"v":1.1}] } } — SCÈNE SUR MESURE quand le client veut quelque chose qu'aucun bloc ne fait (objet précis, schéma, chronologie, comparatif, effet particulier…). Calques possibles (x, y de 0 à 1 ; tailles en pixels sur 1080 de large) :
+  {"kind":"text","text":"…","x":0.5,"y":0.5,"size":80,"weight":800,"color":"#fff","reveal":"rise|blur|scale|mask|type|wave|split|karaoke","revealBy":"word|char|line","revealAt":0.2}
+  {"kind":"rect","x":0.5,"y":0.5,"w":800,"h":400,"radius":40,"color":"#…","glass":true} · {"kind":"ellipse","x":0.5,"y":0.5,"w":200,"color":"#…","glow":{"color":"#…","size":40}}
+  {"kind":"image","src":"photo:0|search:…|logo","x":0.5,"y":0.5,"w":600,"h":600,"radius":30} · {"kind":"particles","mode":"burst|float|converge|sparkle|orbit","x":0.5,"y":0.5,"count":40,"color":"#…"}
+  Animation : n'importe quel nombre peut être une suite d'images clés [{"t":0,"v":0},{"t":0.6,"v":1,"e":"smooth"}] ("e" = "smooth" | "spring" | "inOut" | "in"), et "from"/"to" (secondes) pour l'apparition et la disparition. Emojis : un calque texte avec l'emoji.
+ZONES DE SÉCURITÉ (TikTok / Reels) : garde les textes importants entre y = 0.14 et y = 0.76 et loin du bord droit (x < 0.85).
 STYLE : { "backdrop": un fond parmi ${BACKDROPS.filter((b) => b !== 'custom').join(', ')}, "colors": [4 couleurs #RRGGBB du plus sombre au plus clair, aux couleurs de la marque], "accent": "#RRGGBB" (couleur vive des boutons / badges), "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170 }`;
 
 export { SFX };

@@ -79,6 +79,7 @@ OPÉRATIONS POSSIBLES :
 - {"op":"music","music":"pop"|"electro"|"chill"|"epic"|"acoustic"|"hiphop"|"none","bpm":60-170}
 - {"op":"format","value":"9:16"|"16:9"|"1:1"}
 - {"op":"recreate"} — UNIQUEMENT si le client veut une pub totalement nouvelle (autre sujet ou autre marque).
+Si la demande sort de ces opérations (effet particulier, objet, schéma, scène inédite…), réalise-la quand même avec "add" ou "redo" et un bloc "free" (scène sur mesure) — tu ne réponds jamais que c'est impossible.
 Utilise exactement les identifiants donnés. Dans "message", parle comme un humain : la scène 0 est « la 1re scène », la scène 1 « la 2e scène », etc. Plusieurs opérations si besoin. Ne change rien que le client n'a pas demandé. Tout en français.
 ${BLOCKS_DOC}`;
 

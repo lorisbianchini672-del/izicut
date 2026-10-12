@@ -178,6 +178,7 @@ export function MotionStudio() {
   // Documents d'inspiration : gardés en mémoire seulement (jamais enregistrés dans le navigateur ni sur le serveur).
   const [docs, setDocs] = useState<{ name: string; text: string }[]>([]);
   const [docsBusy, setDocsBusy] = useState(false);
+  const [safeZones, setSafeZones] = useState(false);
   // Chat : on descend tout seul au dernier message (uniquement quand un message arrive, jamais pendant la lecture).
   const panelScrollRef = useRef<HTMLDivElement | null>(null);
   const addDocs = async (files: FileList | null) => {
@@ -1013,6 +1014,14 @@ export function MotionStudio() {
             style={{ aspectRatio: `${size.width} / ${size.height}`, ['--r' as string]: String(size.width / size.height) }}
           >
             <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className="block h-full w-full max-w-full" onClick={() => setPlaying((p) => !p)} />
+            {safeZones && project.format === '9:16' ? (
+              // Zones masquées par l'interface TikTok / Reels (aperçu seulement, jamais dans la vidéo exportée).
+              <div className="pointer-events-none absolute inset-0" aria-hidden>
+                <div className="absolute inset-x-0 top-0 h-[12%] border-b border-dashed border-red-400/70 bg-red-500/15" />
+                <div className="absolute inset-x-0 bottom-0 h-[22%] border-t border-dashed border-red-400/70 bg-red-500/15" />
+                <div className="absolute bottom-[22%] right-0 top-[40%] w-[14%] border-l border-dashed border-red-400/70 bg-red-500/15" />
+              </div>
+            ) : null}
             {exporting !== null ? (
               <div className="absolute inset-x-0 bottom-0 bg-black/70 px-4 py-3 text-center text-xs text-white">
                 Enregistrement de la vidéo… gardez cet onglet ouvert ({exporting} %)
@@ -1042,6 +1051,11 @@ export function MotionStudio() {
                 ))}
                 <span className="pointer-events-none absolute inset-y-0 w-0.5 bg-white" style={{ left: `${(time / duration) * 100}%` }} />
               </div>
+              {project.format === '9:16' ? (
+                <button type="button" onClick={() => setSafeZones((v) => !v)} className={cn('grid h-10 shrink-0 cursor-pointer place-items-center rounded-full border px-2.5 text-[10px] font-bold transition', safeZones ? 'border-red-400/60 text-red-300' : 'border-white/10 text-fg-muted hover:text-fg')} title="Afficher les zones cachées par TikTok / Reels" aria-label="Zones de sécurité">
+                  ZONES
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => { void playerRef.current?.unlock(); setSoundOn((v) => !v); }}
