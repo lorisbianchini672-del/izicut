@@ -178,6 +178,8 @@ export function MotionStudio() {
   // Documents d'inspiration : gardés en mémoire seulement (jamais enregistrés dans le navigateur ni sur le serveur).
   const [docs, setDocs] = useState<{ name: string; text: string }[]>([]);
   const [docsBusy, setDocsBusy] = useState(false);
+  // Chat : on descend tout seul au dernier message (uniquement quand un message arrive, jamais pendant la lecture).
+  const panelScrollRef = useRef<HTMLDivElement | null>(null);
   const addDocs = async (files: FileList | null) => {
     if (!files?.length) return;
     if (!loggedIn) { setNotice('Connectez-vous (gratuit) pour ajouter des documents.'); return; }
@@ -238,6 +240,11 @@ export function MotionStudio() {
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [aiBusy, setAiBusy] = useState(false);
+  useEffect(() => {
+    if (tab !== 'ia') return;
+    const el = panelScrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [messages.length, aiBusy, tab]);
   const [exporting, setExporting] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [concept, setConcept] = useState<Concept | null>(null);
@@ -999,7 +1006,7 @@ export function MotionStudio() {
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         {/* ---------- Aperçu ---------- */}
-        <div className="sticky top-0 z-30 -mx-4 flex min-w-0 flex-col items-center bg-[var(--color-ink-950,#05060a)]/95 px-4 pb-2 pt-2 backdrop-blur-xl lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:pt-0 lg:backdrop-blur-none">
+        <div className="sticky top-0 z-30 -mx-4 flex min-w-0 flex-col items-center bg-[var(--color-ink-950,#05060a)]/95 px-4 pb-2 pt-2 backdrop-blur-xl lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none">
 
           <div
             className="relative w-full max-w-[min(100%,calc(36vh*var(--r)))] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] lg:max-w-[min(100%,calc(68vh*var(--r)))]"
@@ -1051,7 +1058,7 @@ export function MotionStudio() {
         </div>
 
         {/* ---------- Panneau d'édition ---------- */}
-        <div className="flex min-h-[420px] flex-col rounded-2xl border border-white/10 bg-white/[0.03]">
+        <div className="flex min-h-[420px] flex-col rounded-2xl border border-white/10 bg-white/[0.03] lg:sticky lg:top-4 lg:h-[calc(100dvh-2rem)] lg:self-start">
           <div className="grid grid-cols-4 gap-1 border-b border-white/10 p-1.5">
             {([['ia', 'Créer', <Wand2 key="i" className="h-4 w-4" />], ['medias', 'Mes images', <Film key="m" className="h-4 w-4" />], ['marque', 'Ma marque', <Building2 key="b" className="h-4 w-4" />], ['style', 'Réglages', <Palette key="p" className="h-4 w-4" />]] as [Tab, string, ReactNode][]).map(([id, label, icon]) => (
               <button
@@ -1066,7 +1073,7 @@ export function MotionStudio() {
             ))}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
+          <div ref={panelScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
             {tab === 'ia' ? (
               <div className="flex h-full flex-col gap-3">
                 {loggedIn === false ? (
@@ -1308,6 +1315,21 @@ export function MotionStudio() {
             ) : null}
 
             {tab === 'style' ? (
+              <div className="mb-4">
+                <CertificationPanel
+              project={project}
+              onFix={(next) => { setProject(next); timeRef.current = 0; setPlaying(true); setNotice('Pub corrigée ✓ Vérifiez le résultat dans l’aperçu.'); }}
+              hasLogo={Boolean(assets.logo)}
+              link={brand.link}
+              notes={brand.notes}
+              concept={concept?.creative_concept}
+              loggedIn={loggedIn}
+              onExport={exportVideo}
+              exporting={exporting}
+            />
+              </div>
+            ) : null}
+            {tab === 'style' ? (
               <div className="space-y-3">
                 <p className="text-xs text-fg-subtle">Astuce : mettez un mot entre *astérisques* pour le colorer.</p>
                 {project.scenes.map((scene, i) => (
@@ -1516,19 +1538,6 @@ export function MotionStudio() {
           <button type="button" onClick={() => { replaceProject(BLANK_PROJECT); setMessages([]); setAssets({}); setPhotos([]); setConcept(null); setHooks([]); try { window.localStorage.removeItem(CONCEPT_KEY); } catch { /* rien */ } }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
             <RotateCcw className="h-3 w-3" /> Repartir de zéro
           </button>
-        </div>
-        <div className="min-w-0">
-            <CertificationPanel
-              project={project}
-              onFix={(next) => { setProject(next); timeRef.current = 0; setPlaying(true); setNotice('Pub corrigée ✓ Vérifiez le résultat dans l’aperçu.'); }}
-              hasLogo={Boolean(assets.logo)}
-              link={brand.link}
-              notes={brand.notes}
-              concept={concept?.creative_concept}
-              loggedIn={loggedIn}
-              onExport={exportVideo}
-              exporting={exporting}
-            />
         </div>
       </div>
     </div>
