@@ -64,7 +64,7 @@ const AI_IDEAS = [
   'Retire tous les textes'
 ];
 const EMOJIS = ['🔥', '😂', '😱', '💯', '👀', '❤️', '🚀', '💰', '👇', '✅', '❌', '⚡', '🎯', '🤯', '👏', '✨'];
-const COLORS = ['#ffffff', '#c8ff3d', '#ffd400', '#ff3b6b', '#3de0ff', '#f97316', '#ff8a00', '#000000'];
+const COLORS = ['#ffffff', '#c8ff3d', '#ffd400', '#ff3b6b', '#3de0ff', '#2563eb', '#ff8a00', '#000000'];
 const VIDEO_TYPES: LayerType[] = ['effect', 'speed', 'cut', 'freeze', 'zoom', 'filter'];
 const ADD_TYPES: LayerType[] = ['motion', 'text', 'emoji', 'shape', 'intro', 'endcard', 'progress', 'flash'];
 

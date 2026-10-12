@@ -37,7 +37,7 @@ export function Hero() {
   const my = useMotionValue(-1000);
   const sx = useSpring(mx, { stiffness: 90, damping: 20 });
   const sy = useSpring(my, { stiffness: 90, damping: 20 });
-  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${sx}px ${sy}px, rgb(255 176 32 / 0.09), transparent 65%)`;
+  const spotlight = useMotionTemplate`radial-gradient(520px circle at ${sx}px ${sy}px, rgb(59 130 246 / 0.09), transparent 65%)`;
 
   // Sortie de scène : l'aperçu monte, se redresse et recule
   const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start start', 'end start'] });
@@ -63,7 +63,7 @@ export function Hero() {
       {!reduce ? <motion.div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: spotlight }} /> : null}
       <motion.div
         aria-hidden
-        className="pointer-events-none absolute left-1/2 top-0 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(255_107_61/0.12),transparent)]"
+        className="pointer-events-none absolute left-1/2 top-0 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(34_211_238/0.12),transparent)]"
         animate={reduce ? undefined : { opacity: [0.6, 1, 0.6], scale: [1, 1.06, 1] }}
         transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
       />
@@ -123,7 +123,7 @@ export function Hero() {
           className="relative [perspective:1400px]"
         >
           <GlassRing className="absolute left-1/2 top-1/2 h-[560px] w-[560px] -translate-x-[38%] -translate-y-1/2 opacity-90 sm:h-[640px] sm:w-[640px]" />
-          <div aria-hidden className="pointer-events-none absolute -right-10 bottom-0 h-72 w-72 rounded-full bg-[radial-gradient(closest-side,rgb(255_107_61/0.28),transparent)] blur-2xl" />
+          <div aria-hidden className="pointer-events-none absolute -right-10 bottom-0 h-72 w-72 rounded-full bg-[radial-gradient(closest-side,rgb(34_211_238/0.28),transparent)] blur-2xl" />
           <div className="relative z-10">
             <LiveMotionDemo />
           </div>

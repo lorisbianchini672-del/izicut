@@ -391,7 +391,7 @@ function repair(raw: unknown, fallback?: MotionProject): unknown {
   if (!p.theme || typeof p.theme !== 'object') p.theme = { ...(fallback?.theme ?? {}) };
   {
     const th = p.theme as Record<string, unknown>;
-    const def = fallback?.theme ?? { background: '#07060f', primary: '#ffb020', accent: '#ff6b3d', text: '#ffffff', style: 'neon' };
+    const def = fallback?.theme ?? { background: '#07060f', primary: '#3b82f6', accent: '#22d3ee', text: '#ffffff', style: 'neon' };
     for (const k of ['background', 'primary', 'accent', 'text'] as const) {
       const v = typeof th[k] === 'string' ? (th[k] as string).trim() : '';
       const short = v.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i);

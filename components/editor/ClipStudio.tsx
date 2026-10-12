@@ -58,7 +58,7 @@ const captionFont = Montserrat({ subsets: ['latin'], weight: ['800', '900'], dis
 
 type Tool = 'style' | 'couleur' | 'texte' | 'format' | 'titre' | 'couper' | null;
 
-const PRO_COLORS = ['#FFD400', '#22D3EE', '#4ADE80', '#FF3B6B', '#f97316', '#FF8A00', '#FFFFFF'];
+const PRO_COLORS = ['#FFD400', '#22D3EE', '#4ADE80', '#FF3B6B', '#2563eb', '#FF8A00', '#FFFFFF'];
 const TEXT_COLORS = ['#FFFFFF', '#FFD400', '#000000'];
 
 const TEMPLATE_LOOK: Record<CaptionTemplate, { words: number; size: number }> = {
@@ -785,7 +785,7 @@ export function ClipStudio({ clipId }: { clipId: string }) {
           <div
             ref={frameRef}
             onClick={togglePlay}
-            className="relative aspect-[9/16] w-full max-w-[min(340px,calc((100dvh-22rem)*9/16))] cursor-pointer overflow-hidden rounded-[22px] border border-line-strong bg-black shadow-[0_30px_80px_-30px_rgb(255_176_32/0.25)]"
+            className="relative aspect-[9/16] w-full max-w-[min(340px,calc((100dvh-22rem)*9/16))] cursor-pointer overflow-hidden rounded-[22px] border border-line-strong bg-black shadow-[0_30px_80px_-30px_rgb(59_130_246/0.25)]"
           >
             {showFinal && finalUrl ? (
               <video src={finalUrl} controls playsInline className="h-full w-full object-cover" onClick={(e) => e.stopPropagation()} />

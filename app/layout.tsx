@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { AmbientBackground } from '@/components/ambient/AmbientBackground';
 import { SiteNav } from '@/components/home/site-nav';
+import { LIGHT_SCRIPT, ThemeByRoute } from '@/components/ThemeByRoute';
 import { getSiteUrl } from '@/lib/site-url';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist', display: 'swap' });
@@ -38,15 +39,20 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#09090b',
+  themeColor: '#0b1020',
   width: 'device-width',
   initialScale: 1
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={`dark ${geist.variable} ${geistMono.variable} ${jakarta.variable}`}>
+    <html lang="fr" className={`dark ${geist.variable} ${geistMono.variable} ${jakarta.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Thème clair des pages publiques appliqué avant l'affichage (pas de flash sombre). */}
+        <script dangerouslySetInnerHTML={{ __html: LIGHT_SCRIPT }} />
+      </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
+        <ThemeByRoute />
         <AmbientBackground />
         <SiteNav />
         {children}

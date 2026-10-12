@@ -6,7 +6,7 @@ import type { StyleConfig, RelativeWord } from '@/types';
 const MOCK_STYLE_CONFIG: StyleConfig = {
   template: 'hormozi',
   colors: {
-    primary: '#f59e0b',
+    primary: '#3b82f6',
     text: '#FFFFFF',
     highlight: '#000000',
     background: '#0A0A0A',

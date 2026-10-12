@@ -289,7 +289,7 @@ export function VideoMockup() {
                       style.stroke !== 'transparent' ? `1.5px ${style.stroke}` : undefined,
                     textShadow:
                       style.glow && i === 1
-                        ? '0 0 14px #f97316, 0 2px 8px #000'
+                        ? '0 0 14px #2563eb, 0 2px 8px #000'
                         : '0 2px 8px #000',
                   }}
                 >

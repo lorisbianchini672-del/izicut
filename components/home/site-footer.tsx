@@ -35,6 +35,10 @@ export function SiteFooter() {
           </nav>
         ))}
       </div>
+      {/* Grand mot-symbole en pied de page (signature de la marque). */}
+      <div aria-hidden className="pointer-events-none mx-auto max-w-7xl select-none overflow-hidden px-4 sm:px-6 lg:px-8">
+        <p className="izi-wordmark">IziCut<span className="align-top text-[0.18em]">®</span></p>
+      </div>
       <div className="border-t border-line">
         <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-3 px-4 py-6 text-xs text-fg-subtle sm:flex-row sm:items-center sm:px-6 lg:px-8">
           <p>© {new Date().getFullYear()} IziCut. Tous droits réservés.</p>

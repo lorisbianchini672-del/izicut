@@ -4,7 +4,7 @@
  */
 export function GlassRing({ className = '' }: { className?: string }) {
   const ring =
-    'conic-gradient(from 210deg, #1d1650 0deg, #ea580c 40deg, #b7a4ff 85deg, #ffffff 100deg, #a68bff 125deg, #3a2a9c 170deg, #24195f 210deg, #7b5cff 250deg, #ffd28a 285deg, #fff1d6 298deg, #ffc56b 315deg, #1d1650 360deg)';
+    'conic-gradient(from 210deg, #1d1650 0deg, #1e40af 40deg, #b7a4ff 85deg, #ffffff 100deg, #a68bff 125deg, #3a2a9c 170deg, #24195f 210deg, #7b5cff 250deg, #a5c8ff 285deg, #fff1d6 298deg, #93c5fd 315deg, #1d1650 360deg)';
   const shape = 'radial-gradient(circle, transparent 47%, #000 48.5%, #000 66%, transparent 67.5%)';
   const gap = 'conic-gradient(from 300deg, transparent 0deg 38deg, #000 46deg 352deg, transparent 360deg)';
   const mask = { WebkitMaskImage: `${shape}, ${gap}`, maskImage: `${shape}, ${gap}`, WebkitMaskComposite: 'source-in', maskComposite: 'intersect' } as const;

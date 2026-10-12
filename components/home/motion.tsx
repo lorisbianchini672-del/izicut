@@ -200,7 +200,7 @@ export function ScrollProgress() {
   return (
     <motion.div
       aria-hidden
-      className="fixed inset-x-0 top-0 z-[60] h-[2px] origin-left bg-neon shadow-[0_0_12px_#ffb020]"
+      className="fixed inset-x-0 top-0 z-[60] h-[2px] origin-left bg-neon shadow-[0_0_12px_#3b82f6]"
       style={{ scaleX }}
     />
   );

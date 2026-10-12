@@ -23,7 +23,7 @@ const TEXT: Record<LogoSize, string> = { sm: 'text-base', md: 'text-[17px]', lg:
 export function Logo({ size = 'md', iconOnly = false, subtitle, href = '/', className }: LogoProps) {
   const content = (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
-      <LogoMark className={cn('shrink-0 drop-shadow-[0_0_18px_rgb(255_140_40/0.45)]', MARK[size])} />
+      <LogoMark className={cn('shrink-0 drop-shadow-[0_0_18px_rgb(60_120_255/0.45)]', MARK[size])} />
       {iconOnly ? (
         <span className="sr-only">IziCut</span>
       ) : (

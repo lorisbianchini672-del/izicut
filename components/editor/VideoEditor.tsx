@@ -76,7 +76,7 @@ type LoadedClip = {
 
 type Tab = 'style' | 'montage' | 'cadrage' | 'texte' | 'export';
 
-const PRO_COLORS = ['#FFD400', '#FF3B6B', '#22D3EE', '#4ADE80', '#f97316', '#FFFFFF', '#FF8A00'];
+const PRO_COLORS = ['#FFD400', '#FF3B6B', '#22D3EE', '#4ADE80', '#2563eb', '#FFFFFF', '#FF8A00'];
 const PREVIEW_WIDTH = 270;
 const PREVIEW_SCALE = PREVIEW_WIDTH / 1080;
 
