@@ -1009,7 +1009,7 @@ export function MotionStudio() {
         <div className="sticky top-0 z-30 -mx-4 flex min-w-0 flex-col items-center bg-[var(--color-ink-950,#05060a)]/95 px-4 pb-2 pt-2 backdrop-blur-xl lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none">
 
           <div
-            className="relative w-full max-w-[min(100%,calc(36vh*var(--r)))] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] lg:max-w-[min(100%,calc(68vh*var(--r)))]"
+            className="relative w-full max-w-[min(100%,calc(34dvh*var(--r)))] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] lg:max-w-[min(100%,calc(68vh*var(--r)))]"
             style={{ aspectRatio: `${size.width} / ${size.height}`, ['--r' as string]: String(size.width / size.height) }}
           >
             <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className="block h-full w-full max-w-full" onClick={() => setPlaying((p) => !p)} />
@@ -1051,10 +1051,12 @@ export function MotionStudio() {
               >
                 {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
               </button>
-              <span className="w-16 shrink-0 text-right font-code text-xs text-fg-muted">{time.toFixed(1)} / {duration.toFixed(0)} s</span>
+              <span className="shrink-0 whitespace-nowrap text-right font-code text-[11px] text-fg-muted sm:text-xs">{time.toFixed(1)}/{duration.toFixed(0)} s</span>
             </div>
           </div>
-          <QuickBar project={project} onChange={setProject} />
+          <div className="hidden w-full justify-center lg:flex">
+            <QuickBar project={project} onChange={setProject} />
+          </div>
         </div>
 
         {/* ---------- Panneau d'édition ---------- */}
@@ -1073,6 +1075,9 @@ export function MotionStudio() {
             ))}
           </div>
 
+          <div className="border-b border-white/10 px-3 pb-3 lg:hidden [&>div]:mt-3">
+            <QuickBar project={project} onChange={setProject} />
+          </div>
           <div ref={panelScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
             {tab === 'ia' ? (
               <div className="flex h-full flex-col gap-3">
