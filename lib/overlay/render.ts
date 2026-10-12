@@ -16,6 +16,10 @@ export type CompositeOptions = {
   beats?: number[];
   /** Horloge murale (s) : anime le grain / glitch même pendant un arrêt sur image. */
   clock?: number;
+  /** Photos libres de droits des calques motion (« search:… »). */
+  web?: Record<string, HTMLImageElement | null>;
+  /** Couleur vive du montage (mot prononcé des sous-titres, etc.). */
+  accent?: string;
 };
 
 const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -745,7 +749,7 @@ export function drawComposite(ctx: CanvasRenderingContext2D, video: HTMLVideoEle
       }
       case 'intro': drawIntro(ctx, l, t, W, H, opts.fontFamily); break;
       case 'endcard': drawEndcard(ctx, l, t, W, H, opts.fontFamily); break;
-      case 'motion': drawMotionOverlay(ctx, l, t - l.start, { fontFamily: opts.fontFamily }); break;
+      case 'motion': drawMotionOverlay(ctx, l, t - l.start, { fontFamily: opts.fontFamily, assets: opts.web ? { web: opts.web } : undefined, theme: opts.accent ? { primary: opts.accent } : undefined }); break;
       case 'flash': {
         const p = clamp((t - l.start) / Math.max(0.05, l.end - l.start));
         ctx.globalAlpha = (1 - p) * 0.85;

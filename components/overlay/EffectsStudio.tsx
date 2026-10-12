@@ -14,11 +14,14 @@ import { ArrowLeft, Copy, Download, Film, Layers, Pause, Play, Plus, Send, Spark
 import { detectBeats, takePendingVideo } from '@/lib/overlay/beats';
 import { analyzeVideo, type VideoAnalysis } from '@/lib/overlay/analyze';
 import { STYLES, generateEdit, type StyleId } from '@/lib/overlay/recipes';
+import { buildTalkEdit, guessPlan, sentences, type TalkPlan } from '@/lib/overlay/talk';
+import { transcribe } from '@/lib/overlay/audio';
 
 import { Button } from '@/components/ui/button';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { drawComposite, type Box } from '@/lib/overlay/render';
 import {
+  LayerSchema,
   ANIM_LABELS,
   BOX_LABELS,
   EMOJI_ANIMS,
@@ -110,6 +113,18 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
   const [exporting, setExporting] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [beats, setBeats] = useState<number[]>([]);
+  // Montage « After Effects » des vidéos parlées : transcription, plan de l'IA, photos du web.
+  const [listening, setListening] = useState<number | null>(null);
+  const [talkPlan, setTalkPlan] = useState<TalkPlan | null>(null);
+  const [talkBusy, setTalkBusy] = useState(false);
+  const [accent, setAccent] = useState<string | undefined>(undefined);
+  const [webImgs, setWebImgs] = useState<Record<string, HTMLImageElement | null>>({});
+  const webPending = useRef(new Set<string>());
+  const webRef = useRef(webImgs);
+  webRef.current = webImgs;
+  const accentRef = useRef(accent);
+  accentRef.current = accent;
+  const autoTalkDone = useRef(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -149,6 +164,14 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
     setVideoUrl(URL.createObjectURL(file));
     restore(`izicut-effects-local-${file.name}-${file.size}`);
     void file.arrayBuffer().then((buf) => detectBeats(buf)).then(setBeats);
+    autoTalkDone.current = false;
+    setTalkPlan(null);
+    // Sous-titres automatiques : on écoute ce que dit la personne (seul le son part, jamais la vidéo).
+    setListening(0);
+    void transcribe(file, (p) => setListening(p))
+      .then((w) => setWords(w))
+      .catch(() => setNotice('Sous-titres automatiques indisponibles (connectez-vous, ou vidéo sans son).'))
+      .finally(() => setListening(null));
   }, [restore]);
 
   useEffect(() => {
@@ -176,8 +199,14 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
       if (!signed?.signedUrl) throw new Error('Vidéo indisponible.');
       if (cancelled) return;
       setTitle(String(clip.title || 'Mon clip'));
-      setWords(readWords(clip.transcript_json));
+      const clipWords = readWords(clip.transcript_json);
+      setWords(clipWords);
       setVideoUrl(signed.signedUrl);
+      // Clip sans transcription : on l'écoute pour les sous-titres et le montage « After Effects ».
+      if (!clipWords.length) {
+        setListening(0);
+        void fetch(signed.signedUrl).then((r) => r.blob()).then((b) => transcribe(b, (p) => setListening(p))).then((w) => { if (!cancelled) setWords(w); }).catch(() => undefined).finally(() => setListening(null));
+      }
       restore(`izicut-effects-${clipId}`);
       // Temps forts de la musique (pour les effets « au rythme »).
       void fetch(signed.signedUrl).then((r) => r.arrayBuffer()).then((buf) => detectBeats(buf)).then((b) => { if (!cancelled) setBeats(b); }).catch(() => undefined);
@@ -228,6 +257,70 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
       .finally(() => { if (!cancelled) setAnalyzing(null); });
     return () => { cancelled = true; };
   }, [videoUrl, duration]);
+
+  // Photos du web demandées par les calques motion (« search:… ») : trouvées puis chargées.
+  useEffect(() => {
+    const wanted = new Set<string>();
+    const visit = (l: { kind?: string; src?: unknown; children?: unknown[] }) => {
+      if (l.kind === 'image' && typeof l.src === 'string' && l.src.startsWith('search:')) wanted.add(l.src);
+      if (l.kind === 'group' && Array.isArray(l.children)) (l.children as { kind?: string }[]).forEach(visit);
+    };
+    for (const l of layers) if (l.type === 'motion') (l.layers as unknown as { kind?: string }[]).forEach(visit);
+    for (const src of wanted) {
+      if (src in webImgs || webPending.current.has(src)) continue;
+      webPending.current.add(src);
+      void fetch(`/api/media/search?q=${encodeURIComponent(src.slice(7))}&o=landscape`)
+        .then((r) => r.json())
+        .then(async (j: { hits?: { url: string }[] }) => {
+          for (const hit of (j.hits ?? []).slice(0, 3)) {
+            const img = new Image();
+            img.decoding = 'async';
+            const ok = await new Promise<boolean>((res) => { img.onload = () => res(true); img.onerror = () => res(false); img.src = `/api/brand/image?url=${encodeURIComponent(hit.url)}`; });
+            if (ok) { setWebImgs((w) => ({ ...w, [src]: img })); return; }
+          }
+          setWebImgs((w) => ({ ...w, [src]: null }));
+        })
+        .catch(() => setWebImgs((w) => ({ ...w, [src]: null })))
+        .finally(() => webPending.current.delete(src));
+    }
+  }, [layers, webImgs]);
+
+  /** Montage « After Effects » d'une vidéo parlée : accroche, sous-titres mot à mot, photos, liste numérotée, zooms. */
+  const talkMontage = useCallback(async (v: number, reusePlan = false, wish?: string) => {
+    if (!duration || words.length < 6) { setNotice('Il faut une vidéo où quelqu’un parle (sous-titres en cours de préparation ?).'); return; }
+    setTalkBusy(true);
+    try {
+      let plan = reusePlan ? talkPlan : null;
+      if (!plan) {
+        try {
+          const res = await fetch('/api/overlay/talk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration, lines: sentences(words), wish }) });
+          const j = (await res.json().catch(() => ({}))) as { plan?: TalkPlan };
+          plan = j.plan && j.plan.hook ? j.plan : null;
+        } catch {
+          plan = null;
+        }
+        // Secours sans IA : le montage se fait quand même.
+        if (!plan) plan = guessPlan(words, duration);
+        else if (!plan.list) plan = { ...plan, list: guessPlan(words, duration).list };
+        setTalkPlan(plan);
+      }
+      const built = buildTalkEdit(words, duration, plan, v);
+      const valid = built.layers.flatMap((l) => { const r = LayerSchema.safeParse(l); return r.success ? [r.data] : []; });
+      setAccent(built.accent);
+      setLayers((prev) => [...prev.filter((l) => !l.id.startsWith('talk-')), ...valid].map((l) => clampLayer(l, duration)));
+      const vid = videoRef.current;
+      if (vid) { vid.currentTime = 0; prevTimeRef.current = 0; freezeRef.current = null; void vid.play(); setPlaying(true); }
+    } finally {
+      setTalkBusy(false);
+    }
+  }, [duration, words, talkPlan, setLayers]);
+
+  // Dès qu'on dépose une vidéo parlée : montage « After Effects » automatique (si rien n'est encore monté).
+  useEffect(() => {
+    if (autoTalkDone.current || !duration || words.length < 12 || layers.length) return;
+    autoTalkDone.current = true;
+    void talkMontage(Math.floor(Math.random() * 1000));
+  }, [duration, words, layers.length, talkMontage]);
 
   /** Applique un style : montage vidéo régénéré, textes / emojis conservés. */
   const applyStyle = useCallback((id: StyleId, level: number, v: number, extra: Layer[] = [], dropOverlays = false) => {
@@ -282,7 +375,7 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
       if (ctx && !exportingRef.current) {
         if (video) drive(video, now);
         const t = video?.currentTime ?? 0;
-        drawComposite(ctx, video ?? null, layersRef.current, t, { fontFamily: font.style.fontFamily, watermark: !isPaid, duration: duration || 1, boxes: boxes.current, beats: beatsRef.current, clock: now / 1000 });
+        drawComposite(ctx, video ?? null, layersRef.current, t, { fontFamily: font.style.fontFamily, watermark: !isPaid, duration: duration || 1, boxes: boxes.current, beats: beatsRef.current, clock: now / 1000, web: webRef.current, accent: accentRef.current });
         // Contour du calque sélectionné.
         if (selected) {
           const b = boxes.current.get(selected);
@@ -453,7 +546,7 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
       const step = (now: number) => {
         drive(video, now);
         const t = video.currentTime;
-        drawComposite(ctx, video, layersRef.current, t, { fontFamily: font.style.fontFamily, watermark: !isPaid, duration, beats: beatsRef.current, clock: now / 1000 });
+        drawComposite(ctx, video, layersRef.current, t, { fontFamily: font.style.fontFamily, watermark: !isPaid, duration, beats: beatsRef.current, clock: now / 1000, web: webRef.current, accent: accentRef.current });
         setExporting(Math.min(99, Math.round((t / duration) * 100)));
         if (!freezeRef.current && (video.ended || t >= duration - 0.02)) { resolve(); return; }
         requestAnimationFrame(step);
@@ -606,7 +699,16 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
           <div className="flex-1 overflow-y-auto p-4">
             {panel === 'styles' ? (
               <div className="space-y-4">
-                <p className="text-sm text-fg-muted">Choisissez un style : le montage est créé d’après les mouvements et la musique de <b className="text-fg">votre</b> vidéo.</p>
+                <div className="rounded-2xl border border-neon/40 bg-neon/[0.07] p-3">
+                  <p className="text-sm font-bold text-fg">🎬 Montage « After Effects » (vidéo où vous parlez)</p>
+                  <p className="mt-1 text-[11px] leading-snug text-fg-muted">Accroche brillante, sous-titres mot à mot, photos qui surgissent sur vos mots clés, liste numérotée animée, zooms. Un rendu différent à chaque version.</p>
+                  <p className="mt-1 text-[11px] text-fg-subtle">{listening !== null ? `J’écoute votre vidéo… ${Math.round(listening * 100)} %` : words.length ? `${words.length} mots compris ✓` : 'Pas de parole détectée pour l’instant.'}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <Button variant="gradient" className="rounded-xl font-bold" disabled={talkBusy || !words.length} onClick={() => { const v = variant + 1; setVariant(v); void talkMontage(v, false); }}>{talkBusy ? 'Montage…' : 'Monter ma vidéo'}</Button>
+                    <Button variant="outline" className="rounded-xl" disabled={talkBusy || !talkPlan} onClick={() => { const v = variant + 1; setVariant(v); void talkMontage(v, true); }}>Autre style</Button>
+                  </div>
+                </div>
+                <p className="text-sm text-fg-muted">Ou un style au rythme de la musique : le montage est créé d’après les mouvements et la musique de <b className="text-fg">votre</b> vidéo.</p>
                 <div className="grid grid-cols-2 gap-2">
                   {STYLES.map((st) => (
                     <button

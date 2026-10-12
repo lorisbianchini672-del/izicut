@@ -114,7 +114,9 @@ const TextLayer = z.object({
   reveal: z.enum(['none', 'type', 'rise', 'blur', 'curve', 'split', 'mask', 'scale', 'wave', 'karaoke']).optional(),
   revealBy: z.enum(['char', 'word', 'line']).optional(),
   revealAt: z.number().min(0).max(15).optional(),
-  revealDur: z.number().min(0.1).max(8).optional()
+  revealDur: z.number().min(0.1).max(8).optional(),
+  /** Karaoké : instant (s, depuis le début du calque) où chaque mot est prononcé — synchro parfaite avec la voix. */
+  times: z.array(z.number().min(0).max(15)).max(40).optional()
 });
 const RectLayer = z.object({ kind: z.literal('rect'), ...layerBase, w: anum, h: anum, radius: anum.optional(), /** Verre dépoli : ce qui est derrière est flouté (cartes d'interface façon Apple). */ glass: z.boolean().optional(), fill: paint.optional(), color: acol.optional(), stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional(), progress: anum.optional() });
 const EllipseLayer = z.object({ kind: z.literal('ellipse'), ...layerBase, w: anum, h: anum.optional(), fill: paint.optional(), color: acol.optional(), stroke: z.object({ color: hex, width: z.number().min(0.5).max(40) }).optional(), progress: anum.optional() });

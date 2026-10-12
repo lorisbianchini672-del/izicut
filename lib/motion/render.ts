@@ -2173,7 +2173,7 @@ function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: numb
   ctx.textAlign = 'left';
   for (const u of units) {
     const g = by === 'char' ? u.idx : by === 'word' ? wordOrder.indexOf(u.word) : u.line;
-    const t0 = at + g * step;
+    const t0 = mode === 'karaoke' && L.times?.[g] !== undefined ? L.times[g] : at + g * step;
     let p = mode === 'none' ? 1 : progress(lt, t0, mode === 'type' ? 0.001 : unitDur);
     if (p <= 0) continue;
     const e = easeOutCubic(p);
@@ -2197,7 +2197,7 @@ function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: numb
       case 'karaoke': {
         // Pop d'entrée (ressort + montée + fondu), puis le mot prononcé grossit (×1.15), passe en couleur vive avec un halo.
         const ent = EASE_FN.spring(p);
-        const nextAt = at + (g + 1) * step;
+        const nextAt = L.times?.[g + 1] !== undefined ? L.times[g + 1] : L.times?.length ? Math.max(t0 + 0.3, (L.times[L.times.length - 1] ?? t0) + 0.35) : at + (g + 1) * step;
         const isLast = g === wordOrder.length - 1;
         const on = lt < nextAt + (isLast ? 0.5 : 0) ? clamp((lt - t0) / 0.12) * clamp((nextAt + (isLast ? 0.5 : 0) - lt) / 0.12) : 0;
         const k = 0.7 + 0.3 * ent + 0.15 * EASE_FN.smooth(on);
