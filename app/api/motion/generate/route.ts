@@ -235,7 +235,7 @@ RÈGLES :
 - Format : "9:16" par défaut, "16:9" pour YouTube, "1:1" pour un post carré.
 
 Réponds UNIQUEMENT par un objet JSON COMPACT :
-{"message":"4 à 6 phrases pour le client : ce que tu as compris, l'idée créative, l'esthétique et le déroulé","plan":["Scène N — ce qu'on voit"],"question":"une question courte ou chaîne vide","brand":"nom donné par le client, sinon chaîne vide","format":"9:16","style":{…},"blocks":[…]}`;
+{"message":"4 à 6 phrases pour le client, en français courant, sans aucun mot technique (jamais « bloc », « kinetic », « free », « carousel », « hook », « cta ») : ce que tu as compris, l'idée créative, l'esthétique et le déroulé","plan":["Scène N — ce qu'on voit"],"question":"une question courte ou chaîne vide","brand":"nom donné par le client, sinon chaîne vide","format":"9:16","style":{…},"blocks":[…]}`;
 
 /** Retire un nom de marque inventé par l'IA de tous les textes des blocs ; une « révélation » sans nom devient un message animé. */
 function scrubBrand(blocks: Block[], name: string): Block[] {
