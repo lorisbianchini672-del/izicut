@@ -758,7 +758,7 @@ html.izi-light .izi-dark-scope {
   --color-line: rgb(255 255 255 / 0.08); --color-line-strong: rgb(255 255 255 / 0.15);
   color: #fff;
 }
-html.izi-light .izi-dark-scope .text-white { color: #fff; }
-html.izi-light .izi-dark-scope [class*="bg-white/"] { background-color: rgb(255 255 255 / 0.15); }
-html.izi-light .izi-dark-scope [class*="border-white/"] { border-color: rgb(255 255 255 / 0.1); }
-html.izi-light .izi-dark-scope [class*="bg-white/\[0.08\]"] { background-color: rgb(255 255 255 / 0.08); }
+html.izi-light .izi-dark-scope .text-white { color: revert-layer; }
+/* Dans les zones sombres, on rend aux utilitaires blancs leur vraie valeur (annule les retouches du thème clair). */
+html.izi-light .izi-dark-scope [class*="bg-white/"], html.izi-light .izi-dark-scope [class*="bg-black/"] { background-color: revert-layer; }
+html.izi-light .izi-dark-scope [class*="border-white/"] { border-color: revert-layer; }
