@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { LogoMark } from '@/components/landing/LogoMark';
+import { LogoMark, Wordmark } from '@/components/landing/LogoMark';
 import { cn } from '@/lib/utils';
 
 /** Logo IziCut — pictogramme « lecture coupée » + mot-symbole. */
@@ -23,12 +23,12 @@ const TEXT: Record<LogoSize, string> = { sm: 'text-base', md: 'text-[17px]', lg:
 export function Logo({ size = 'md', iconOnly = false, subtitle, href = '/', className }: LogoProps) {
   const content = (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
-      <LogoMark className={cn('shrink-0 drop-shadow-[0_0_18px_rgb(60_120_255/0.45)]', MARK[size])} />
+      <LogoMark className={cn('shrink-0', MARK[size])} />
       {iconOnly ? (
         <span className="sr-only">IziCut</span>
       ) : (
         <span className="flex flex-col leading-none">
-          <span className={cn('font-semibold tracking-tight text-fg', TEXT[size])}>IziCut</span>
+          <Wordmark className={TEXT[size]} />
           {subtitle ? (
             <span className="mt-1 font-code text-[10px] uppercase tracking-[0.2em] text-fg-subtle">{subtitle}</span>
           ) : null}

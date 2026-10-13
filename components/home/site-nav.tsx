@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { LogoMark } from '@/components/landing/LogoMark';
+import { LogoMark, Wordmark } from '@/components/landing/LogoMark';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ArrowRight, CreditCard, LayoutGrid, LogOut, Menu, Plus, X } from 'lucide-react';
@@ -9,11 +9,10 @@ import { createClient } from '@/lib/supabase/client';
 
 const LINKS = [
   ['Fonctionnalités', '/#features'],
-  ['Studio', '/#studio'],
+  ['Comment ça marche', '/#how'],
   ['Tarifs', '/#pricing'],
   ['FAQ', '/#faq'],
-  ['Studio Motion', '/studio'],
-  ['Guide 9:16', '/guide-9-16'],
+  ['Studio', '/studio'],
 ] as const;
 
 /** Liens affichés quand le visiteur est connecté. */
@@ -128,27 +127,27 @@ export function SiteNav() {
       }`}
     >
       <nav aria-label="Navigation principale" className="mx-auto flex h-16 max-w-7xl items-center gap-8 px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="izi-focus flex items-center gap-2.5 rounded-lg" aria-label="IziCut, accueil">
-          <LogoMark className="h-8 w-8 drop-shadow-[0_0_18px_rgb(60_120_255/0.45)]" />
-          <span className="text-[17px] font-semibold tracking-tight text-fg">IziCut</span>
+        <Link href="/" className="izi-focus flex items-center gap-2.5 rounded-lg" aria-label="izicut, accueil">
+          <LogoMark className="h-9 w-9" />
+          <Wordmark className="text-[24px]" />
         </Link>
 
-        <ul className="hidden items-center gap-1 md:flex">
+        <ul className="ml-auto hidden items-center gap-1 md:flex">
           {links.map(([label, href]) => (
             <li key={href}>
-              <Link href={href} className="izi-focus rounded-lg px-3 py-2 text-sm text-fg-muted transition-colors hover:bg-white/[0.04] hover:text-fg">
+              <Link href={href} className="izi-focus rounded-lg px-3 py-2 text-[15px] font-medium text-fg transition-colors hover:text-neon">
                 {label}
               </Link>
             </li>
           ))}
         </ul>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 md:ml-2">
           {email ? (
             <>
               <Link
                 href="/upload"
-                className="izi-focus hidden items-center gap-1.5 rounded-lg bg-neon px-3.5 py-2 text-sm font-semibold text-ink-950 transition-colors hover:bg-fg sm:inline-flex"
+                className="izi-focus hidden items-center gap-1.5 rounded-full bg-fg px-5 py-2.5 text-sm font-semibold text-ink-950 transition-colors hover:bg-neon sm:inline-flex"
               >
                 <Plus className="h-4 w-4" aria-hidden />
                 Nouvelle vidéo
@@ -162,7 +161,7 @@ export function SiteNav() {
               </Link>
               <Link
                 href="/upload"
-                className="izi-focus group hidden items-center gap-1.5 rounded-lg bg-fg px-3.5 py-2 text-sm font-semibold text-ink-950 transition-colors hover:bg-neon sm:inline-flex"
+                className="izi-focus group hidden items-center gap-1.5 rounded-full bg-fg px-5 py-2.5 text-sm font-semibold text-ink-950 transition-colors hover:bg-neon sm:inline-flex"
               >
                 Essayer gratuitement
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden />
