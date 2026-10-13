@@ -140,7 +140,7 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
   layersRef.current = layers;
   beatsRef.current = beats;
 
-  // ---------- Chargement : clip IziCut ou fichier de l'appareil ----------
+  // ---------- Chargement : clip izicut ou fichier de l'appareil ----------
   const restore = useCallback((key: string) => {
     try {
       const saved = window.localStorage.getItem(key);
@@ -837,7 +837,7 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
           </div>
           {!isPaid ? (
             <p className="border-t border-white/10 px-4 py-2 text-center text-[11px] text-fg-subtle">
-              Offre Free : petite mention « Réalisé avec IziCut ». <Link href="/#pricing" className="text-neon underline">Passer en Pro</Link>
+              Offre Free : petite mention « Réalisé avec izicut ». <Link href="/#pricing" className="text-neon underline">Passer en Pro</Link>
             </p>
           ) : null}
         </div>

@@ -14,7 +14,7 @@ export function SiteFooter() {
         <div>
           <Link href="/" className="izi-focus inline-flex items-center gap-2.5 rounded-lg">
             <LogoMark className="h-8 w-8" />
-            <span className="text-lg font-semibold tracking-tight text-fg">IziCut</span>
+            <span className="text-lg font-semibold tracking-tight text-fg">izicut</span>
           </Link>
           <p className="mt-4 max-w-xs text-sm leading-relaxed text-fg-muted">
             De la vidéo longue aux clips verticaux sous-titrés, prêts pour TikTok, Reels et Shorts.
@@ -41,7 +41,7 @@ export function SiteFooter() {
       </div>
       <div className="border-t border-line">
         <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-3 px-4 py-6 text-xs text-fg-subtle sm:flex-row sm:items-center sm:px-6 lg:px-8">
-          <p>© {new Date().getFullYear()} IziCut. Tous droits réservés.</p>
+          <p>© {new Date().getFullYear()} izicut. Tous droits réservés.</p>
           <p className="font-code">Fait en France · Rendu 1080×1920</p>
         </div>
       </div>

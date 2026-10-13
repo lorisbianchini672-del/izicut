@@ -767,7 +767,7 @@ export function drawComposite(ctx: CanvasRenderingContext2D, video: HTMLVideoEle
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#ffffff';
-    ctx.fillText('Réalisé avec IziCut', W - W * 0.04, H * 0.025);
+    ctx.fillText('Réalisé avec izicut', W - W * 0.04, H * 0.025);
   }
   ctx.restore();
 }

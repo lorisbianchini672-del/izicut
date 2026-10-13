@@ -4,7 +4,7 @@ import { AuthForm } from '@/components/auth/AuthForm';
 export const metadata: Metadata = {
   title: 'Connexion',
   description:
-    'Connectez-vous à IziCut pour importer vos vidéos longues et générer des clips verticaux 9:16 sous-titrés.',
+    'Connectez-vous à izicut pour importer vos vidéos longues et générer des clips verticaux 9:16 sous-titrés.',
   robots: { index: false, follow: false }
 };
 

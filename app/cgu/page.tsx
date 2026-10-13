@@ -5,7 +5,7 @@ import { LEGAL, contactHref } from '@/lib/legal';
 export const metadata: Metadata = {
   title: 'Conditions générales d’utilisation',
   description:
-    'Objet, compte, usage acceptable, crédits de minutes, abonnements Stripe, résiliation et droit applicable des conditions générales d’utilisation d’IziCut.',
+    'Objet, compte, usage acceptable, crédits de minutes, abonnements Stripe, résiliation et droit applicable des conditions générales d’utilisation d’izicut.',
   robots: { index: true, follow: true }
 };
 
@@ -25,14 +25,14 @@ export default function CguPage() {
     <InfoPage
       eyebrow="Cadre contractuel"
       title="Conditions générales d’utilisation"
-      description="Les présentes conditions encadrent l’accès et l’utilisation de la plateforme IziCut. En créant un compte, vous les acceptez sans réserve."
+      description="Les présentes conditions encadrent l’accès et l’utilisation de la plateforme izicut. En créant un compte, vous les acceptez sans réserve."
       breadcrumbs={[{ label: 'Accueil', href: '/' }, { label: 'CGU' }]}
       toc={TOC}
       updatedAt="22 septembre 2026"
     >
       <InfoSection id="objet" title="Objet du service">
         <p>
-          IziCut est un service en ligne de <strong>clipping vidéo assisté par intelligence
+          izicut est un service en ligne de <strong>clipping vidéo assisté par intelligence
           artificielle</strong> : à partir d’un fichier vidéo ou d’un lien YouTube / Twitch, le
           service transcrit l’audio, identifie les séquences à fort potentiel puis génère des clips
           verticaux 9:16 sous-titrés.
@@ -65,7 +65,7 @@ export default function CguPage() {
       </InfoSection>
 
       <InfoSection id="acceptable" title="Usage acceptable">
-        <p>Vous vous engagez à ne pas utiliser IziCut pour :</p>
+        <p>Vous vous engagez à ne pas utiliser izicut pour :</p>
         <ul>
           <li>importer des vidéos dont vous ne détenez pas les droits ;</li>
           <li>
@@ -145,7 +145,7 @@ export default function CguPage() {
       <InfoSection id="contenus" title="Vos contenus">
         <p>
           Vous conservez tous les droits sur vos vidéos et sur les clips générés. Vous accordez à
-          IziCut une licence technique limitée, non exclusive et révocable, strictement nécessaire au
+          izicut une licence technique limitée, non exclusive et révocable, strictement nécessaire au
           traitement : extraction audio, transcription, analyse et rendu vidéo.
         </p>
         <p>
@@ -157,7 +157,7 @@ export default function CguPage() {
 
       <InfoSection id="disponibilite" title="Disponibilité & garanties">
         <p>
-          IziCut met en œuvre des moyens raisonnables pour assurer la continuité du service, sans
+          izicut met en œuvre des moyens raisonnables pour assurer la continuité du service, sans
           garantir une disponibilité ininterrompue. Les maintenances planifiées sont réalisées hors
           des périodes de forte activité.
         </p>
@@ -180,7 +180,7 @@ export default function CguPage() {
           résiliation prend effet à la fin de la période en cours, sans frais supplémentaires.
         </p>
         <p>
-          IziCut peut suspendre ou résilier un compte en cas de manquement grave aux présentes
+          izicut peut suspendre ou résilier un compte en cas de manquement grave aux présentes
           conditions, notamment l’import massif de contenus protégés ou une tentative de fraude aux
           quotas.
         </p>

@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 
 const faqs = [
   {
-    question: "Comment IziCut détecte-t-il les moments forts ?",
+    question: "Comment izicut détecte-t-il les moments forts ?",
     answer: "Notre IA analyse la transcription mot à mot de votre vidéo et évalue chaque segment sur 6 critères : accroche, émotion, structure narrative, call-to-action, momentum et pertinence. Les segments avec le score le plus élevé sont extraits automatiquement.",
   },
   {
@@ -48,7 +48,7 @@ export function FAQAccordion() {
             <span className="text-gradient">Questions fréquentes</span>
           </h2>
           <p className="text-xl text-muted-foreground">
-            Tout ce qu'il faut savoir pour démarrer avec IziCut.
+            Tout ce qu'il faut savoir pour démarrer avec izicut.
           </p>
         </motion.div>
 

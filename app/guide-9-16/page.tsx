@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description:
     'Safe Zones TikTok, Reels et Shorts, résolutions d’export, durée idéale et bonnes pratiques de sous-titres : le guide complet pour publier des clips qui convertissent.',
   openGraph: {
-    title: 'Guide des formats verticaux 9:16 · IziCut',
+    title: 'Guide des formats verticaux 9:16 · izicut',
     description: 'Safe Zones, encodage 1080×1920, durées idéales et styles de sous-titres.'
   }
 };
@@ -25,7 +25,7 @@ export default function GuidePage() {
     <InfoPage
       eyebrow="Guide pratique"
       title="Guide des formats 9:16"
-      description="Un clip excellent mal cadré passe inaperçu. Ce guide récapitule les zones sûres de chaque plateforme, les réglages d’encodage recommandés et les règles de sous-titrage qu’IziCut applique par défaut."
+      description="Un clip excellent mal cadré passe inaperçu. Ce guide récapitule les zones sûres de chaque plateforme, les réglages d’encodage recommandés et les règles de sous-titrage qu’izicut applique par défaut."
       breadcrumbs={[
         { label: 'Accueil', href: '/' },
         { label: 'Ressources', href: '/#features' },
@@ -68,7 +68,7 @@ export default function GuidePage() {
 
       <InfoSection id="safe-zones" title="Safe Zones par plateforme">
         <p>
-          Chaque plateforme masque une partie de l’image avec son interface. Dans IziCut, les Safe
+          Chaque plateforme masque une partie de l’image avec son interface. Dans izicut, les Safe
           Zones s’affichent en overlay dans l’éditeur (onglet <strong>Cadrage</strong>) : vous
           vérifiez qu’aucun visage ni sous-titre ne passe dessous.
         </p>
@@ -101,7 +101,7 @@ export default function GuidePage() {
           </table>
         </div>
         <p>
-          IziCut applique par défaut la zone la plus contraignante (<strong>TikTok</strong>), ce qui
+          izicut applique par défaut la zone la plus contraignante (<strong>TikTok</strong>), ce qui
           garantit la lisibilité sur les trois réseaux. Placez vos sous-titres vers{' '}
           <strong>70-75 % de la hauteur</strong> : assez bas pour capter l’attention, assez haut pour
           rester hors de la zone masquée.
@@ -156,7 +156,7 @@ export default function GuidePage() {
           </table>
         </div>
         <p>
-          Ces valeurs sont pré-remplies dans la fenêtre <strong>Export</strong> d’IziCut ; seul le
+          Ces valeurs sont pré-remplies dans la fenêtre <strong>Export</strong> d’izicut ; seul le
           frame rate est à confirmer si votre source est en 30 fps.
         </p>
       </InfoSection>
@@ -166,7 +166,7 @@ export default function GuidePage() {
           Sur mobile, la majorité des vues se font <strong>sans le son</strong>. Le sous-titre n’est
           pas un accessoire : c’est le second narrateur du clip.
         </p>
-        <h3>Les règles appliquées par IziCut</h3>
+        <h3>Les règles appliquées par izicut</h3>
         <ol>
           <li>
             <strong>Groupes de 2 à 4 mots</strong> affichés en gros, avec le mot prononcé mis en
@@ -204,7 +204,7 @@ export default function GuidePage() {
               <tr>
                 <th>Mode</th>
                 <th>Quand l’utiliser</th>
-                <th>Ce qu’IziCut fait</th>
+                <th>Ce qu’izicut fait</th>
               </tr>
             </thead>
             <tbody>

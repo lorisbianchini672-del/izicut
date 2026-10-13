@@ -15,25 +15,25 @@ const siteUrl = getSiteUrl();
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: 'IziCut — vos pubs en motion design, créées avec l’IA',
-    template: '%s · IziCut'
+    default: 'izicut — vos pubs en motion design, créées avec l’IA',
+    template: '%s · izicut'
   },
   description:
     "Entreprises et associations : créez vos pubs, posts et vidéos animées en motion design avec vos photos, vidéos et logo. L'IA monte tout, vous modifiez à volonté. Et vos vidéos longues deviennent des clips sous-titrés.",
-  applicationName: 'IziCut',
+  applicationName: 'izicut',
   robots: { index: true, follow: true },
   openGraph: {
     type: 'website',
     locale: 'fr_FR',
     url: siteUrl,
-    siteName: 'IziCut',
-    title: 'IziCut — vos pubs en motion design, sans agence',
+    siteName: 'izicut',
+    title: 'izicut — vos pubs en motion design, sans agence',
     description:
       'Pubs, posts et vidéos animées pour toutes les entreprises et associations de France, avec vos propres images.'
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'IziCut — vos pubs en motion design, sans agence',
+    title: 'izicut — vos pubs en motion design, sans agence',
     description: 'Pubs et vidéos animées avec vos images, modifiables à volonté.'
   }
 };

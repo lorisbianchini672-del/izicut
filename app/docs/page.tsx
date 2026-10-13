@@ -3,12 +3,12 @@ import { InfoPage, InfoSection } from '@/components/marketing/InfoPage';
 import { LEGAL, contactHref } from '@/lib/legal';
 
 export const metadata: Metadata = {
-  title: 'API IziCut (bientôt disponible)',
+  title: 'API izicut (bientôt disponible)',
   robots: { index: false, follow: true },
   description:
-    "API REST IziCut : créez des projets, suivez le pipeline IA (Whisper, GPT-4o-mini, Remotion), récupérez vos clips 9:16 et écoutez les webhooks de rendu.",
+    "API REST izicut : créez des projets, suivez le pipeline IA (Whisper, GPT-4o-mini, Remotion), récupérez vos clips 9:16 et écoutez les webhooks de rendu.",
   openGraph: {
-    title: 'Documentation API & Webhooks · IziCut',
+    title: 'Documentation API & Webhooks · izicut',
     description: 'Automatisez le clipping vidéo depuis vos propres outils : endpoints, quotas et webhooks.'
   }
 };
@@ -43,7 +43,7 @@ export default function DocsPage() {
 
       <InfoSection id="demarrage" title="Démarrage rapide">
         <p>
-          L&apos;API IziCut est une <strong>API REST</strong> en JSON sur{' '}
+          L&apos;API izicut est une <strong>API REST</strong> en JSON sur{' '}
           <code>https://izicut.app/api/v1</code>. Trois appels suffisent pour transformer une vidéo
           longue en clips viraux : créer le projet, attendre le webhook de fin d&apos;analyse, puis
           lancer le rendu des clips retenus.
@@ -253,7 +253,7 @@ curl -X POST https://izicut.app/api/v1/clips/CLIP_ID/render \\
       <InfoSection id="webhooks" title="Webhooks">
         <p>
           Déclarez une URL de callback dans le dashboard. Chaque livraison est signée via
-          l&apos;en-tête <code>X-IziCut-Signature</code> (HMAC SHA-256 du corps brut, secret{' '}
+          l&apos;en-tête <code>X-izicut-Signature</code> (HMAC SHA-256 du corps brut, secret{' '}
           <code>whsec_…</code>). <strong>Validez la signature sur le corps brut</strong> avant de
           parser le JSON : une re-sérialisation invaliderait la signature.
         </p>

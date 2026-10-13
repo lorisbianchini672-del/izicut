@@ -23,7 +23,7 @@ async function pexels(q: string, key: string, orientation: string): Promise<Hit[
 }
 
 async function openverse(q: string): Promise<Hit[]> {
-  const res = await fetch(`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&license=cc0,pdm&page_size=12&mature=false`, { headers: { 'User-Agent': 'IziCut/1.0 (+https://izicut.vercel.app)' }, signal: AbortSignal.timeout(8000) });
+  const res = await fetch(`https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&license=cc0,pdm&page_size=12&mature=false`, { headers: { 'User-Agent': 'izicut/1.0 (+https://izicut.vercel.app)' }, signal: AbortSignal.timeout(8000) });
   if (!res.ok) return [];
   const data = (await res.json()) as { results?: { url: string; thumbnail?: string; creator?: string; license: string; width?: number; height?: number }[] };
   return (data.results ?? [])

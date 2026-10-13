@@ -25,7 +25,7 @@ const WITH = [
   'Musique et bruitages créés pour votre pub',
   'Contrôle qualité d’agence, corrigé en 1 clic',
   'Légende, hashtags et 1er commentaire prêts',
-  'Label « Certifiée IziCut » : prête à publier'
+  'Label « Certifiée izicut » : prête à publier'
 ];
 
 function CertBadge() {
@@ -69,7 +69,7 @@ function CertBadge() {
           transition={{ duration: 0.6, delay: 1.5, ease: EASE }}
           className="izi-glass-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-semibold text-fg"
         >
-          <BadgeCheck className="h-4 w-4 text-neon" /> Certifiée IziCut
+          <BadgeCheck className="h-4 w-4 text-neon" /> Certifiée izicut
         </motion.p>
         <p className="text-xs text-fg-muted">Accroche, rythme, lisibilité, appel à l’action, son : chaque pub est contrôlée avant de sortir.</p>
       </div>
@@ -83,11 +83,11 @@ export function AllInOne() {
       <SectionHeading
         eyebrow="Tout-en-un · garanti"
         title={<span id="izi-all-in-one">Vous repartez avec une pub <span className="izi-neon-text">prête à publier.</span></span>}
-        description="Plus besoin de jongler entre cinq sites d’IA et un logiciel de montage. Avec IziCut, tout se fait au même endroit, et chaque pub passe un contrôle qualité d’agence avant de sortir."
+        description="Plus besoin de jongler entre cinq sites d’IA et un logiciel de montage. Avec izicut, tout se fait au même endroit, et chaque pub passe un contrôle qualité d’agence avant de sortir."
       />
       <div className="mt-14 grid items-center gap-6 lg:grid-cols-[1fr_auto_1fr]">
         <Reveal className="izi-card rounded-3xl p-6">
-          <p className="mb-4 text-sm font-semibold text-fg-muted">Sans IziCut · 5 outils, des heures</p>
+          <p className="mb-4 text-sm font-semibold text-fg-muted">Sans izicut · 5 outils, des heures</p>
           <Stagger as="ul" className="space-y-2.5">
             {WITHOUT.map((t) => (
               <StaggerItem as="li" key={t} className="flex items-start gap-2 text-sm text-fg-subtle">
@@ -100,7 +100,7 @@ export function AllInOne() {
           <CertBadge />
         </Reveal>
         <Reveal delay={0.3} className="izi-card rounded-3xl p-6">
-          <p className="mb-4 text-sm font-semibold text-neon">Avec IziCut · 1 outil, quelques minutes</p>
+          <p className="mb-4 text-sm font-semibold text-neon">Avec izicut · 1 outil, quelques minutes</p>
           <Stagger as="ul" className="space-y-2.5">
             {WITH.map((t) => (
               <StaggerItem as="li" key={t} className="flex items-start gap-2 text-sm text-fg">

@@ -1137,7 +1137,7 @@ export function VideoEditor({ clipId }: VideoEditorProps) {
                   title="Sans filigrane"
                   description={
                     entitlements.watermark
-                      ? 'Vos vidéos Free portent « Réalisé avec IziCut ».'
+                      ? 'Vos vidéos Free portent « Réalisé avec izicut ».'
                       : 'Vos vidéos sont livrées sans filigrane.'
                   }
                   feature="noWatermark"

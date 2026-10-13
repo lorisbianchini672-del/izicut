@@ -2918,7 +2918,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     ctx.fillStyle = isLight(project.theme.background) ? '#000000' : '#ffffff';
-    ctx.fillText('Réalisé avec IziCut', W / 2, H - c.U * 0.04);
+    ctx.fillText('Réalisé avec izicut', W / 2, H - c.U * 0.04);
     ctx.restore();
   }
   ctx.restore();

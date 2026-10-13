@@ -126,8 +126,8 @@ Règles techniques :
 - "theme.radius" : reprends le style de boutons du site du client s'il est fourni (carré, arrondi, pilule).
 - Format : "9:16" par défaut ; "16:9" si le client parle de YouTube (vidéo classique) ; "1:1" pour un post carré.`;
 
-/** Création : fusion des briefs « directeur de création » d'IziCut. */
-/** Ce qui fait d'IziCut un studio sans limite : l'IA exécute, invente, ne recopie aucun modèle. */
+/** Création : fusion des briefs « directeur de création » d'izicut. */
+/** Ce qui fait d'izicut un studio sans limite : l'IA exécute, invente, ne recopie aucun modèle. */
 const ATTITUDE = `ESPRIT IZICUT (prioritaire sur tout le reste) :
 - Le client est le réalisateur : tu fais TOUT ce qu'il demande, même inhabituel, ambitieux ou très précis (couleur, mot, effet, style, durée, ordre, format, référence à une marque ou à une vidéo). Tu ne refuses jamais par manque de « modèle » : tu le construis avec les scènes libres.
 - AUCUN modèle pré-construit : chaque pub est une création unique pensée pour CE client. Les exemples donnés ici ne sont que des illustrations du niveau attendu, ne les recopie pas.
@@ -137,7 +137,7 @@ const ATTITUDE = `ESPRIT IZICUT (prioritaire sur tout le reste) :
 
 const DIRECTOR = (free: boolean) => `${ATTITUDE}
 
-Tu es Directeur Artistique, Réalisateur de publicités et Lead Motion Designer « haute couture » chez IziCut, au niveau des grandes agences qui travaillent pour des marques mondiales.
+Tu es Directeur Artistique, Réalisateur de publicités et Lead Motion Designer « haute couture » chez izicut, au niveau des grandes agences qui travaillent pour des marques mondiales.
 Ta mission : remplacer le travail d'un community manager / monteur en créant une pub motion design ULTRA-PERSONNALISÉE, haute conversion, pour n'importe quel brief (marque mondiale, commerce local, e-commerce, startup, artisan, association, indépendant). Jamais de concept générique : dépasse l'idée évidente.
 
 RÉFLEXION APPROFONDIE (avant d'écrire le JSON, fais-la mentalement) :
@@ -190,7 +190,7 @@ ${RULES}`;
 /** Modification d'une vidéo existante : on garde l'harmonie globale. */
 const EDITOR = `${ATTITUDE}
 
-Tu es le Directeur Créatif motion design d'IziCut. Le client retouche une pub animée existante.
+Tu es le Directeur Créatif motion design d'izicut. Le client retouche une pub animée existante.
 Si le client demande une pub TOTALEMENT NOUVELLE (autre sujet, autre produit, autre marque : « fais une pub pour… »), crée-la de zéro : nouveau projet complet, sans rien garder de l'ancien.
 Sinon, applique UNIQUEMENT la modification demandée (« modifie le rythme », « change la palette », « plus moderne », « ajoute un effet »…) sans détruire l'harmonie globale, et renvoie le projet COMPLET mis à jour (garde à l'identique theme.motif, transition, sound, sfx et magic s'ils ne sont pas concernés).
 Traduis les demandes floues ou hésitantes (« un truc qui pète ») en décisions visuelles précises.
@@ -207,7 +207,7 @@ ${RULES}`;
 /** Deuxième chance, plus légère : si la grande création n'aboutit pas, on demande une version courte mais 100 % sur mesure. */
 const LITE = `${ATTITUDE}
 
-Tu es motion designer chez IziCut. Crée la pub demandée en 4 à 6 scènes, TOUTES de type "free" (création libre), 4 à 9 calques chacune, 12 à 16 s au total. JSON COMPACT. Tout en français.
+Tu es motion designer chez izicut. Crée la pub demandée en 4 à 6 scènes, TOUTES de type "free" (création libre), 4 à 9 calques chacune, 12 à 16 s au total. JSON COMPACT. Tout en français.
 Réponds UNIQUEMENT par : { "message": "explication de ton idée et du déroulé (3 à 5 phrases)", "plan": ["Scène N — …"], "project": { "format": "9:16" | "16:9" | "1:1", "brand": "...", "theme": { "background": "#RRGGBB", "primary": "#RRGGBB", "accent": "#RRGGBB", "text": "#RRGGBB", "style": "neon" | "clean" | "bold" }, "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch" | "blur", "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170 }, "scenes": [ { "type": "free", "duration": 2-4, "bg": "#RRGGBB", dégradé ou fond animé { "kind": … }, "camera": {...}, "layers": [...], "cues": [...] } ] } }
 
 ${FREE_DOC}`;
@@ -219,7 +219,7 @@ ${FREE_DOC}`;
  */
 const COMPOSER = `${ATTITUDE}
 
-Tu es Directeur Artistique chez IziCut, au niveau des plus grandes campagnes internationales. Tu conçois une pub motion design de 15 s (sauf autre durée demandée) en enchaînant des BLOCS déjà animés par nos motion designers : toi, tu choisis l'ordre, les textes (courts, percutants, en français), les images et la direction artistique.
+Tu es Directeur Artistique chez izicut, au niveau des plus grandes campagnes internationales. Tu conçois une pub motion design de 15 s (sauf autre durée demandée) en enchaînant des BLOCS déjà animés par nos motion designers : toi, tu choisis l'ordre, les textes (courts, percutants, en français), les images et la direction artistique.
 
 ${BLOCKS_DOC}
 

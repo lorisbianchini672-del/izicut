@@ -1,7 +1,7 @@
 /**
- * Contrôle qualité IziCut : la pub est passée au crible des règles d'une
+ * Contrôle qualité izicut : la pub est passée au crible des règles d'une
  * agence (accroche, rythme, lisibilité, appel à l'action, son, marque…).
- * Au-dessus de 85/100, elle reçoit le label « Certifiée IziCut — prête à
+ * Au-dessus de 85/100, elle reçoit le label « Certifiée izicut — prête à
  * publier ». La plupart des défauts se corrigent en un clic (autoFix).
  */
 import { totalDuration, type MotionProject, type Scene } from './types';

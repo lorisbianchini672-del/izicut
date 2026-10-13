@@ -1,6 +1,6 @@
 /**
  * Envoi d'emails via Resend (API HTTP, sans dépendance).
- * Variables : RESEND_API_KEY (obligatoire), EMAIL_FROM (ex. « IziCut <bonjour@mondomaine.fr> »),
+ * Variables : RESEND_API_KEY (obligatoire), EMAIL_FROM (ex. « izicut <bonjour@mondomaine.fr> »),
  * EMAIL_REPLY_TO (facultatif). Sans clé, l'envoi est simplement ignoré.
  */
 import { renderEmail, type EmailContent } from './layout';

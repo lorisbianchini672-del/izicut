@@ -5,7 +5,7 @@ import { Stagger, StaggerItem } from './motion';
 
 const QUESTIONS = [
   {
-    q: 'Comment IziCut choisit-il les moments forts ?',
+    q: 'Comment izicut choisit-il les moments forts ?',
     a: "La vidéo est transcrite mot à mot avec l'instant exact de chaque mot. L'IA lit cette transcription horodatée et retient les extraits de 20 à 60 secondes compréhensibles seuls : accroche dès la première phrase, une idée complète, une chute nette. Les bornes sont ensuite recalées sur le début et la fin de vraies phrases.",
   },
   {

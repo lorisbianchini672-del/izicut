@@ -149,7 +149,7 @@ export function BrandPanel({
         <div className="izi-glow-frame p-[1.5px]">
           <div className="space-y-2 bg-ink-900/95 p-3">
             <p className="flex items-center gap-1.5 text-sm font-semibold text-fg"><Sparkles className="h-4 w-4 text-neon" /> Pub automatique</p>
-            <p className="text-[11px] text-fg-muted">IziCut retrouve le site de « {c.name} », récupère ses couleurs et son style, étudie l’entreprise et crée la pub. Vous la modifiez ensuite en parlant à l’IA.</p>
+            <p className="text-[11px] text-fg-muted">izicut retrouve le site de « {c.name} », récupère ses couleurs et son style, étudie l’entreprise et crée la pub. Vous la modifiez ensuite en parlant à l’IA.</p>
             <label className="flex cursor-pointer items-start gap-2 text-[11px] text-fg-muted">
               <input type="checkbox" checked={owner} onChange={(e) => setOwner(e.target.checked)} className="mt-0.5 accent-[var(--color-neon)]" />
               <span>J’agis pour cette entreprise (ou j’ai son accord) : utiliser aussi son logo et ses visuels.</span>

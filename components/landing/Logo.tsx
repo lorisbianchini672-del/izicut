@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { LogoMark, Wordmark } from '@/components/landing/LogoMark';
 import { cn } from '@/lib/utils';
 
-/** Logo IziCut — pictogramme « lecture coupée » + mot-symbole. */
+/** Logo izicut — pictogramme « lecture coupée » + mot-symbole. */
 export type LogoSize = 'sm' | 'md' | 'lg' | 'xl';
 
 export interface LogoProps {
@@ -25,7 +25,7 @@ export function Logo({ size = 'md', iconOnly = false, subtitle, href = '/', clas
     <span className={cn('inline-flex items-center gap-2.5', className)}>
       <LogoMark className={cn('shrink-0', MARK[size])} />
       {iconOnly ? (
-        <span className="sr-only">IziCut</span>
+        <span className="sr-only">izicut</span>
       ) : (
         <span className="flex flex-col leading-none">
           <Wordmark className={TEXT[size]} />
@@ -38,7 +38,7 @@ export function Logo({ size = 'md', iconOnly = false, subtitle, href = '/', clas
   );
   if (!href) return content;
   return (
-    <Link href={href} className="izi-focus rounded-lg" aria-label="IziCut, accueil">
+    <Link href={href} className="izi-focus rounded-lg" aria-label="izicut, accueil">
       {content}
     </Link>
   );

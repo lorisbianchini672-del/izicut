@@ -5,7 +5,7 @@ import { LEGAL, contactHref } from '@/lib/legal';
 export const metadata: Metadata = {
   title: 'Mentions légales',
   description:
-    'Éditeur, hébergeur, propriété intellectuelle et responsabilité de la plateforme IziCut (clipping vidéo IA).',
+    'Éditeur, hébergeur, propriété intellectuelle et responsabilité de la plateforme izicut (clipping vidéo IA).',
   robots: { index: true, follow: true }
 };
 
@@ -22,14 +22,14 @@ export default function MentionsLegalesPage() {
     <InfoPage
       eyebrow="Informations légales"
       title="Mentions légales"
-      description="Informations relatives à l’éditeur de la plateforme IziCut, à son hébergement et aux conditions d’utilisation des contenus mis en ligne."
+      description="Informations relatives à l’éditeur de la plateforme izicut, à son hébergement et aux conditions d’utilisation des contenus mis en ligne."
       breadcrumbs={[{ label: 'Accueil', href: '/' }, { label: 'Mentions légales' }]}
       toc={TOC}
       updatedAt="1er octobre 2026"
     >
       <InfoSection id="editeur" title="Éditeur du site">
         <p>
-          Le site IziCut et la plateforme de clipping vidéo assistée par intelligence artificielle
+          Le site izicut et la plateforme de clipping vidéo assistée par intelligence artificielle
           sont édités par :
         </p>
         <ul>
@@ -96,13 +96,13 @@ export default function MentionsLegalesPage() {
       <InfoSection id="propriete" title="Propriété intellectuelle">
         <p>
           La marque, l’interface, le code source, les éléments graphiques et la documentation
-          d’IziCut sont protégés par le droit de la propriété intellectuelle. Toute reproduction ou
+          d’izicut sont protégés par le droit de la propriété intellectuelle. Toute reproduction ou
           représentation, totale ou partielle, sans autorisation écrite est interdite.
         </p>
         <h3>Vos contenus restent les vôtres</h3>
         <p>
           Vous conservez l’intégralité des droits sur les vidéos que vous importez et sur les clips
-          générés. IziCut ne dispose que d’une licence technique limitée, strictement nécessaire au
+          générés. izicut ne dispose que d’une licence technique limitée, strictement nécessaire au
           traitement demandé (extraction audio, transcription, rendu) et à la durée de conservation
           choisie.
         </p>
@@ -116,14 +116,14 @@ export default function MentionsLegalesPage() {
 
       <InfoSection id="responsabilite" title="Responsabilité">
         <p>
-          IziCut met en œuvre des moyens raisonnables pour assurer la disponibilité et l’exactitude
+          izicut met en œuvre des moyens raisonnables pour assurer la disponibilité et l’exactitude
           du service, sans garantie d’absence d’interruption. Les scores de viralité, les
           transcriptions et les suggestions de découpage sont fournis à titre indicatif et ne
           constituent pas un engagement de résultat.
         </p>
         <ul>
           <li>
-            La responsabilité d’IziCut ne saurait être engagée pour un usage non conforme des clips
+            La responsabilité d’izicut ne saurait être engagée pour un usage non conforme des clips
             générés sur les plateformes tierces.
           </li>
           <li>

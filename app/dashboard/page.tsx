@@ -301,7 +301,7 @@ export default function DashboardPage() {
                 <Sparkles className="h-8 w-8 text-primary" />
                 <h3 className="text-lg font-bold">Votre premier projet vous attend</h3>
                 <p className="max-w-md text-sm text-muted-foreground">
-                  Importez une vidéo longue : IziCut en extrait les meilleurs moments, les recadre
+                  Importez une vidéo longue : izicut en extrait les meilleurs moments, les recadre
                   en 9:16 et les sous-titre mot à mot.
                 </p>
                 <Button variant="gradient" className="glow-primary font-bold" asChild>

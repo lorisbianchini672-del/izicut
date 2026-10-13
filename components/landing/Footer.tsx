@@ -85,7 +85,7 @@ export function Footer() {
             </div>
           </div>
           <div className="flex-1 max-w-md">
-            <h3 className="text-lg font-semibold mb-4">Newsletter IziCut</h3>
+            <h3 className="text-lg font-semibold mb-4">Newsletter izicut</h3>
             <p className="text-sm text-muted-foreground mb-4">Recevez les nouveautés, astuces IA et offres réservées aux abonnés.</p>
             {subscribed ? (
               <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex items-center gap-3 text-green-400 bg-green-400/10 border border-green-400/30 rounded-xl p-4">
@@ -117,7 +117,7 @@ export function Footer() {
 
         <div className="pt-8 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
           <div className="flex flex-col items-center gap-2 text-center sm:flex-row sm:gap-4 sm:text-left">
-            <span>© {currentYear} <strong>IziCut</strong>. Fait avec ❤️ pour les créateurs.</span>
+            <span>© {currentYear} <strong>izicut</strong>. Fait avec ❤️ pour les créateurs.</span>
             <nav aria-label="Liens légaux" className="flex flex-wrap items-center justify-center gap-3">
               <Link href="/mentions-legales" className="transition-colors hover:text-foreground">Mentions légales</Link>
               <Link href="/cgu" className="transition-colors hover:text-foreground">CGU</Link>

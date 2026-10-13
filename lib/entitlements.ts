@@ -367,5 +367,5 @@ export function sanitizeRenderSettings(
 /** Texte incrusté en bas de l'image : filigrane Free ou signature Agency. */
 export function overlaySignature(settings: RenderSettings, tier: PlanTier): string {
   if (ENTITLEMENTS[tier].brandText && settings.brand_text) return settings.brand_text;
-  return ENTITLEMENTS[tier].watermark ? 'Réalisé avec IziCut' : '';
+  return ENTITLEMENTS[tier].watermark ? 'Réalisé avec izicut' : '';
 }

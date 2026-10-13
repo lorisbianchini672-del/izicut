@@ -48,7 +48,7 @@ export function InfoPage({
   breadcrumbs,
   toc,
   updatedAt,
-  ctaLabel = 'Essayer IziCut gratuitement',
+  ctaLabel = 'Essayer izicut gratuitement',
   ctaHref = '/upload',
   children
 }: InfoPageProps) {

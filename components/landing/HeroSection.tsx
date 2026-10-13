@@ -99,7 +99,7 @@ export function HeroSection() {
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
             <Sparkles className="w-4 h-4 text-accent animate-spin-slow" />
-            <span>IziCut AI v2.0 · Propulsé par Whisper + GPT-4o-mini + Remotion</span>
+            <span>izicut AI v2.0 · Propulsé par Whisper + GPT-4o-mini + Remotion</span>
           </motion.div>
 
           {/* Titre principal */}

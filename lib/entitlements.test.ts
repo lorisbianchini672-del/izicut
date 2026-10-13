@@ -150,7 +150,7 @@ test('hasFeature / requiredTier / overlaySignature', () => {
   assert.equal(requiredTier('brandText'), 'agency');
   assert.equal(requiredTier('autoZoom'), 'pro');
 
-  assert.equal(overlaySignature(DEFAULT_RENDER_SETTINGS, 'free'), 'Réalisé avec IziCut');
+  assert.equal(overlaySignature(DEFAULT_RENDER_SETTINGS, 'free'), 'Réalisé avec izicut');
   assert.equal(overlaySignature(DEFAULT_RENDER_SETTINGS, 'pro'), '');
   assert.equal(overlaySignature({ ...DEFAULT_RENDER_SETTINGS, brand_text: '@moi' }, 'agency'), '@moi');
   assert.ok(ENTITLEMENTS.agency.maxClipsPerVideo > ENTITLEMENTS.free.maxClipsPerVideo);

@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   description:
     'Méthodes, analyses et coulisses du clipping IA : hooks qui convertissent, sous-titres mot-à-mot, cadrage 9:16 et monétisation des créateurs.',
   openGraph: {
-    title: 'Blog créateurs · IziCut',
+    title: 'Blog créateurs · izicut',
     description: 'Astuces IA, cadrage 9:16 et monétisation pour les créateurs de shorts.'
   }
 };
@@ -19,7 +19,7 @@ export default function BlogPage() {
   return (
     <InfoPage
       eyebrow="Blog créateurs"
-      title="Le blog IziCut"
+      title="Le blog izicut"
       description="Tout ce que nous apprenons en analysant des milliers de clips : structures de hooks, réglages de sous-titres, cadrage vertical et modèles économiques des créateurs."
       breadcrumbs={[{ label: 'Accueil', href: '/' }, { label: 'Blog' }]}
       updatedAt="22 septembre 2026"

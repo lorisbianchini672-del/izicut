@@ -1,5 +1,5 @@
 /**
- * Mise en page des emails IziCut (charte « nuit violette »), compatible avec
+ * Mise en page des emails izicut (charte « nuit violette »), compatible avec
  * les messageries : tableaux, styles en ligne, pas d'image externe obligatoire.
  */
 export type EmailContent = {
@@ -24,7 +24,7 @@ export function renderEmail(c: EmailContent): { html: string; text: string } {
 <tr><td style="padding:0 4px 20px;">
   <table role="presentation" cellpadding="0" cellspacing="0"><tr>
     <td style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#c2b2ff,#8a6cff);color:#0c0a22;font-weight:800;font-size:13px;text-align:center;vertical-align:middle;">IZ</td>
-    <td style="padding-left:10px;color:#f2f0ff;font-weight:700;font-size:17px;">IziCut</td>
+    <td style="padding-left:10px;color:#f2f0ff;font-weight:700;font-size:17px;">izicut</td>
   </tr></table>
 </td></tr>
 <tr><td style="border-radius:24px;padding:1px;background:linear-gradient(135deg,#8f74ff,#6d4df2 40%,#c79cff 70%,#ffd28a);">
@@ -38,9 +38,9 @@ export function renderEmail(c: EmailContent): { html: string; text: string } {
   </td></tr></table>
 </td></tr>
 <tr><td style="padding:20px 8px 0;color:#75729b;font-size:12px;line-height:1.6;text-align:center;">
-  ${c.footnote ? `${esc(c.footnote)}<br>` : ''}IziCut — vos pubs en motion design, créées avec l’IA.<br>Vous recevez cet email car vous avez un compte IziCut.
+  ${c.footnote ? `${esc(c.footnote)}<br>` : ''}izicut — vos pubs en motion design, créées avec l’IA.<br>Vous recevez cet email car vous avez un compte izicut.
 </td></tr>
 </table></td></tr></table></body></html>`;
-  const text = [c.title, '', ...c.paragraphs, ...(c.cta ? ['', `${c.cta.label} : ${c.cta.href}`] : []), ...(c.footnote ? ['', c.footnote] : []), '', '— IziCut'].join('\n');
+  const text = [c.title, '', ...c.paragraphs, ...(c.cta ? ['', `${c.cta.label} : ${c.cta.href}`] : []), ...(c.footnote ? ['', c.footnote] : []), '', '— izicut'].join('\n');
   return { html, text };
 }

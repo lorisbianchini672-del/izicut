@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * « Certifiée IziCut » : contrôle qualité en direct de la pub, correction en
+ * « Certifiée izicut » : contrôle qualité en direct de la pub, correction en
  * un clic, puis texte de publication (légende, hashtags, 1er commentaire).
  * Le client repart avec une publication complète et prête à poster.
  */
@@ -94,7 +94,7 @@ export function CertificationPanel({
         <div className="min-w-0 flex-1">
           {report.certified ? (
             <p className="flex items-center gap-1.5 font-display text-lg font-semibold text-fg">
-              <BadgeCheck className="h-5 w-5 text-neon" /> Certifiée IziCut
+              <BadgeCheck className="h-5 w-5 text-neon" /> Certifiée izicut
             </p>
           ) : (
             <p className="font-display text-lg font-semibold text-fg">Contrôle qualité</p>

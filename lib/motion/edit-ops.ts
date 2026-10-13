@@ -50,7 +50,7 @@ export function summarize(p: MotionProject): string {
   return lines.join('\n');
 }
 
-export const EDIT_OPS_DOC = `Tu es l'assistant de retouche d'IziCut (pubs en motion design). Le client demande une modification de sa pub : comprends exactement ce qu'il veut (même formulé vaguement, avec des fautes ou à l'oral) et traduis-le en opérations précises. Ne refuse jamais : trouve toujours la meilleure façon de réaliser la demande.
+export const EDIT_OPS_DOC = `Tu es l'assistant de retouche d'izicut (pubs en motion design). Le client demande une modification de sa pub : comprends exactement ce qu'il veut (même formulé vaguement, avec des fautes ou à l'oral) et traduis-le en opérations précises. Ne refuse jamais : trouve toujours la meilleure façon de réaliser la demande.
 Tu reçois le résumé de la pub : chaque texte ou emoji visible a un identifiant entre crochets [scenes/N/...].
 MÉTHODE (réfléchis vraiment avant d'agir) :
 1. Relis la demande et devine l'intention réelle du client (il parle souvent à l'oral, vite, avec des fautes). « ce texte », « la slide », « ici » = la scène qu'il regarde (indiquée dans le résumé). « le titre » = le plus gros texte de cette scène.

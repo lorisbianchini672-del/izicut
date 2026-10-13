@@ -1,4 +1,4 @@
-/** Les emails envoyés par IziCut (contenu en français). */
+/** Les emails envoyés par izicut (contenu en français). */
 import { getSiteUrl } from '@/lib/site-url';
 
 import type { EmailContent } from './layout';
@@ -7,12 +7,12 @@ const site = () => getSiteUrl().replace(/\/$/, '');
 
 export function welcomeEmail(): { subject: string; content: EmailContent } {
   return {
-    subject: 'Bienvenue sur IziCut : votre 1re pub vous attend',
+    subject: 'Bienvenue sur izicut : votre 1re pub vous attend',
     content: {
       preview: 'Créez une pub en motion design avec vos photos, en quelques minutes.',
-      title: 'Bienvenue sur IziCut 👋',
+      title: 'Bienvenue sur izicut 👋',
       paragraphs: [
-        'Votre compte est prêt. Avec IziCut, vous créez vos pubs, posts et vidéos animées sans agence ni logiciel de montage : l’IA s’occupe du concept, de l’animation, de la musique et du texte de publication.',
+        'Votre compte est prêt. Avec izicut, vous créez vos pubs, posts et vidéos animées sans agence ni logiciel de montage : l’IA s’occupe du concept, de l’animation, de la musique et du texte de publication.',
         'Pour une pub qui vous ressemble : retrouvez votre entreprise ou votre association dans l’onglet « Marque », ajoutez vos photos ou vidéos, puis demandez à l’IA.',
         'Vous avez 3 pubs gratuites pour essayer. Chaque pub passe un contrôle qualité avant de sortir.'
       ],

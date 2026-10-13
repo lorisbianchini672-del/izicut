@@ -1620,7 +1620,7 @@ export function MotionStudio() {
           </div>
           {watermark ? (
             <p className="border-t border-white/10 px-4 py-2 text-center text-[11px] text-fg-subtle">
-              Offre Free : petite mention « Réalisé avec IziCut ». <Link href="/#pricing" className="text-neon underline">Passer en Pro</Link> pour la retirer.
+              Offre Free : petite mention « Réalisé avec izicut ». <Link href="/#pricing" className="text-neon underline">Passer en Pro</Link> pour la retirer.
             </p>
           ) : null}
           <button type="button" onClick={() => { replaceProject(BLANK_PROJECT); setMessages([]); setAssets({}); setPhotos([]); setConcept(null); setHooks([]); try { window.localStorage.removeItem(CONCEPT_KEY); } catch { /* rien */ } }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">

@@ -514,7 +514,7 @@ export function Navbar() {
                     <Laptop className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-black text-lg text-foreground">Démo Interactive IziCut</h3>
+                    <h3 className="font-black text-lg text-foreground">Démo Interactive izicut</h3>
                     <p className="text-xs text-muted-foreground">Testez l'éditeur directement sans inscription</p>
                   </div>
                 </div>

@@ -35,7 +35,7 @@ export const PLANS: Record<string, Plan> = {
       'Jusqu’à 3 clips IA par vidéo, calés sur les phrases',
       'Sous-titres animés mot-à-mot (2 styles)',
       'Recadrage 9:16 & volume normalisé',
-      'Export HD 1080×1920 avec filigrane IziCut'
+      'Export HD 1080×1920 avec filigrane izicut'
     ]
   },
   pro: {

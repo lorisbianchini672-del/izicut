@@ -451,7 +451,7 @@ function AuthShowcase() {
   const { words, active } = useKaraoke();
   return (
     <aside className="relative hidden flex-col justify-between border-r border-line bg-ink-900/40 p-12 pt-28 lg:flex">
-      <p className="font-code text-xs uppercase tracking-[0.2em] text-fg-subtle"><span className="mr-2 text-neon">▍</span>Studio IziCut</p>
+      <p className="font-code text-xs uppercase tracking-[0.2em] text-fg-subtle"><span className="mr-2 text-neon">▍</span>Studio izicut</p>
 
       <div className="relative mx-auto flex w-full max-w-md items-center justify-center py-10">
         <div aria-hidden className="absolute h-[420px] w-[420px] rounded-full bg-[radial-gradient(closest-side,rgb(232_120_154/0.14),transparent)]" />

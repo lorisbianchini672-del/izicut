@@ -5,7 +5,7 @@ import { LEGAL, contactHref } from '@/lib/legal';
 export const metadata: Metadata = {
   title: 'Politique de confidentialité',
   description:
-    'Données collectées, finalités, durées de conservation, sous-traitants et exercice de vos droits RGPD sur la plateforme IziCut.',
+    'Données collectées, finalités, durées de conservation, sous-traitants et exercice de vos droits RGPD sur la plateforme izicut.',
   robots: { index: true, follow: true }
 };
 
@@ -24,7 +24,7 @@ export default function ConfidentialitePage() {
     <InfoPage
       eyebrow="Vie privée"
       title="Politique de confidentialité"
-      description="IziCut traite des vidéos, des transcriptions et des données de facturation. Cette page détaille ce qui est collecté, pourquoi, pendant combien de temps, et comment exercer vos droits."
+      description="izicut traite des vidéos, des transcriptions et des données de facturation. Cette page détaille ce qui est collecté, pourquoi, pendant combien de temps, et comment exercer vos droits."
       breadcrumbs={[{ label: 'Accueil', href: '/' }, { label: 'Confidentialité' }]}
       toc={TOC}
       updatedAt="22 septembre 2026"
@@ -64,7 +64,7 @@ export default function ConfidentialitePage() {
           </table>
         </div>
         <p>
-          Aucun moyen de paiement complet ne transite ni n’est stocké par IziCut : les paiements
+          Aucun moyen de paiement complet ne transite ni n’est stocké par izicut : les paiements
           sont opérés par <strong>Stripe</strong>, qui agit comme prestataire de paiement.
         </p>
       </InfoSection>
@@ -181,7 +181,7 @@ export default function ConfidentialitePage() {
 
       <InfoSection id="cookies" title="Cookies">
         <p>
-          IziCut utilise uniquement des cookies <strong>strictement nécessaires</strong> au
+          izicut utilise uniquement des cookies <strong>strictement nécessaires</strong> au
           fonctionnement du service : maintien de la session d’authentification et protection contre
           la falsification des requêtes. Aucun cookie publicitaire n’est déposé par défaut.
         </p>
