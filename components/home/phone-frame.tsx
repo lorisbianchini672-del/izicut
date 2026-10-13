@@ -29,7 +29,7 @@ export function PhoneFrame({
   const captionAtBottom = template === 'minimal';
   return (
     <div
-      className={`relative aspect-[9/16] overflow-hidden rounded-[2rem] border border-line-strong bg-ink-900 shadow-[0_40px_120px_-30px_rgb(0_0_0/0.9)] ${className}`}
+      className={`izi-dark-scope relative aspect-[9/16] overflow-hidden rounded-[2rem] border border-line-strong bg-ink-900 shadow-[0_40px_120px_-30px_rgb(0_0_0/0.9)] ${className}`}
       style={{ containerType: 'inline-size' }}
       role="img"
       aria-label={`Aperçu d'un clip vertical avec sous-titres : ${words.join(' ')}`}
