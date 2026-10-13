@@ -1,32 +1,26 @@
 import { useId } from 'react';
 
 /**
- * Pictogramme izicut : un bouton « lecture » blanc tranché net par une coupe
- * bleue (la vidéo + le montage), sur un carré noir aux angles doux.
+ * Pictogramme izicut : un bouton « lecture » noir aux angles doux, tranché
+ * par une coupe (le montage), avec une petite étincelle (l'IA).
  */
 export function LogoMark({ className }: { className?: string }) {
   const id = useId().replace(/:/g, '');
   return (
-    <svg viewBox="0 0 64 64" className={className} aria-hidden focusable="false">
+    <svg viewBox="0 0 48 48" className={className} aria-hidden focusable="false">
       <defs>
-        <linearGradient id={`izc${id}`} x1="10" y1="48" x2="54" y2="16" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#38bdf8" />
-          <stop offset="1" stopColor="#2563eb" />
-        </linearGradient>
+        <mask id={`izm${id}`}>
+          <rect width="48" height="48" fill="#fff" />
+          <path d="M4 33 L40 16" stroke="#000" strokeWidth="4.5" strokeLinecap="round" />
+        </mask>
       </defs>
-      <rect width="64" height="64" rx="18" fill="#0b0f1a" />
-      <path transform="translate(1.5 0)" d="M23.5 18.2c0-2.3 2.5-3.7 4.5-2.5l19.6 12.1c1.9 1.2 1.9 4 0 5.2L28 45.1c-2 1.2-4.5-.2-4.5-2.5z" fill="#ffffff" />
-      <path d="M14 41 52 23.5" stroke="#0b0f1a" strokeWidth="7.5" strokeLinecap="round" />
-      <path d="M14 41 52 23.5" stroke={`url(#izc${id})`} strokeWidth="3.6" strokeLinecap="round" />
+      <path mask={`url(#izm${id})`} d="M9 10.6c0-3 3.2-4.9 5.8-3.4l23.6 13.6c2.6 1.5 2.6 5.3 0 6.8L14.8 41.2C12.2 42.7 9 40.8 9 37.8z" fill="#0b0b14" />
+      <path d="M41 3.5c.5 3.6 1.9 5 5.5 5.5-3.6.5-5 1.9-5.5 5.5-.5-3.6-1.9-5-5.5-5.5 3.6-.5 5-1.9 5.5-5.5z" fill="#0b0b14" />
     </svg>
   );
 }
 
-/** Mot-symbole « izicut » (minuscules, très gras, serré) — le point du i en bleu. */
+/** Mot-symbole « izicut » : minuscules, très gras, serré, noir. */
 export function Wordmark({ className = '' }: { className?: string }) {
-  return (
-    <span className={`font-display font-extrabold tracking-[-0.045em] text-fg ${className}`}>
-      izi<span className="text-[#2563eb]">cut</span>
-    </span>
-  );
+  return <span className={`font-display font-extrabold tracking-[-0.045em] text-[#0b0b14] ${className}`}>izicut</span>;
 }

@@ -219,7 +219,7 @@ export default function DashboardPage() {
           <div className="space-y-2">
             <div className="h-4 bg-muted/60 rounded-full overflow-hidden p-0.5 border border-border/40">
               <motion.div
-                className="h-full rounded-full bg-neon shadow-[0_0_16px_-2px_rgb(59_130_246/0.6)]"
+                className="h-full rounded-full bg-neon shadow-[0_0_16px_-2px_rgb(232_120_154/0.6)]"
                 initial={{ width: 0 }}
                 animate={{ width: `${percentageRemaining}%` }}
                 transition={{ duration: 1.2, ease: 'easeOut' }}

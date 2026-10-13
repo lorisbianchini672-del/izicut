@@ -15,9 +15,9 @@ import { DISPLAY_PLAN_KEYS, PLANS, formatPrice } from '@/lib/plans';
 function Blobs({ className = '' }: { className?: string }) {
   return (
     <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>
-      <div className="izl-blob absolute -left-[12%] top-[8%] h-[70%] w-[55%] rounded-full bg-[#7aa7ff] opacity-55 blur-[110px]" />
-      <div className="izl-blob izl-blob-2 absolute right-[-10%] top-[-5%] h-[65%] w-[50%] rounded-full bg-[#9fe3ff] opacity-60 blur-[120px]" />
-      <div className="izl-blob izl-blob-3 absolute bottom-[-20%] left-[25%] h-[60%] w-[55%] rounded-full bg-[#b9c6ff] opacity-55 blur-[120px]" />
+      <div className="izl-blob absolute -left-[12%] top-[8%] h-[70%] w-[55%] rounded-full bg-[#f4a6b8] opacity-55 blur-[110px]" />
+      <div className="izl-blob izl-blob-2 absolute right-[-10%] top-[-5%] h-[65%] w-[50%] rounded-full bg-[#f9cfa9] opacity-60 blur-[120px]" />
+      <div className="izl-blob izl-blob-3 absolute bottom-[-20%] left-[25%] h-[60%] w-[55%] rounded-full bg-[#f7c3cf] opacity-55 blur-[120px]" />
     </div>
   );
 }
@@ -27,13 +27,13 @@ function Waves() {
   return (
     <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.35]" viewBox="0 0 1200 600" preserveAspectRatio="none">
       {Array.from({ length: 22 }, (_, i) => (
-        <path key={i} d={`M -50 ${80 + i * 22} C 300 ${-40 + i * 30}, 700 ${260 + i * 14}, 1250 ${40 + i * 24}`} fill="none" stroke="#0b1020" strokeOpacity="0.07" strokeWidth="1" />
+        <path key={i} d={`M -50 ${80 + i * 22} C 300 ${-40 + i * 30}, 700 ${260 + i * 14}, 1250 ${40 + i * 24}`} fill="none" stroke="#0b0b14" strokeOpacity="0.07" strokeWidth="1" />
       ))}
     </svg>
   );
 }
 
-const TILE_BG = ['#c9d4ff', '#ffe6a6', '#bfe7f5', '#d9cff7', '#c8f0dd', '#ffd3dc'];
+const TILE_BG = ['#d9d3f5', '#ffe6a6', '#f9d0c4', '#d9cff7', '#c8f0dd', '#ffd3dc'];
 const REELS = [
   { biz: 'Boulangerie', line: 'Le vrai pain', accent: 'au levain', emoji: '🥖' },
   { biz: 'Salle de sport', line: '-50 %', accent: 'le 1er mois', emoji: '💪' },
@@ -47,13 +47,13 @@ const REELS = [
 function ReelTile({ i, className = '' }: { i: number; className?: string }) {
   const r = REELS[i % REELS.length];
   return (
-    <div className={`relative overflow-hidden rounded-[28px] shadow-[0_30px_60px_-35px_rgb(30_58_138/0.45)] ${className}`} style={{ background: TILE_BG[i % TILE_BG.length] }}>
-      <div className="absolute inset-[10%] overflow-hidden rounded-[20px] bg-[#0b0f1a]">
-        <div className="absolute inset-0 bg-[radial-gradient(120%_70%_at_50%_0%,rgb(37_99_235/0.55),transparent_60%)]" />
+    <div className={`relative overflow-hidden rounded-[28px] shadow-[0_30px_60px_-35px_rgb(60_40_60/0.45)] ${className}`} style={{ background: TILE_BG[i % TILE_BG.length] }}>
+      <div className="absolute inset-[10%] overflow-hidden rounded-[20px] bg-[#0b0b14]">
+        <div className="absolute inset-0 bg-[radial-gradient(120%_70%_at_50%_0%,rgb(11_11_20/0.55),transparent_60%)]" />
         <span className="izl-pop absolute left-1/2 top-[22%] -translate-x-1/2 text-[2.2em]" style={{ animationDelay: `${i * 0.35}s` }}>{r.emoji}</span>
         <div className="absolute inset-x-[8%] top-[48%] text-center font-display font-extrabold uppercase leading-[0.95] tracking-[-0.03em] text-white">
           <span className="izl-rise block text-[1.05em]" style={{ animationDelay: `${i * 0.35 + 0.2}s` }}>{r.line}</span>
-          <span className="izl-rise block text-[0.95em] text-[#7cc4ff]" style={{ animationDelay: `${i * 0.35 + 0.45}s` }}>{r.accent}</span>
+          <span className="izl-rise block text-[0.95em] text-[#ffb3c6]" style={{ animationDelay: `${i * 0.35 + 0.45}s` }}>{r.accent}</span>
         </div>
         <span className="absolute bottom-[8%] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white/15 px-2 py-0.5 text-[0.42em] font-semibold text-white/90 backdrop-blur">{r.biz}</span>
         <span className="absolute inset-x-[10%] top-[6%] h-[3px] overflow-hidden rounded-full bg-white/20"><span className="izl-bar block h-full bg-white" style={{ animationDelay: `${i * 0.35}s` }} /></span>
@@ -63,19 +63,19 @@ function ReelTile({ i, className = '' }: { i: number; className?: string }) {
 }
 
 function Eyebrow({ children }: { children: ReactNode }) {
-  return <p className="font-display text-xs font-semibold uppercase tracking-[0.2em] text-[#0b1020]">{children}</p>;
+  return <p className="font-display text-xs font-semibold uppercase tracking-[0.2em] text-[#0b0b14]">{children}</p>;
 }
 
 function H2({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <h2 className={`mt-4 text-balance font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-[#0b1020] sm:text-6xl ${className}`}>{children}</h2>;
+  return <h2 className={`mt-4 text-balance font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-[-0.04em] text-[#0b0b14] sm:text-6xl ${className}`}>{children}</h2>;
 }
 
 function Lead({ children }: { children: ReactNode }) {
-  return <p className="mx-auto mt-5 max-w-2xl text-pretty text-base leading-relaxed text-[#4a5470] sm:text-lg">{children}</p>;
+  return <p className="mx-auto mt-5 max-w-2xl text-pretty text-base leading-relaxed text-[#55525f] sm:text-lg">{children}</p>;
 }
 
-const btnDark = 'inline-flex items-center justify-center gap-2 rounded-full bg-[#0b0f1a] px-7 py-4 text-[15px] font-semibold text-white shadow-[0_14px_30px_-14px_rgb(11_15_26/0.7)] transition hover:-translate-y-0.5 hover:bg-[#1e293b]';
-const btnLight = 'inline-flex items-center justify-center gap-2 rounded-full border border-[#0b1020]/12 bg-white/70 px-7 py-4 text-[15px] font-semibold text-[#0b1020] backdrop-blur transition hover:-translate-y-0.5 hover:bg-white';
+const btnDark = 'inline-flex items-center justify-center gap-2 rounded-full bg-[#0b0b14] px-7 py-4 text-[15px] font-semibold text-white shadow-[0_14px_30px_-14px_rgb(11_11_20/0.7)] transition hover:-translate-y-0.5 hover:bg-[#26232e]';
+const btnLight = 'inline-flex items-center justify-center gap-2 rounded-full border border-[#0b0b14]/12 bg-white/70 px-7 py-4 text-[15px] font-semibold text-[#0b0b14] backdrop-blur transition hover:-translate-y-0.5 hover:bg-white';
 
 /* ------------------------------------------------------------------ */
 /* Sections                                                            */
@@ -87,10 +87,10 @@ function Hero() {
       <Blobs />
       <div className="relative mx-auto max-w-6xl px-4 text-center sm:px-6">
         <Eyebrow>Pubs & vidéos en motion design · IA</Eyebrow>
-        <h1 className="mx-auto mt-6 max-w-5xl text-balance font-display text-[3rem] font-extrabold leading-[0.98] tracking-[-0.045em] text-[#0b1020] sm:text-7xl lg:text-[5.6rem]">
+        <h1 className="mx-auto mt-6 max-w-5xl text-balance font-display text-[3rem] font-extrabold leading-[0.98] tracking-[-0.045em] text-[#0b0b14] sm:text-7xl lg:text-[5.6rem]">
           Des vidéos qui arrêtent le scroll.
         </h1>
-        <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-[#4a5470]">
+        <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-[#55525f]">
           Décrivez votre pub ou déposez votre vidéo : l’IA la monte comme une agence — accroche, sous-titres mot à mot, animations, photos, musique. Prête pour TikTok et Instagram.
         </p>
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -111,8 +111,8 @@ function Hero() {
 const FOR = ['Boulangeries', 'Restaurants', 'Salles de sport', 'Coiffeurs', 'Boutiques', 'Artisans', 'Associations', 'Créateurs', 'Agences'];
 function ForStrip() {
   return (
-    <section aria-label="Pour qui" className="relative overflow-hidden border-y border-[#0b1020]/[0.06] bg-white/60 py-7">
-      <div className="izl-marquee flex w-max gap-14 whitespace-nowrap font-display text-2xl font-bold tracking-[-0.03em] text-[#0b1020]/35">
+    <section aria-label="Pour qui" className="relative overflow-hidden border-y border-[#0b0b14]/[0.06] bg-white/60 py-7">
+      <div className="izl-marquee flex w-max gap-14 whitespace-nowrap font-display text-2xl font-bold tracking-[-0.03em] text-[#0b0b14]/35">
         {[...FOR, ...FOR].map((f, i) => (
           <span key={i} className="flex items-center gap-3"><Sparkles className="h-5 w-5" aria-hidden />{f}</span>
         ))}
@@ -132,7 +132,7 @@ const FEATURES = [
 function Features() {
   return (
     <section id="features" className="px-3 py-20 sm:px-6 sm:py-28">
-      <div className="relative mx-auto max-w-7xl overflow-hidden rounded-[40px] bg-[#f1f4fa] px-5 py-16 sm:px-12 sm:py-24">
+      <div className="relative mx-auto max-w-7xl overflow-hidden rounded-[40px] bg-[#f3f2ef] px-5 py-16 sm:px-12 sm:py-24">
         <Waves />
         <div className="relative text-center">
           <Eyebrow>Tout-en-un</Eyebrow>
@@ -141,10 +141,10 @@ function Features() {
         </div>
         <div className="relative mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map(({ icon: Icon, title, text }) => (
-            <article key={title} className="rounded-[26px] bg-white p-7 shadow-[0_1px_0_rgb(15_23_42/0.04),0_20px_40px_-30px_rgb(30_58_138/0.35)] transition hover:-translate-y-1">
-              <Icon className="h-9 w-9 text-[#0b1020]" aria-hidden />
-              <h3 className="mt-6 font-display text-2xl font-bold tracking-[-0.03em] text-[#0b1020]">{title}</h3>
-              <p className="mt-2 leading-relaxed text-[#4a5470]">{text}</p>
+            <article key={title} className="rounded-[26px] bg-white p-7 shadow-[0_1px_0_rgb(11_11_20/0.04),0_20px_40px_-30px_rgb(60_40_60/0.35)] transition hover:-translate-y-1">
+              <Icon className="h-9 w-9 text-[#0b0b14]" aria-hidden />
+              <h3 className="mt-6 font-display text-2xl font-bold tracking-[-0.03em] text-[#0b0b14]">{title}</h3>
+              <p className="mt-2 leading-relaxed text-[#55525f]">{text}</p>
             </article>
           ))}
         </div>
@@ -168,17 +168,17 @@ function HowItWorks() {
       </div>
       <div className="mx-auto mt-14 grid max-w-7xl items-center gap-6 lg:grid-cols-[1fr_1.1fr]">
         <div className="relative overflow-hidden rounded-[36px] p-10 sm:p-14">
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,#cfe0ff,#9cc3ff_45%,#c7d2fe)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(135deg,#fbe0d6,#f6b3c2_45%,#f9d7c8)]" />
           <ReelTile i={4} className="relative mx-auto aspect-[3/4] max-w-[340px] text-[26px]" />
         </div>
         <div className="space-y-4">
           {STEPS.map(([n, t, d]) => (
-            <article key={n} className="rounded-[28px] border border-[#0b1020]/[0.06] bg-[#f8fafd] p-7 text-left sm:p-8">
+            <article key={n} className="rounded-[28px] border border-[#0b0b14]/[0.06] bg-[#f9f8f6] p-7 text-left sm:p-8">
               <div className="flex items-center gap-4">
-                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#0b0f1a] font-display text-base font-bold text-white">{n}</span>
-                <h3 className="font-display text-2xl font-bold tracking-[-0.03em] text-[#0b1020]">{t}</h3>
+                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#0b0b14] font-display text-base font-bold text-white">{n}</span>
+                <h3 className="font-display text-2xl font-bold tracking-[-0.03em] text-[#0b0b14]">{t}</h3>
               </div>
-              <p className="mt-4 leading-relaxed text-[#4a5470]">{d}</p>
+              <p className="mt-4 leading-relaxed text-[#55525f]">{d}</p>
             </article>
           ))}
         </div>
@@ -190,7 +190,7 @@ function HowItWorks() {
 function CheckoutButton({ planKey, dark }: { planKey: string; dark: boolean }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cls = `${dark ? btnDark : 'inline-flex items-center justify-center gap-2 rounded-full border border-[#0b1020]/15 bg-white px-7 py-4 text-[15px] font-semibold text-[#0b1020] transition hover:bg-[#f1f4fa]'} w-full`;
+  const cls = `${dark ? btnDark : 'inline-flex items-center justify-center gap-2 rounded-full border border-[#0b0b14]/15 bg-white px-7 py-4 text-[15px] font-semibold text-[#0b0b14] transition hover:bg-[#f3f2ef]'} w-full`;
   if (planKey === 'free') return <Link href="/studio" className={cls}>Commencer gratuitement</Link>;
   const go = async () => {
     setError(null);
@@ -230,18 +230,18 @@ function Pricing() {
           const p = PLANS[key];
           const mid = key === 'pro';
           return (
-            <article key={key} className={`rounded-[34px] bg-white p-3 shadow-[0_30px_60px_-40px_rgb(30_58_138/0.45)] ${mid ? 'lg:-translate-y-4' : ''}`}>
-              <div className="rounded-[26px] bg-[linear-gradient(135deg,#dbe7ff,#a9c8ff_55%,#c9d3ff)] p-7 text-left">
-                <h3 className="font-display text-3xl font-extrabold tracking-[-0.03em] text-[#0b1020]">{p.name}</h3>
-                <p className="mt-2 text-[#334064]">{p.description}</p>
-                <p className="mt-6 font-display text-5xl font-extrabold tracking-[-0.04em] text-[#0b1020]">{p.free ? '0 €' : formatPrice(p.amount)}<span className="ml-1 text-lg font-medium text-[#334064]">/mois</span></p>
+            <article key={key} className={`rounded-[34px] bg-white p-3 shadow-[0_30px_60px_-40px_rgb(60_40_60/0.45)] ${mid ? 'lg:-translate-y-4' : ''}`}>
+              <div className="rounded-[26px] bg-[linear-gradient(135deg,#fbe1d6,#f5b5c3_55%,#f8cdbd)] p-7 text-left">
+                <h3 className="font-display text-3xl font-extrabold tracking-[-0.03em] text-[#0b0b14]">{p.name}</h3>
+                <p className="mt-2 text-[#3d3a48]">{p.description}</p>
+                <p className="mt-6 font-display text-5xl font-extrabold tracking-[-0.04em] text-[#0b0b14]">{p.free ? '0 €' : formatPrice(p.amount)}<span className="ml-1 text-lg font-medium text-[#3d3a48]">/mois</span></p>
               </div>
               <div className="p-5 pt-6 text-left">
                 <CheckoutButton planKey={key} dark={mid} />
-                <p className="mt-6 font-semibold text-[#0b1020]">Inclus</p>
+                <p className="mt-6 font-semibold text-[#0b0b14]">Inclus</p>
                 <ul className="mt-3 space-y-2.5">
                   {p.features.map((f) => (
-                    <li key={f} className="flex gap-3 text-[#334064]"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#0b0f1a]"><Check className="h-3 w-3 text-white" aria-hidden /></span>{f}</li>
+                    <li key={f} className="flex gap-3 text-[#3d3a48]"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#0b0b14]"><Check className="h-3 w-3 text-white" aria-hidden /></span>{f}</li>
                   ))}
                 </ul>
               </div>
@@ -261,7 +261,7 @@ const USES = [
 function UseCases() {
   return (
     <section className="px-3 py-20 sm:px-6 sm:py-28">
-      <div className="relative mx-auto max-w-7xl overflow-hidden rounded-[40px] bg-[#f1f4fa] px-5 py-16 sm:px-12 sm:py-24">
+      <div className="relative mx-auto max-w-7xl overflow-hidden rounded-[40px] bg-[#f3f2ef] px-5 py-16 sm:px-12 sm:py-24">
         <Waves />
         <div className="relative text-center">
           <Eyebrow>Exemples</Eyebrow>
@@ -270,10 +270,10 @@ function UseCases() {
         </div>
         <div className="relative mt-14 grid gap-5 lg:grid-cols-3">
           {USES.map(({ icon: Icon, t, d }, i) => (
-            <article key={t} className="rounded-[28px] bg-white p-8 text-left shadow-[0_20px_40px_-30px_rgb(30_58_138/0.35)]">
-              <Icon className="h-8 w-8 text-[#2563eb]" aria-hidden />
-              <h3 className="mt-6 font-display text-2xl font-bold tracking-[-0.03em] text-[#0b1020]">{t}</h3>
-              <p className="mt-3 leading-relaxed text-[#4a5470]">{d}</p>
+            <article key={t} className="rounded-[28px] bg-white p-8 text-left shadow-[0_20px_40px_-30px_rgb(60_40_60/0.35)]">
+              <Icon className="h-8 w-8 text-[#0b0b14]" aria-hidden />
+              <h3 className="mt-6 font-display text-2xl font-bold tracking-[-0.03em] text-[#0b0b14]">{t}</h3>
+              <p className="mt-3 leading-relaxed text-[#55525f]">{d}</p>
               <ReelTile i={i + 1} className="mt-7 aspect-[16/10] text-[15px]" />
             </article>
           ))}
@@ -300,17 +300,17 @@ function Faq() {
       </div>
       <div className="mx-auto mt-14 grid max-w-7xl items-start gap-6 lg:grid-cols-2">
         <div className="relative hidden overflow-hidden rounded-[36px] p-14 lg:block">
-          <div className="absolute inset-0 bg-[linear-gradient(140deg,#e3ecff,#a9c8ff_50%,#bfe7f5)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(140deg,#fbe3dc,#f5b5c3_50%,#f9d0c4)]" />
           <ReelTile i={5} className="relative mx-auto aspect-[3/4] max-w-[360px] text-[26px]" />
         </div>
         <div className="space-y-4">
           {FAQ.map(([q, a], i) => (
-            <div key={q} className="rounded-[26px] border border-[#0b1020]/[0.06] bg-[#f8fafd] px-6 py-5 text-left sm:px-8">
+            <div key={q} className="rounded-[26px] border border-[#0b0b14]/[0.06] bg-[#f9f8f6] px-6 py-5 text-left sm:px-8">
               <button type="button" onClick={() => setOpen(open === i ? null : i)} aria-expanded={open === i} className="flex w-full cursor-pointer items-center justify-between gap-4 text-left">
-                <span className="font-display text-lg font-semibold tracking-[-0.02em] text-[#0b1020] sm:text-2xl">{q}</span>
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0b0f1a] text-white">{open === i ? <Minus className="h-5 w-5" /> : <Plus className="h-5 w-5" />}</span>
+                <span className="font-display text-lg font-semibold tracking-[-0.02em] text-[#0b0b14] sm:text-2xl">{q}</span>
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0b0b14] text-white">{open === i ? <Minus className="h-5 w-5" /> : <Plus className="h-5 w-5" />}</span>
               </button>
-              {open === i ? <p className="mt-4 leading-relaxed text-[#4a5470]">{a}</p> : null}
+              {open === i ? <p className="mt-4 leading-relaxed text-[#55525f]">{a}</p> : null}
             </div>
           ))}
         </div>
@@ -348,17 +348,17 @@ function Footer() {
       <div className="relative mx-auto grid max-w-7xl gap-12 px-5 pb-10 pt-20 sm:px-8 lg:grid-cols-[1.2fr_1fr]">
         <div>
           <Link href="/" className="inline-flex items-center gap-2.5" aria-label="izicut, accueil"><LogoMark className="h-10 w-10" /><Wordmark className="text-3xl" /></Link>
-          <p className="mt-5 max-w-md text-lg leading-relaxed text-[#1e293b]">Le studio de vidéos en motion design pour les commerces, artisans, associations et créateurs. Fait en France.</p>
+          <p className="mt-5 max-w-md text-lg leading-relaxed text-[#26232e]">Le studio de vidéos en motion design pour les commerces, artisans, associations et créateurs. Fait en France.</p>
         </div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
-          <p className="text-[#4a5470]">Pages</p>
-          {PAGES.map(([l, h]) => <Link key={h} href={h} className="font-medium text-[#0b1020] hover:underline">{l}</Link>)}
+          <p className="text-[#55525f]">Pages</p>
+          {PAGES.map(([l, h]) => <Link key={h} href={h} className="font-medium text-[#0b0b14] hover:underline">{l}</Link>)}
           <Link href="/studio" className={`${btnDark} mt-4`}>Commencer</Link>
         </div>
       </div>
-      <p className="relative mx-auto max-w-7xl px-5 text-sm text-[#1e293b] sm:px-8">izicut® · © {new Date().getFullYear()} · Fait en France</p>
+      <p className="relative mx-auto max-w-7xl px-5 text-sm text-[#26232e] sm:px-8">izicut® · © {new Date().getFullYear()} · Fait en France</p>
       <div aria-hidden className="relative mx-auto mt-6 max-w-[1600px] select-none overflow-hidden px-2">
-        <p className="font-display text-[25vw] font-extrabold leading-[0.78] tracking-[-0.07em] text-[#0b1020] [margin-bottom:-0.1em] xl:text-[400px]">izicut<span className="align-top text-[0.2em]">®</span></p>
+        <p className="font-display text-[25vw] font-extrabold leading-[0.78] tracking-[-0.07em] text-[#0b0b14] [margin-bottom:-0.1em] xl:text-[400px]">izicut<span className="align-top text-[0.2em]">®</span></p>
       </div>
     </footer>
   );
@@ -366,7 +366,7 @@ function Footer() {
 
 export function Landing() {
   return (
-    <main className="izl bg-[#f6f8fc] text-[#0b1020]">
+    <main className="izl bg-[#f7f6f4] text-[#0b0b14]">
       <Hero />
       <ForStrip />
       <Features />

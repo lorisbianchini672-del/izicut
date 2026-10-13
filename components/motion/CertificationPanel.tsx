@@ -55,7 +55,7 @@ export function CertificationPanel({
 
   const R = 34;
   const C = 2 * Math.PI * R;
-  const color = report.certified ? '#3b82f6' : report.score >= 65 ? '#22d3ee' : '#ff5c93';
+  const color = report.certified ? '#e8789a' : report.score >= 65 ? '#f6b48f' : '#ff5c93';
 
   const generate = async () => {
     if (!loggedIn) { setError('Connectez-vous (gratuit) pour générer le texte.'); return; }

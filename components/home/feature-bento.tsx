@@ -98,7 +98,7 @@ function MomentsVisual() {
 function CaptionsVisual() {
   const { words, active } = useKaraoke(undefined, 420);
   return (
-    <div aria-hidden className="w-full rounded-2xl border border-line bg-[#0b1020] px-4 py-6 text-lg">
+    <div aria-hidden className="w-full rounded-2xl border border-line bg-[#0b0b14] px-4 py-6 text-lg">
       <CaptionLine template="karaoke_box" words={words} active={active} />
     </div>
   );
@@ -128,7 +128,7 @@ function CropVisual() {
         <span className="absolute bottom-0 left-1/2 h-12 w-12 -translate-x-1/2 rounded-t-full bg-white/15" />
       </div>
       <div className="relative h-28 w-16 overflow-hidden rounded-lg border border-line-strong bg-ink-800">
-        <span className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgb(34_211_238/0.25),transparent_70%)] blur-sm" />
+        <span className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgb(246_180_143/0.25),transparent_70%)] blur-sm" />
         <span className="absolute inset-x-0 top-1/2 h-9 -translate-y-1/2 border-y border-white/20 bg-ink-900" />
       </div>
     </div>

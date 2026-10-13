@@ -11,8 +11,8 @@ import { useEffect, useRef } from 'react';
 type Ribbon = { a: string; b: string; amp: number; th: number; speed: number; off: number };
 
 const RIBBONS: Ribbon[] = [
-  { a: '37,99,235', b: '59,130,246', amp: 0.12, th: 0.16, speed: 0.07, off: 0 },
-  { a: '34,211,238', b: '255,140,90', amp: 0.09, th: 0.08, speed: 0.09, off: 0.24 },
+  { a: '11,11,20', b: '232,120,154', amp: 0.12, th: 0.16, speed: 0.07, off: 0 },
+  { a: '246,180,143', b: '255,140,90', amp: 0.09, th: 0.08, speed: 0.09, off: 0.24 },
   { a: '99,102,241', b: '56,189,248', amp: 0.14, th: 0.1, speed: 0.05, off: -0.22 },
   { a: '230,220,255', b: '255,255,255', amp: 0.07, th: 0.025, speed: 0.11, off: 0.08 }
 ];
@@ -77,8 +77,8 @@ export function LiquidLight() {
       const gx = mouse.x * w;
       const gy = mouse.y * h;
       const halo = ctx.createRadialGradient(gx, gy, 0, gx, gy, Math.max(w, h) * 0.35);
-      halo.addColorStop(0, 'rgba(59,130,246,0.16)');
-      halo.addColorStop(1, 'rgba(59,130,246,0)');
+      halo.addColorStop(0, 'rgba(232,120,154,0.16)');
+      halo.addColorStop(1, 'rgba(232,120,154,0)');
       ctx.fillStyle = halo;
       ctx.fillRect(0, 0, w, h);
     };
