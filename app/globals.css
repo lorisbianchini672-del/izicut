@@ -762,3 +762,4 @@ html.izi-light .izi-dark-scope .text-white { color: revert-layer; }
 /* Dans les zones sombres, on rend aux utilitaires blancs leur vraie valeur (annule les retouches du thème clair). */
 html.izi-light .izi-dark-scope [class*="bg-white/"], html.izi-light .izi-dark-scope [class*="bg-black/"] { background-color: revert-layer; }
 html.izi-light .izi-dark-scope [class*="border-white/"] { border-color: revert-layer; }
+html.izi-light header.izi-dark-scope[class*="bg-ink-950/"] { background-color: rgb(10 10 10 / 0.78); }
