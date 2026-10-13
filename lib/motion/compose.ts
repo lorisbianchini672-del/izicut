@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import { BACKDROPS } from './gl-bg';
 import { repairFree } from './repair';
-import { MUSIC, SFX, SceneSchema, type Layer, type MotionProject, type Scene } from './types';
+import { MUSIC, SFX, SceneSchema, TRANSITIONS, type Layer, type MotionProject, type Scene } from './types';
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const img = z.string().regex(/^(logo|photo:\d{1,2}|search:.{2,60})$/);
@@ -40,7 +40,8 @@ export const StyleSchema = z.object({
   colors: z.array(hex).min(1).max(4).optional(),
   accent: hex.optional(),
   music: z.enum(MUSIC).optional(),
-  bpm: z.number().min(60).max(170).optional()
+  bpm: z.number().min(60).max(170).optional(),
+  transition: z.enum(TRANSITIONS).optional()
 });
 export type ComposeStyle = z.infer<typeof StyleSchema>;
 
@@ -316,7 +317,7 @@ export function composeProject(blocks: Block[], style: ComposeStyle, o: { brand:
     format: o.format,
     brand: o.brand.slice(0, 40),
     theme: { background: colors[0], primary: accent, accent: colors[3] ?? accent, text, style: 'clean', motif: 'none', anim: 'blur', backdrop: { kind: backdrop, colors, speed: 1.3, intensity: 1.05 } },
-    transition: 'blur',
+    transition: style.transition ?? 'blur',
     sound: { music: style.music ?? 'electro', bpm: style.bpm ?? 118, volume: 0.75 },
     scenes
   };
@@ -362,7 +363,7 @@ export const BLOCKS_DOC = `BLOCS DISPONIBLES (chacun devient une scène motion d
   {"kind":"image","src":"photo:0|search:…|logo","x":0.5,"y":0.5,"w":600,"h":600,"radius":30} · {"kind":"particles","mode":"burst|float|converge|sparkle|orbit","x":0.5,"y":0.5,"count":40,"color":"#…"}
   Animation : n'importe quel nombre peut être une suite d'images clés [{"t":0,"v":0},{"t":0.6,"v":1,"e":"smooth"}] ("e" = "smooth" | "spring" | "inOut" | "in"), et "from"/"to" (secondes) pour l'apparition et la disparition. Emojis : un calque texte avec l'emoji.
 ZONES DE SÉCURITÉ (TikTok / Reels) : garde les textes importants entre y = 0.14 et y = 0.76 et loin du bord droit (x < 0.85).
-STYLE : { "backdrop": un fond parmi ${BACKDROPS.filter((b) => b !== 'custom').join(', ')}, "colors": [4 couleurs #RRGGBB du plus sombre au plus clair, aux couleurs de la marque], "accent": "#RRGGBB" (couleur vive des boutons / badges), "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170 }`;
+STYLE : { "backdrop": un fond parmi ${BACKDROPS.filter((b) => b !== 'custom').join(', ')}, "colors": [4 couleurs #RRGGBB du plus sombre au plus clair, aux couleurs de la marque], "accent": "#RRGGBB" (couleur vive des boutons / badges), "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170, "transition": "blur" | "whip" (glissé rapide façon After Effects) | "light" (reflet lumineux, premium) | "zoom" | "glitch" | "flash" }`;
 
 export { SFX };
 

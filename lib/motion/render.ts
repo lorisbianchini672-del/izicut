@@ -2834,6 +2834,14 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
     ctx.translate(-W / 2, -H / 2);
   } else if (tr === 'slide') {
     ctx.translate(-W / 2 + (1 - clamp(enter)) * W - exit * W, -H / 2);
+  } else if (tr === 'whip') {
+    // Glissé rapide façon After Effects : la scène part sur le côté, la suivante arrive de l'autre (traînée ajoutée plus bas).
+    const inK = 1 - EASE_FN.smooth(clamp(enter));
+    ctx.translate(-W / 2 + inK * W * 0.55 - easeInCubic(clamp(exit)) * W * 0.55, -H / 2);
+  } else if (tr === 'light') {
+    const z = 1 + exit * 0.12 + (1 - clamp(enter)) * 0.08;
+    ctx.scale(z, z);
+    ctx.translate(-W / 2, -H / 2);
   } else if (tr === 'blur') {
     // Mouvement de caméra rapide (la scène file vers le haut), traîné de flou ajouté plus bas.
     const z = 1 + exit * 0.22 + (1 - clamp(enter)) * 0.1;
@@ -2872,6 +2880,51 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
         ctx.drawImage(ctx.canvas, 0, 0, W * S, H * S, 0, j * k * c.U * 0.035, W, H);
       }
       ctx.restore();
+    }
+  }
+  if (tr === 'whip') {
+    // Traînée horizontale pendant le glissé.
+    const k = Math.max(index > 0 ? 1 - clamp(lt / 0.45) : 0, exit);
+    if (k > 0.03) {
+      ctx.save();
+      for (let j = 1; j <= 5; j++) {
+        ctx.globalAlpha = 0.16 * k;
+        ctx.drawImage(ctx.canvas, 0, 0, W * S, H * S, -j * k * c.U * 0.05, 0, W, H);
+      }
+      ctx.restore();
+    }
+  }
+  if (tr === 'light') {
+    // Reflet lumineux qui balaie l'image + éclat aux couleurs de la marque au raccord.
+    const pIn = index > 0 ? clamp(lt / 0.55) : 1;
+    const pOut = isLast ? 0 : clamp((lt - (d - 0.45)) / 0.45);
+    const sweep = pOut > 0 ? pOut * 0.5 : pIn < 1 ? 0.5 + pIn * 0.5 : -1;
+    if (sweep >= 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      const cx = -W * 0.4 + sweep * W * 1.8;
+      const g = ctx.createLinearGradient(cx - W * 0.25, 0, cx + W * 0.25, 0);
+      g.addColorStop(0, 'rgba(255,255,255,0)');
+      g.addColorStop(0.5, `rgba(255,255,255,${0.55 * Math.sin(Math.PI * clamp(sweep))})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.translate(W / 2, H / 2);
+      ctx.rotate(-0.35);
+      ctx.translate(-W / 2, -H / 2);
+      ctx.fillStyle = g;
+      ctx.fillRect(-W, -H, W * 3, H * 3);
+      ctx.restore();
+      const flash = index > 0 && lt < 0.35 ? 1 - lt / 0.35 : 0;
+      if (flash > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.globalAlpha = 0.35 * flash;
+        const lg = ctx.createLinearGradient(0, 0, W, H);
+        lg.addColorStop(0, project.theme.primary);
+        lg.addColorStop(1, project.theme.accent);
+        ctx.fillStyle = lg;
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
     }
   }
   // Effet de coupe entre deux scènes.
@@ -2945,4 +2998,49 @@ export function drawMotionOverlay(
   ctx.setTransform(S, 0, 0, S, 0, 0);
   sceneFree(c, { type: 'free', duration: 15, bg: scene.bg ?? undefined, camera: scene.camera, layers: scene.layers }, lt);
   ctx.restore();
+}
+
+
+/** Boîtes approximatives des calques visibles de la scène libre courante (repère du projet, px), pour les sélectionner et les déplacer à la souris. */
+export function layerBoxes(ctx: CanvasRenderingContext2D, project: MotionProject, t: number, fontFamily: string): { index: number; boxes: { i: number; x: number; y: number; w: number; h: number }[] } {
+  const { width: W, height: H } = FORMAT_SIZE[project.format];
+  const { index, lt } = locate(project, t);
+  const s = project.scenes[index];
+  if (!s || s.type !== 'free') return { index, boxes: [] };
+  const z = kv(s.camera?.zoom, lt, 1);
+  const camX = kv(s.camera?.x, lt, 0) * W;
+  const camY = kv(s.camera?.y, lt, 0) * H;
+  const boxes: { i: number; x: number; y: number; w: number; h: number }[] = [];
+  s.layers.forEach((L, i) => {
+    if (L.from !== undefined && lt < L.from) return;
+    if (L.to !== undefined && lt > L.to) return;
+    if (L.kind === 'flow' || L.kind === 'particles' || L.kind === 'glow') return;
+    if (kv(L.opacity, lt, 1) < 0.05) return;
+    const sc = kv(L.scale, lt, 1);
+    let w = 240, h = 240;
+    if (L.kind === 'text') {
+      const size = L.size ?? 80;
+      ctx.save();
+      ctx.font = `${L.weight ?? 800} ${size}px ${L.serif ? 'Georgia, serif' : fontFamily}`;
+      const lines = wrap(ctx, parseRich(L.upper ? L.text.toUpperCase() : L.text), (L.maxWidth ?? 0.9) * W);
+      ctx.restore();
+      w = Math.max(...lines.map((l) => l.width), size);
+      h = lines.length * size * 1.12;
+    } else if (L.kind === 'rect' || L.kind === 'image') {
+      w = kv(L.w, lt, 240);
+      h = kv((L as { h?: Keyed<number> }).h, lt, L.kind === 'image' ? w : 240);
+    } else if (L.kind === 'ellipse') {
+      w = kv(L.w, lt, 240);
+      h = kv(L.h, lt, w);
+    } else if (L.kind === 'path') {
+      w = kv(L.w, lt, 400);
+      h = w;
+    } else if (L.kind === 'group') {
+      w = W * 0.7;
+      h = H * 0.45;
+    }
+    const x = kv(L.x, lt, 0.5) * W, y = kv(L.y, lt, 0.5) * H;
+    boxes.push({ i, x: W / 2 + (x - W / 2 - camX) * z, y: H / 2 + (y - H / 2 - camY) * z, w: w * sc * z, h: h * sc * z });
+  });
+  return { index, boxes };
 }

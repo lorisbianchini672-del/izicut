@@ -1,7 +1,7 @@
 'use client';
 
 import { BACKDROP_LABELS, type BackdropKind } from '@/lib/motion/gl-bg';
-import type { MotionProject } from '@/lib/motion/types';
+import { TRANSITIONS, TRANSITION_LABELS, type MotionProject, type Transition } from '@/lib/motion/types';
 import { cn } from '@/lib/utils';
 
 /**
@@ -31,7 +31,7 @@ function backdropColors(t: Theme): string[] {
   return t.backdrop?.colors?.length ? [...t.backdrop.colors, t.primary, t.accent, t.accent].slice(0, 4) : [t.background, t.background, t.primary, t.accent];
 }
 
-export function QuickBar({ project, onChange }: { project: MotionProject; onChange: (fn: (p: MotionProject) => MotionProject) => void }) {
+export function QuickBar({ project, onChange, canUse, onLocked }: { project: MotionProject; onChange: (fn: (p: MotionProject) => MotionProject) => void; canUse?: (tr: Transition) => boolean; onLocked?: () => void }) {
   const t = project.theme;
   const setColor = (key: 'primary' | 'text', value: string) =>
     onChange((p) => {
@@ -65,6 +65,19 @@ export function QuickBar({ project, onChange }: { project: MotionProject; onChan
               {BACKDROP_LABELS[k]}
             </button>
           ))}
+        </div>
+      </div>
+      <div>
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">Transition entre les scènes</p>
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+          {TRANSITIONS.map((tr) => {
+            const ok = canUse ? canUse(tr) : true;
+            return (
+              <button key={tr} type="button" onClick={() => (ok ? onChange((p) => ({ ...p, transition: tr })) : onLocked?.())} className={cn('shrink-0 cursor-pointer rounded-full border px-2.5 py-1 text-xs transition', (project.transition ?? 'flash') === tr ? 'border-neon text-neon' : 'border-white/10 text-fg-muted hover:border-neon/40 hover:text-fg', !ok && 'opacity-60')}>
+                {TRANSITION_LABELS[tr]}{ok ? '' : ' 🔒'}
+              </button>
+            );
+          })}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">

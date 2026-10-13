@@ -19,7 +19,7 @@ export type Sfx = (typeof SFX)[number];
 export const MOTIFS = ['flow', 'particles', 'bubbles', 'grain', 'waves', 'confetti', 'sparkles', 'lines', 'none'] as const;
 export type Motif = (typeof MOTIFS)[number];
 /** Transitions entre scènes. */
-export const TRANSITIONS = ['flash', 'slide', 'zoom', 'wipe', 'glitch', 'blur'] as const;
+export const TRANSITIONS = ['flash', 'slide', 'zoom', 'wipe', 'glitch', 'blur', 'whip', 'light'] as const;
 export type Transition = (typeof TRANSITIONS)[number];
 /** Animations de texte (typographie cinétique). */
 export const TEXT_ANIMS = ['rise', 'slam', 'mask', 'split', 'type', 'curve', 'blur'] as const;
@@ -332,7 +332,7 @@ export const FORMAT_SIZE: Record<MotionProject['format'], { width: number; heigh
 export const MOTIF_LABELS: Record<Motif, string> = {
   flow: 'Flux lumineux (cinéma)', particles: 'Particules', bubbles: 'Bulles', grain: 'Grain / farine', waves: 'Vagues', confetti: 'Confettis', sparkles: 'Paillettes', lines: 'Vitesse', none: 'Aucune'
 };
-export const TRANSITION_LABELS: Record<Transition, string> = { flash: 'Flash', slide: 'Glissé', zoom: 'Zoom', wipe: 'Volet', glitch: 'Glitch', blur: 'Flou de mouvement' };
+export const TRANSITION_LABELS: Record<Transition, string> = { flash: 'Flash', slide: 'Glissé', zoom: 'Zoom', wipe: 'Volet', glitch: 'Glitch', blur: 'Flou de mouvement', whip: 'Glissé rapide', light: 'Reflet lumineux' };
 export const MUSIC_LABELS: Record<Music, string> = { pop: 'Pop', electro: 'Électro', chill: 'Chill / lo-fi', epic: 'Épique', acoustic: 'Acoustique', hiphop: 'Hip-hop', none: 'Sans musique' };
 export const SFX_LABELS: Record<Sfx, string> = {
   whoosh: 'Whoosh', pop: 'Pop', click: 'Clic', impact: 'Impact', riser: 'Montée', chime: 'Carillon', fizz: 'Pétillant', bubble: 'Bulles', swipe: 'Swipe', glitch: 'Glitch'

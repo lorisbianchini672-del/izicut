@@ -47,7 +47,8 @@ import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, type MotionQuota } fro
 import { buildCinematicAd, displayName } from '@/lib/motion/autoad';
 import { buildSignatureAd } from '@/lib/motion/signature';
 import { resolvePlanTier } from '@/lib/entitlements';
-import { drawFrame, locate, type MotionAssets } from '@/lib/motion/render';
+import { drawFrame, layerBoxes, locate, type MotionAssets } from '@/lib/motion/render';
+import { LayerEditor, type LayerSel } from '@/components/motion/LayerEditor';
 import { BACKDROPS, BACKDROP_LABELS, drawBackdrop, type BackdropKind } from '@/lib/motion/gl-bg';
 import { SoundPlayer, renderSoundtrack, type VoiceTrack } from '@/lib/motion/sound';
 import { exportExact, mixWithMedia } from '@/lib/motion/export';
@@ -464,7 +465,66 @@ export function MotionStudio() {
 
   const proOnly = () => setNotice('Cette option fait partie de l’offre Pro (toutes les musiques, textures et transitions, pubs illimitées, sans filigrane).');
 
+  // ---------- Édition directe dans la vidéo (sélection + déplacement des calques) ----------
+  const [sel, setSel] = useState<LayerSel | null>(null);
+  const dragRef = useRef<{ layer: LayerSel | null; last: { x: number; y: number }; moved: boolean } | null>(null);
+  const pointAt = (e: { clientX: number; clientY: number }) => {
+    const r = canvasRef.current!.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * size.width, y: ((e.clientY - r.top) / r.height) * size.height };
+  };
+  const boxesNow = () => {
+    const ctx = canvasRef.current?.getContext('2d');
+    return ctx ? layerBoxes(ctx, projectRef.current, timeRef.current, motionFont.style.fontFamily) : { index: 0, boxes: [] };
+  };
+  const hitLayer = (pt: { x: number; y: number }): LayerSel | null => {
+    const { index, boxes } = boxesNow();
+    let best: (typeof boxes)[number] | null = null;
+    for (const b of boxes) if (Math.abs(pt.x - b.x) <= b.w / 2 + 14 && Math.abs(pt.y - b.y) <= b.h / 2 + 14 && (!best || b.w * b.h < best.w * best.h)) best = b;
+    return best ? { scene: index, layer: best.i } : null;
+  };
+  const shiftK = (k: unknown, dlt: number, def: number) => (k === undefined ? def + dlt : typeof k === 'number' ? k + dlt : (k as { t: number; v: number }[]).map((q) => ({ ...q, v: q.v + dlt })));
+  const onCanvasDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const pt = pointAt(e);
+    const hit = hitLayer(pt);
+    dragRef.current = { layer: hit, last: pt, moved: false };
+    if (hit) {
+      setSel(hit);
+      setPlaying(false);
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+  };
+  const onCanvasMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const dr = dragRef.current;
+    if (!dr?.layer) return;
+    const pt = pointAt(e);
+    const dx = (pt.x - dr.last.x) / size.width, dy = (pt.y - dr.last.y) / size.height;
+    if (Math.abs(dx) + Math.abs(dy) < 0.0008) return;
+    dr.moved = true;
+    dr.last = pt;
+    const { scene, layer } = dr.layer;
+    setProject((p) => {
+      const sc = p.scenes[scene];
+      if (!sc || sc.type !== 'free' || !sc.layers[layer]) return p;
+      const layers = sc.layers.slice();
+      const L = layers[layer];
+      layers[layer] = { ...L, x: shiftK(L.x, dx, 0.5), y: shiftK(L.y, dy, 0.5) } as typeof L;
+      const scenes = p.scenes.slice();
+      scenes[scene] = { ...sc, layers };
+      return { ...p, scenes };
+    });
+  };
+  const onCanvasUp = () => {
+    const dr = dragRef.current;
+    dragRef.current = null;
+    if (!dr || dr.layer) return;
+    if (sel) setSel(null);
+    else setPlaying((pl) => !pl);
+  };
+
+  useEffect(() => { if (sel) panelScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }, [sel?.scene, sel?.layer]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const replaceProject = (next: MotionProject) => {
+    setSel(null);
     setProject(next);
     timeRef.current = 0;
     setPlaying(true);
@@ -1063,7 +1123,12 @@ export function MotionStudio() {
             className={cn('relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] lg:max-w-[min(100%,calc(68vh*var(--r)))]', view === 'export' ? 'max-w-[min(100%,calc(58dvh*var(--r)))]' : 'max-w-[min(100%,calc(34dvh*var(--r)))]')}
             style={{ aspectRatio: `${size.width} / ${size.height}`, ['--r' as string]: String(size.width / size.height) }}
           >
-            <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className="block h-full w-full max-w-full" onClick={() => setPlaying((p) => !p)} />
+            <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className={cn('block h-full w-full max-w-full', sel ? 'cursor-move' : 'cursor-pointer')} style={{ touchAction: sel ? 'none' : 'auto' }} onPointerDown={onCanvasDown} onPointerMove={onCanvasMove} onPointerUp={onCanvasUp} onPointerCancel={() => { dragRef.current = null; }} title="Cliquez sur un texte ou une forme pour le modifier" />
+            {sel ? (() => {
+              const b = boxesNow().boxes.find((x) => x.i === sel.layer);
+              if (!b || locate(project, time).index !== sel.scene) return null;
+              return <div className="pointer-events-none absolute rounded-md border-2 border-dashed border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.6)]" style={{ left: `${((b.x - b.w / 2) / size.width) * 100}%`, top: `${((b.y - b.h / 2) / size.height) * 100}%`, width: `${(b.w / size.width) * 100}%`, height: `${(b.h / size.height) * 100}%` }} />;
+            })() : null}
             {safeZones && project.format === '9:16' ? (
               // Zones masquées par l'interface TikTok / Reels (aperçu seulement, jamais dans la vidéo exportée).
               <div className="pointer-events-none absolute inset-0" aria-hidden>
@@ -1122,7 +1187,11 @@ export function MotionStudio() {
             </div>
           </div>
           <div className="hidden w-full justify-center lg:flex">
-            <QuickBar project={project} onChange={setProject} />
+            <LayerEditor project={project} sel={sel} onSelect={setSel} onChange={setProject} onSeek={seek} sceneStart={project.scenes.slice(0, sel?.scene ?? 0).reduce((n, x) => n + x.duration, 0)} accent={project.theme.primary} />
+          </div>
+          {!sel ? <p className="mt-2 text-center text-[11px] text-fg-subtle">Astuce : touchez ou cliquez sur un texte dans la vidéo pour le modifier, l’animer ou le déplacer.</p> : null}
+          <div className="hidden w-full justify-center lg:flex">
+            <QuickBar project={project} onChange={setProject} canUse={(tr) => isPaid || FREE_LIMITS.transitions.includes(tr)} onLocked={proOnly} />
           </div>
           {view === 'export' ? (
             <div className="mt-4 w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-4 lg:hidden">
@@ -1159,9 +1228,14 @@ export function MotionStudio() {
           </div>
 
           <div className="border-b border-white/10 px-3 pb-3 lg:hidden [&>div]:mt-3">
-            <QuickBar project={project} onChange={setProject} />
+            <QuickBar project={project} onChange={setProject} canUse={(tr) => isPaid || FREE_LIMITS.transitions.includes(tr)} onLocked={proOnly} />
           </div>
           <div ref={panelScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+            {sel ? (
+              <div className="lg:hidden [&>div]:mt-0 [&>div]:mb-4">
+                <LayerEditor project={project} sel={sel} onSelect={setSel} onChange={setProject} onSeek={seek} sceneStart={project.scenes.slice(0, sel.scene).reduce((n, x) => n + x.duration, 0)} accent={project.theme.primary} />
+              </div>
+            ) : null}
             {tab === 'ia' ? (
               <div className="flex h-full flex-col gap-3">
                 {loggedIn === false ? (
