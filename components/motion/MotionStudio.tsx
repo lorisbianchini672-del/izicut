@@ -255,6 +255,8 @@ export function MotionStudio() {
   }, [messages.length, aiBusy, tab]);
   const [exporting, setExporting] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Vidéo exportée, gardée en mémoire : bouton « Enregistrer » toujours disponible (certains navigateurs bloquent le téléchargement automatique).
+  const [ready, setReady] = useState<{ url: string; name: string; blob: Blob } | null>(null);
   const [concept, setConcept] = useState<Concept | null>(null);
   const [hooks, setHooks] = useState<Scene[]>([]);
   const [quota, setQuota] = useState<MotionQuota | null>(null);
@@ -841,13 +843,28 @@ export function MotionStudio() {
 
   const downloadBlob = (blob: Blob, ext: string) => {
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `izicut-motion-${projectRef.current.format.replace(':', 'x')}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    const name = `izicut-video-${projectRef.current.format.replace(':', 'x')}.${ext}`;
+    setReady((old) => { if (old) URL.revokeObjectURL(old.url); return { url, name, blob }; });
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      /* le bouton « Enregistrer la vidéo » prend le relais */
+    }
+  };
+  const shareReady = async () => {
+    if (!ready) return;
+    const file = new File([ready.blob], ready.name, { type: ready.blob.type || 'video/mp4' });
+    try {
+      if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'Ma vidéo izicut' }); return; }
+    } catch {
+      /* partage annulé : on garde le lien direct */
+    }
+    window.open(ready.url, '_blank');
   };
 
   const exportVideo = async () => {
@@ -890,11 +907,14 @@ export function MotionStudio() {
       }).catch(() => null);
       if (blob) {
         downloadBlob(blob, 'mp4');
-        setNotice('Vidéo exportée en MP4 ✓ 60 images/s parfaitement fluides.');
+        setNotice('Vidéo prête ✓ Si le téléchargement n’a pas démarré, touchez « Enregistrer la vidéo ».');
         return;
       }
       // 2) Navigateur sans WebCodecs : enregistrement en direct (secours).
       await legacyExport(out, octx, proj, total, opts, soundtrack);
+    } catch (err) {
+      console.warn('[export] échec', err);
+      setNotice('L’export n’a pas abouti. Réessayez, de préférence sur Chrome ou Edge sur ordinateur (Safari sur iPhone peut bloquer les longues vidéos).');
     } finally {
       out.remove();
       mediaRef.current.forEach((m) => m.el.pause());
@@ -1021,6 +1041,20 @@ export function MotionStudio() {
         ))}
       </div>
 
+      {ready ? (
+        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-neon/30 bg-neon/[0.06] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-semibold text-fg">Votre vidéo est prête ({(ready.blob.size / 1_000_000).toFixed(1)} Mo).</p>
+          <div className="flex gap-2">
+            <a href={ready.url} download={ready.name} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-neon px-4 py-2.5 text-sm font-bold text-ink-950 sm:flex-none">
+              <Download className="h-4 w-4" /> Enregistrer la vidéo
+            </a>
+            <button type="button" onClick={() => void shareReady()} className="inline-flex flex-1 cursor-pointer items-center justify-center rounded-xl border border-white/15 px-4 py-2.5 text-sm font-semibold text-fg sm:flex-none">
+              Partager / Photos
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         {/* ---------- Aperçu ---------- */}
         <div className={cn('z-30 -mx-4 flex min-w-0 flex-col items-center px-4 pb-2 pt-2 lg:sticky lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none', view === 'edit' ? 'sticky top-0 bg-[var(--color-ink-950,#09090b)]/95 backdrop-blur-xl' : 'relative')}>
@@ -1082,6 +1116,9 @@ export function MotionStudio() {
                 {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
               </button>
               <span className="shrink-0 whitespace-nowrap text-right font-code text-[11px] text-fg-muted sm:text-xs">{time.toFixed(1)}/{duration.toFixed(0)} s</span>
+              <button type="button" onClick={() => setView('export')} className={cn('grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-full bg-neon text-ink-950 lg:hidden', view === 'export' && 'hidden')} aria-label="Télécharger la vidéo" title="Télécharger la vidéo">
+                <Download className="h-4 w-4" />
+              </button>
             </div>
           </div>
           <div className="hidden w-full justify-center lg:flex">
