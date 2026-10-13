@@ -19,7 +19,7 @@ const txt = (n: number) => z.string().trim().min(1).max(n);
 
 export const BlockSchema = z.discriminatedUnion('block', [
   z.object({ block: z.literal('reveal'), brand: txt(40), line: z.string().trim().max(90).optional() }),
-  z.object({ block: z.literal('kinetic'), lines: z.array(txt(60)).min(1).max(3), style: z.enum(['push', 'blur', 'slam', 'mask', 'curve', 'karaoke']).optional() }),
+  z.object({ block: z.literal('kinetic'), lines: z.array(txt(60)).min(1).max(3), style: z.enum(['push', 'blur', 'slam', 'mask', 'curve', 'karaoke', 'highlight', 'stack', 'echo', 'type', 'wave']).optional() }),
   z.object({ block: z.literal('carousel'), title: z.string().trim().max(50).optional(), items: z.array(z.object({ img, label: z.string().trim().max(32).optional(), sub: z.string().trim().max(40).optional() })).min(1).max(10) }),
   z.object({ block: z.literal('wall'), title: txt(60), imgs: z.array(img).min(1).max(12) }),
   z.object({ block: z.literal('grid'), title: z.string().trim().max(50).optional(), items: z.array(z.object({ img, label: z.string().trim().max(32).optional() })).min(2).max(6) }),
@@ -84,9 +84,57 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
       return { ...base, duration: b.line ? 3 : 2.4, name: 'Révélation', layers, cues: [{ at: 0.2, sfx: 'riser' }, { at: 0.6, sfx: 'chime' }, ...(b.line ? [{ at: 1.45, sfx: 'whoosh' as const }] : [])] };
     }
     case 'kinetic': {
-      const style = b.style ?? (['push', 'blur', 'mask', 'slam'] as const)[i % 4];
+      const style = b.style ?? (['push', 'highlight', 'stack', 'blur', 'echo', 'mask', 'wave', 'slam'] as const)[i % 8];
       const layers: Layer[] = [];
       const step = 0.75;
+      const W = c.vertical ? 1080 : 1920;
+      const n = b.lines.length;
+      if (style === 'highlight') {
+        // Les mots montent un à un, puis un surligneur aux couleurs de la marque balaie la dernière ligne.
+        const gap = 0.085;
+        b.lines.forEach((l, k) => {
+          const y = 0.47 + (k - (n - 1) / 2) * gap;
+          const size = n > 1 ? 84 : 100;
+          if (k === n - 1) {
+            const w = Math.min(W * 0.92, l.length * size * 0.56 + 60);
+            layers.push({ kind: 'rect', x: 0.5, y: y + 0.004, w: [e(0.35 + k * 0.4, 0), e(0.85 + k * 0.4, w, 'smooth')], h: size * 1.15, radius: 14, color: c.accent, rotate: -1.5 });
+          }
+          layers.push({ kind: 'text', x: 0.5, y, text: l, size, weight: 900, maxWidth: 0.9, color: k === n - 1 && lum(c.accent) > 150 ? '#0b0b0b' : c.text, reveal: 'rise', revealBy: 'word', revealAt: 0.1 + k * 0.4 });
+        });
+        const dur = Math.min(5, 1.6 + n * 0.55);
+        return { ...base, duration: dur, name: 'Surligné', camera: { zoom: [e(0, 1.04, 'linear'), e(dur, 1, 'smooth')] }, layers, cues: [{ at: 0.1, sfx: 'whoosh' }, { at: 0.35 + (n - 1) * 0.4, sfx: 'swipe' }] };
+      }
+      if (style === 'stack') {
+        // Lignes géantes empilées qui claquent tour à tour de gauche et de droite, la dernière en dégradé.
+        const gap = 0.12;
+        b.lines.forEach((l, k) => {
+          const y = 0.47 + (k - (n - 1) / 2) * gap;
+          const from = k % 2 ? 1.7 : -0.7;
+          const at = 0.08 + k * 0.32;
+          layers.push({ kind: 'text', x: [e(at, from), e(at + 0.42, 0.5, 'expo')], y, text: l.toUpperCase(), size: n > 2 ? 120 : 150, weight: 900, tracking: -0.02, maxWidth: 0.96, motionBlur: true, rotate: [e(at, k % 2 ? 6 : -6), e(at + 0.5, 0, 'spring')], ...(k === n - 1 ? { fill: { from: c.text, to: c.accent, angle: 90 } } : { color: c.text }) });
+        });
+        const dur = Math.min(4.5, 1.5 + n * 0.45);
+        return { ...base, duration: dur, name: 'Empilé', camera: { zoom: [e(0, 1, 'linear'), e(0.5 + (n - 1) * 0.32, 1.08, 'expo'), e(dur, 1.03, 'smooth')] }, layers, cues: b.lines.map((_, k) => ({ at: 0.1 + k * 0.32, sfx: 'impact' as const })) };
+      }
+      if (style === 'echo') {
+        // Le mot clé répété en contour qui défile, la version pleine au centre : typographie « écho » des pubs mode / sport.
+        const word = b.lines[0].toUpperCase();
+        const size = Math.min(170, Math.round((W * 0.9) / Math.max(4, word.length * 0.62)));
+        for (let k = -3; k <= 3; k++) {
+          if (k === 0) continue;
+          const y0 = 0.47 + k * (size / (c.vertical ? 1920 : 1080)) * 1.05;
+          layers.push({ kind: 'text', x: 0.5, y: [e(0, y0 + 0.03 * Math.sign(k)), e(2.6, y0 - 0.03 * Math.sign(k), 'linear')], text: word, size, weight: 900, stroke: { color: c.accent, width: 2.5 }, opacity: [e(0.1 + Math.abs(k) * 0.08, 0, 'linear'), e(0.4 + Math.abs(k) * 0.08, 1 - Math.abs(k) * 0.22)] });
+        }
+        layers.push({ kind: 'text', x: 0.5, y: 0.47, text: word, size, weight: 900, color: c.text, reveal: 'scale', revealAt: 0.15 });
+        if (b.lines[1]) layers.push({ kind: 'text', x: 0.5, y: 0.47 + (size / (c.vertical ? 1920 : 1080)) * 2.4, text: b.lines[1], size: 46, weight: 600, color: c.text, maxWidth: 0.86, reveal: 'rise', revealBy: 'word', revealAt: 0.7 });
+        return { ...base, duration: 2.8, name: 'Écho', camera: { zoom: [e(0, 1.08, 'linear'), e(2.8, 1, 'smooth')] }, layers, cues: [{ at: 0.15, sfx: 'impact' }] };
+      }
+      if (style === 'type' || style === 'wave') {
+        const gap = 0.08;
+        b.lines.forEach((l, k) => layers.push({ kind: 'text', x: 0.5, y: 0.47 + (k - (n - 1) / 2) * gap, text: l, size: k === 0 ? 92 : 70, weight: style === 'type' ? 700 : 900, maxWidth: 0.88, color: c.text, reveal: style, revealBy: style === 'type' ? 'char' : 'char', revealAt: 0.15 + k * (style === 'type' ? l.length * 0.045 + 0.2 : 0.5) }));
+        const dur = Math.min(5, style === 'type' ? 0.9 + b.lines.join('').length * 0.05 : 1.6 + n * 0.55);
+        return { ...base, duration: Math.max(2.2, dur), name: style === 'type' ? 'Machine à écrire' : 'Vague', layers, cues: [{ at: 0.1, sfx: style === 'type' ? 'click' : 'whoosh' }] };
+      }
       if (style === 'karaoke') {
         // Sous-titres mot à mot façon Hormozi : le mot prononcé grossit, s'allume et brille.
         const all = b.lines.join(' ');
@@ -261,7 +309,7 @@ export function composeProject(blocks: Block[], style: ComposeStyle, o: { brand:
   const text = light ? '#141414' : '#ffffff';
   const c: Ctx = { accent, text, sub: light ? '#4a4a4a' : '#c9cfd6', brand: o.brand, hasLogo: o.hasLogo, vertical: o.format === '9:16' };
   // Images qui pointent vers une photo absente : on les remplace par une photo existante (ou une recherche web).
-  const fixImg = (s: string) => (s.startsWith('photo:') && Number(s.slice(6)) >= o.photos ? (o.photos ? `photo:${Number(s.slice(6)) % o.photos}` : `search:${o.brand}`) : s);
+  const fixImg = (s: string) => (s.startsWith('photo:') && Number(s.slice(6)) >= o.photos ? (o.photos ? `photo:${Number(s.slice(6)) % o.photos}` : `search:${o.brand || 'abstract gradient'}`) : s);
   const fixed = blocks.map((b) => JSON.parse(JSON.stringify(b, (k, v) => (k === 'img' || k === 'src' || k === 'before' || k === 'after' ? fixImg(String(v)) : k === 'imgs' && Array.isArray(v) ? v.map((x: unknown) => fixImg(String(x))) : v))) as Block);
   const scenes = fixed.slice(0, 12).map((b, i) => sceneFor(b, i, c));
   return {
@@ -296,7 +344,7 @@ export function parseBlocks(raw: unknown): Block[] {
 
 export const BLOCKS_DOC = `BLOCS DISPONIBLES (chacun devient une scène motion design haut de gamme, déjà animée et sonorisée) — "img" = "photo:N" (photo du client), "logo" ou "search:mots-clés en anglais" (photo libre de droits) :
 - { "block": "reveal", "brand": "nom", "line": "phrase qui pousse le nom hors champ (optionnel)" } — révélation de la marque (particules qui convergent, logo, nom flou → net).
-- { "block": "kinetic", "lines": ["1 à 3 phrases courtes"], "style": "push" | "blur" | "slam" | "mask" | "curve" } — typographie cinétique (push = chaque phrase pousse la précédente avec flou de mouvement).
+- { "block": "kinetic", "lines": ["1 à 3 phrases courtes"], "style": "push" | "blur" | "slam" | "mask" | "curve" | "highlight" | "stack" | "echo" | "type" | "wave" } — typographie cinétique : push = chaque phrase pousse la précédente avec flou de mouvement ; highlight = un surligneur coloré balaie la dernière ligne (mettre le bénéfice clé en dernière ligne) ; stack = lignes géantes en majuscules qui claquent de gauche et de droite (2-3 mots par ligne, idéal pour un hook) ; echo = un SEUL mot clé géant répété en contour qui défile (lines[0] = 1 mot, lines[1] = petite phrase optionnelle) ; type = machine à écrire avec curseur ; wave = lettres en vague. VARIE les styles d'une scène à l'autre.
 - { "block": "carousel", "title": "…", "items": [{ "img": "photo:0", "label": "…", "sub": "…" }, …] } — carrousel de cartes numérotées 01, 02…
 - { "block": "wall", "title": "…", "imgs": ["photo:0", "photo:1", …] } — mur d'images incliné qui défile derrière un gros titre penché.
 - { "block": "grid", "title": "…", "items": [{ "img": …, "label": … }] } — grille qui apparaît en vague.

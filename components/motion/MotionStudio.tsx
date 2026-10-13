@@ -99,7 +99,7 @@ const NEW_IDEAS = [
   'Présente mon appli de coaching sportif : 3 avantages et un appel à télécharger',
   'Annonce l’ouverture de mon restaurant italien samedi à Lyon'
 ];
-const EDIT_IDEAS = ['Rends-la plus dynamique', 'Passe en bleu et blanc', 'Ajoute une scène avec un chiffre clé', 'Passe au format 16:9 pour YouTube', 'Raccourcis à 10 secondes'];
+const EDIT_IDEAS = ['Rends-la plus dynamique', 'Ajoute un texte surligné avec mon offre', 'Ajoute un mot géant en écho', 'Mets le titre en lignes géantes qui claquent', 'Passe en bleu et blanc', 'Passe au format 16:9 pour YouTube'];
 
 function loadSaved(): MotionProject | null {
   try {
@@ -233,6 +233,8 @@ export function MotionStudio() {
   const mediaRef = useRef<Media[]>([]);
   const audioRef = useRef<{ ctx: AudioContext; dest: MediaStreamAudioDestinationNode; wired: Set<HTMLVideoElement> } | null>(null);
   const [tab, setTab] = useState<Tab>('ia');
+  // Téléphone : deux espaces bien séparés, « Modifier » et « Télécharger ».
+  const [view, setView] = useState<'edit' | 'export'>('edit');
   const [playing, setPlaying] = useState(true);
   const [time, setTime] = useState(0);
   const [fontReady, setFontReady] = useState(false);
@@ -994,7 +996,7 @@ export function MotionStudio() {
             Décrivez votre vidéo, l’IA crée l’animation. Modifiez-la en lui parlant, puis téléchargez-la.
           </p>
         </div>
-        <Button variant="gradient" className="rounded-xl font-bold" disabled={exporting !== null} onClick={exportVideo}>
+        <Button variant="gradient" className="hidden rounded-xl font-bold lg:inline-flex" disabled={exporting !== null} onClick={exportVideo}>
           <Download className="h-4 w-4" />
           {exporting !== null ? `Export… ${exporting} %` : 'Télécharger la vidéo'}
         </Button>
@@ -1010,12 +1012,21 @@ export function MotionStudio() {
         </div>
       ) : null}
 
+      {/* Téléphone : on choisit clairement entre modifier la vidéo et la télécharger. */}
+      <div className="mb-4 grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 lg:hidden" role="tablist" aria-label="Espace de travail">
+        {([['edit', 'Modifier', <Wand2 key="e" className="h-4 w-4" />], ['export', 'Télécharger', <Download key="d" className="h-4 w-4" />]] as ['edit' | 'export', string, ReactNode][]).map(([id, label, icon]) => (
+          <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)} className={cn('flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition', view === id ? 'bg-neon text-ink-950' : 'text-fg-muted hover:bg-white/[0.05]')}>
+            {icon}{label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         {/* ---------- Aperçu ---------- */}
-        <div className="sticky top-0 z-30 -mx-4 flex min-w-0 flex-col items-center bg-[var(--color-ink-950,#09090b)]/95 px-4 pb-2 pt-2 backdrop-blur-xl lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none">
+        <div className={cn('z-30 -mx-4 flex min-w-0 flex-col items-center px-4 pb-2 pt-2 lg:sticky lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none', view === 'edit' ? 'sticky top-0 bg-[var(--color-ink-950,#09090b)]/95 backdrop-blur-xl' : 'relative')}>
 
           <div
-            className="relative w-full max-w-[min(100%,calc(34dvh*var(--r)))] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] lg:max-w-[min(100%,calc(68vh*var(--r)))]"
+            className={cn('relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] lg:max-w-[min(100%,calc(68vh*var(--r)))]', view === 'export' ? 'max-w-[min(100%,calc(58dvh*var(--r)))]' : 'max-w-[min(100%,calc(34dvh*var(--r)))]')}
             style={{ aspectRatio: `${size.width} / ${size.height}`, ['--r' as string]: String(size.width / size.height) }}
           >
             <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className="block h-full w-full max-w-full" onClick={() => setPlaying((p) => !p)} />
@@ -1076,10 +1087,26 @@ export function MotionStudio() {
           <div className="hidden w-full justify-center lg:flex">
             <QuickBar project={project} onChange={setProject} />
           </div>
+          {view === 'export' ? (
+            <div className="mt-4 w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-4 lg:hidden">
+              <p className="font-display text-lg font-semibold text-fg">Votre vidéo</p>
+              <p className="mt-1 text-sm text-fg-muted">
+                Format {project.format === '9:16' ? 'vertical 9:16 (TikTok, Reels, Shorts)' : project.format === '16:9' ? 'horizontal 16:9 (YouTube)' : 'carré 1:1'} · {duration.toFixed(0)} s · MP4 HD
+              </p>
+              <Button variant="gradient" className="mt-4 h-12 w-full rounded-xl text-base font-bold" disabled={exporting !== null} onClick={exportVideo}>
+                <Download className="h-5 w-5" />
+                {exporting !== null ? `Export… ${exporting} %` : 'Télécharger la vidéo'}
+              </Button>
+              <p className="mt-2 text-center text-xs text-fg-subtle">Gardez cet écran ouvert pendant l’export.</p>
+              <button type="button" onClick={() => setView('edit')} className="mt-3 w-full cursor-pointer rounded-xl border border-white/10 py-2.5 text-sm font-semibold text-fg transition hover:bg-white/[0.05]">
+                Revenir aux modifications
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {/* ---------- Panneau d'édition ---------- */}
-        <div className="flex min-h-[420px] flex-col rounded-2xl border border-white/10 bg-white/[0.03] lg:sticky lg:top-4 lg:h-[calc(100dvh-2rem)] lg:self-start">
+        <div className={cn('min-h-[420px] flex-col rounded-2xl border border-white/10 bg-white/[0.03] lg:sticky lg:top-4 lg:flex lg:h-[calc(100dvh-2rem)] lg:self-start', view === 'export' ? 'hidden' : 'flex')}>
           <div className="grid grid-cols-4 gap-1 border-b border-white/10 p-1.5">
             {([['ia', 'Créer', <Wand2 key="i" className="h-4 w-4" />], ['medias', 'Mes images', <Film key="m" className="h-4 w-4" />], ['marque', 'Ma marque', <Building2 key="b" className="h-4 w-4" />], ['style', 'Réglages', <Palette key="p" className="h-4 w-4" />]] as [Tab, string, ReactNode][]).map(([id, label, icon]) => (
               <button

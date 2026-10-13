@@ -10,7 +10,7 @@ import { sendEmail } from '@/lib/email/send';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, BackdropSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { FREE_DOC } from '@/lib/motion/prompt';
-import { BLOCKS_DOC, StyleSchema, composeProject, parseBlocks } from '@/lib/motion/compose';
+import { BLOCKS_DOC, StyleSchema, composeProject, parseBlocks, type Block } from '@/lib/motion/compose';
 import { EDIT_OPS_DOC, applyOps, quickOps, summarize } from '@/lib/motion/edit-ops';
 import { MAX_DOCS, MAX_DOC_CHARS, cleanText, docsPrompt } from '@/lib/motion/docs';
 import { coerce, repairFree } from '@/lib/motion/repair';
@@ -132,7 +132,8 @@ const ATTITUDE = `ESPRIT IZICUT (prioritaire sur tout le reste) :
 - Le client est le réalisateur : tu fais TOUT ce qu'il demande, même inhabituel, ambitieux ou très précis (couleur, mot, effet, style, durée, ordre, format, référence à une marque ou à une vidéo). Tu ne refuses jamais par manque de « modèle » : tu le construis avec les scènes libres.
 - AUCUN modèle pré-construit : chaque pub est une création unique pensée pour CE client. Les exemples donnés ici ne sont que des illustrations du niveau attendu, ne les recopie pas.
 - RÉFLÉCHIS longuement avant d'écrire : objectif, cible, émotion, idée forte, esthétique, découpage seconde par seconde, transitions entre les scènes (raccords de mouvement, formes qui se transforment, lignes qui guident l'œil, caméra), son. Puis exécute avec la précision d'un motion designer d'agence.
-- Vise l'« irréalisable » pour un particulier : ce qu'un client ne pourrait jamais faire seul en quelques minutes.`;
+- Vise l'« irréalisable » pour un particulier : ce qu'un client ne pourrait jamais faire seul en quelques minutes.
+- AUCUNE MARQUE INVENTÉE : n'invente JAMAIS de nom d'entreprise, de marque, de produit, de logo ou de slogan déposé. Si le client ne donne pas son nom, "brand" = "" et tu ne nommes personne (pas de bloc "reveal" avec un nom inventé : commence par un "kinetic"). N'utilise jamais le nom ni le logo d'une vraie entreprise (Apple, Nike, Spotify…) dans la vidéo, même pour imiter son style : tu reprends l'esthétique, jamais la marque.`;
 
 const DIRECTOR = (free: boolean) => `${ATTITUDE}
 
@@ -218,7 +219,7 @@ ${FREE_DOC}`;
  */
 const COMPOSER = `${ATTITUDE}
 
-Tu es Directeur Artistique chez IziCut, au niveau des campagnes Spotify / Apple / Nike. Tu conçois une pub motion design de 15 s (sauf autre durée demandée) en enchaînant des BLOCS déjà animés par nos motion designers : toi, tu choisis l'ordre, les textes (courts, percutants, en français), les images et la direction artistique.
+Tu es Directeur Artistique chez IziCut, au niveau des plus grandes campagnes internationales. Tu conçois une pub motion design de 15 s (sauf autre durée demandée) en enchaînant des BLOCS déjà animés par nos motion designers : toi, tu choisis l'ordre, les textes (courts, percutants, en français), les images et la direction artistique.
 
 ${BLOCKS_DOC}
 
@@ -234,7 +235,28 @@ RÈGLES :
 - Format : "9:16" par défaut, "16:9" pour YouTube, "1:1" pour un post carré.
 
 Réponds UNIQUEMENT par un objet JSON COMPACT :
-{"message":"4 à 6 phrases pour le client : ce que tu as compris, l'idée créative, l'esthétique et le déroulé","plan":["Scène N — ce qu'on voit"],"question":"une question courte ou chaîne vide","brand":"nom de la marque","format":"9:16","style":{…},"blocks":[…]}`;
+{"message":"4 à 6 phrases pour le client : ce que tu as compris, l'idée créative, l'esthétique et le déroulé","plan":["Scène N — ce qu'on voit"],"question":"une question courte ou chaîne vide","brand":"nom donné par le client, sinon chaîne vide","format":"9:16","style":{…},"blocks":[…]}`;
+
+/** Retire un nom de marque inventé par l'IA de tous les textes des blocs ; une « révélation » sans nom devient un message animé. */
+function scrubBrand(blocks: Block[], name: string): Block[] {
+  const re = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  const clean = (v: unknown): unknown => {
+    if (typeof v === 'string') return v.replace(re, '').replace(/\s{2,}/g, ' ').replace(/^[\s,.:;–—-]+|[\s,:;–—-]+$/g, '').trim();
+    if (Array.isArray(v)) return v.map(clean);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, k === 'block' || k === 'style' ? x : clean(x)]));
+    return v;
+  };
+  const out: Block[] = [];
+  for (const b of blocks) {
+    if (b.block === 'reveal') {
+      const line = typeof b.line === 'string' ? (clean(b.line) as string) : '';
+      if (line) out.push({ block: 'kinetic', lines: [line], style: 'blur' } as Block);
+      continue;
+    }
+    out.push(clean(b) as Block);
+  }
+  return out;
+}
 
 const pick = <T extends readonly string[]>(list: T, v: unknown): T[number] | undefined => (list as readonly unknown[]).includes(v) ? (v as T[number]) : undefined;
 
@@ -600,8 +622,12 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
           continue;
         }
         const fmt = pick(['9:16', '16:9', '1:1'] as const, r.format) ?? parsed.data.format ?? '9:16';
-        const brandName = (typeof r.brand === 'string' && r.brand.trim() ? r.brand.trim() : brand?.company?.name ?? 'Votre marque').slice(0, 40);
-        composed = composeProject(blocks, inspiredStyle(safeStyle(r.style), docs), { brand: brandName, hasLogo: Boolean(parsed.data.hasLogo), format: fmt, photos: photos?.length ?? 0 });
+        // Marque : uniquement celle que le client a donnée (jamais de nom inventé par l'IA).
+        const aiBrand = typeof r.brand === 'string' ? r.brand.trim() : '';
+        const known = [prompt, brand?.company?.name, brand?.site?.title, brand?.notes, project?.brand].filter(Boolean).join(' ').toLowerCase();
+        const brandName = (aiBrand && known.includes(aiBrand.toLowerCase()) ? aiBrand : brand?.company?.name ?? '').slice(0, 40);
+        const safeBlocks = aiBrand && !brandName ? scrubBrand(blocks, aiBrand) : blocks;
+        composed = composeProject(safeBlocks, inspiredStyle(safeStyle(r.style), docs), { brand: brandName, hasLogo: Boolean(parsed.data.hasLogo), format: fmt, photos: photos?.length ?? 0 });
         raw = { message: r.message, plan: r.plan, question: r.question, project: composed };
       }
       const wrapped = Boolean(raw && typeof raw === 'object' && 'project' in (raw as Record<string, unknown>));
