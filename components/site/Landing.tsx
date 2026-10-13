@@ -234,7 +234,7 @@ function UseCases() {
       <div className="mx-auto mt-16 grid max-w-5xl gap-10 sm:grid-cols-3">
         {USES.map(({ t, d }, i) => (
           <article key={t} className="text-left">
-            <VideoCard i={i + 1} className="mx-auto w-full max-w-[260px] text-[22px]" />
+            <VideoCard i={i + 1} className="mx-auto w-full max-w-[190px] text-[18px] sm:max-w-[260px] sm:text-[22px]" />
             <h3 className="mt-6 font-display text-xl font-bold tracking-[-0.02em] text-[#0b0b14]">{t}</h3>
             <p className="mt-2 leading-relaxed text-[#55525f]">{d}</p>
           </article>
