@@ -110,10 +110,10 @@ function HeroGlow() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0">
       <div className="absolute inset-0 bg-[#171717]" />
-      <div className="absolute inset-x-[-20%] bottom-[-35%] h-[110%] rounded-[50%] bg-[#3b6cf6] opacity-90 blur-[90px]" />
-      <div className="absolute inset-x-[-15%] bottom-[-45%] h-[85%] rounded-[50%] bg-[#f28be0] blur-[90px]" />
-      <div className="absolute inset-x-[-10%] bottom-[-55%] h-[70%] rounded-[50%] bg-[#ff4d3d] blur-[80px]" />
-      <div className="absolute inset-x-0 top-0 h-[45%] bg-gradient-to-b from-[#171717] to-transparent" />
+      <div className="absolute inset-x-[-25%] bottom-[-30%] h-[95%] rounded-[50%] bg-[#3b6cf6] blur-[80px]" />
+      <div className="absolute inset-x-[-20%] bottom-[-40%] h-[72%] rounded-[50%] bg-[#f28be0] blur-[80px]" />
+      <div className="absolute inset-x-[-15%] bottom-[-42%] h-[55%] rounded-[50%] bg-[#ff4d3d] blur-[70px]" />
+      <div className="absolute inset-x-0 top-0 h-[30%] bg-gradient-to-b from-[#171717] to-transparent" />
     </div>
   );
 }
@@ -138,24 +138,29 @@ function HeroPrompt() {
 
 function Hero() {
   return (
-    <section className="izi-dark-scope relative overflow-hidden pb-16 pt-32 sm:pt-44">
-      <HeroGlow />
-      <div className="relative mx-auto max-w-6xl px-4 text-center sm:px-6">
-        <h1 className="mx-auto max-w-4xl text-balance font-display text-[2.8rem] font-extrabold leading-[1] tracking-[-0.045em] text-white sm:text-7xl">
-          Des vidéos qui arrêtent le scroll.
-        </h1>
-        <p className="mx-auto mt-5 max-w-xl text-pretty text-lg leading-relaxed text-white/75">
-          Créez vos pubs et montez vos vidéos en discutant avec l’IA.
-        </p>
-        <HeroPrompt />
-      </div>
-      <div className="relative mx-auto mt-20 grid max-w-5xl grid-cols-2 gap-4 px-4 text-[18px] sm:grid-cols-4 sm:gap-5 sm:px-6 sm:text-[20px]">
-        <PreviewBakery />
-        <PreviewGym />
-        <PreviewRestaurant className="hidden sm:block" />
-        <PreviewHair className="hidden sm:block" />
-      </div>
-    </section>
+    <>
+      <section className="izi-dark-scope relative flex min-h-[88svh] items-center overflow-hidden pb-24 pt-32 sm:min-h-[92vh]">
+        <HeroGlow />
+        <div className="relative mx-auto w-full max-w-6xl px-4 text-center sm:px-6">
+          <h1 className="mx-auto max-w-4xl text-balance font-display text-[2.8rem] font-extrabold leading-[1] tracking-[-0.045em] text-white sm:text-7xl">
+            Des vidéos qui arrêtent le scroll.
+          </h1>
+          <p className="mx-auto mt-5 max-w-xl text-pretty text-lg leading-relaxed text-white/80">
+            Créez vos pubs et montez vos vidéos en discutant avec l’IA.
+          </p>
+          <HeroPrompt />
+        </div>
+      </section>
+      <section aria-label="Exemples de pubs" className="px-4 py-20 sm:px-6 sm:py-24">
+        <p className="text-center font-display text-xs font-semibold uppercase tracking-[0.2em] text-[#0b0b14]/60">Exemples de pubs</p>
+        <div className="mx-auto mt-10 grid max-w-5xl grid-cols-2 gap-4 text-[18px] sm:grid-cols-4 sm:gap-5 sm:text-[20px]">
+          <PreviewBakery />
+          <PreviewGym />
+          <PreviewRestaurant className="hidden sm:block" />
+          <PreviewHair className="hidden sm:block" />
+        </div>
+      </section>
+    </>
   );
 }
 
