@@ -11,6 +11,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, BackdropSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { FREE_DOC } from '@/lib/motion/prompt';
 import { BLOCKS_DOC, StyleSchema, composeProject, parseBlocks, type Block } from '@/lib/motion/compose';
+import { AiPrefsSchema, prefsPrompt } from '@/lib/motion/prefs';
 import { EDIT_OPS_DOC, applyOps, quickOps, summarize } from '@/lib/motion/edit-ops';
 import { MAX_DOCS, MAX_DOC_CHARS, cleanText, docsPrompt } from '@/lib/motion/docs';
 import { coerce, repairFree } from '@/lib/motion/repair';
@@ -40,6 +41,8 @@ const BodySchema = z.object({
   docs: z.array(z.object({ name: z.string().max(80), text: z.string().max(MAX_DOC_CHARS + 200) })).max(MAX_DOCS).optional(),
   /** Scène affichée dans l'aperçu quand le client écrit (« ce texte », « cette slide »). */
   currentScene: z.number().int().min(0).max(30).optional(),
+  /** Préférences de l'IA réglées par le client (ton, rythme, durée, style, textes animés…). */
+  prefs: AiPrefsSchema.optional(),
   format: z.enum(['9:16', '16:9', '1:1']).optional(),
   brand: z
     .object({
@@ -470,6 +473,8 @@ export async function POST(request: Request) {
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Demande invalide' }, { status: 400 });
   const { prompt, media, photos, photoSheets, brand } = parsed.data;
+  const prefs = parsed.data.prefs;
+  const prefsText = prefsPrompt(prefs);
   let project = parsed.data.project;
 
   // Offre : 3 pubs créées gratuitement, puis Pro. Les retouches restent possibles.
@@ -531,7 +536,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
   // ---------- Retouche : petites opérations ciblées (réponse courte, fiable avec les IA gratuites) ----------
   // Avec Claude, la retouche se fait sur le projet complet (liberté totale) ; sans Claude, par petites opérations.
   if (project && !claudeConfigured()) {
-    const editMsg = `Résumé de la pub actuelle :\n${summarize(project)}${parsed.data.currentScene !== undefined ? `\nLe client regarde la scène ${parsed.data.currentScene} quand il écrit.` : ''}${photos?.length ? `\nPhotos du client : index 0 à ${photos.length - 1}.${photoNotes ? `\n${photoNotes.slice(0, 1500)}` : ''}` : ''}${docsInfo}\n\nDemande du client : ${prompt}`;
+    const editMsg = `Résumé de la pub actuelle :\n${summarize(project)}${parsed.data.currentScene !== undefined ? `\nLe client regarde la scène ${parsed.data.currentScene} quand il écrit.` : ''}${photos?.length ? `\nPhotos du client : index 0 à ${photos.length - 1}.${photoNotes ? `\n${photoNotes.slice(0, 1500)}` : ''}` : ''}${docsInfo}\n\n${prefsText}Demande du client : ${prompt}`;
     const t1 = Date.now();
     let recreate = false;
     let lastErr = '';
@@ -581,8 +586,8 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
   }
 
   const userMsg = project
-    ? `Projet actuel :\n${JSON.stringify(project)}${mediaInfo}${brandInfo}${docsInfo}\n\nModification demandée : ${prompt}`
-    : `${docs.length ? `⚠️ PRIORITÉ : le client a joint ${docs.length} fichier(s) d'inspiration (voir plus bas). Ta pub DOIT s'en inspirer clairement et visiblement : mêmes couleurs dominantes (style.colors / accent), même rythme (vidéo rapide → blocs courts et bpm élevé ; lent → moins de blocs, bpm bas), même ambiance, mêmes arguments / produits. Dans "message", explique au client ce que tu as repris de ses fichiers.\n\n` : ''}Demande du client : ${prompt}${mediaInfo}${brandInfo}${docsInfo}\n\nCrée le concept puis le projet.`;
+    ? `Projet actuel :\n${JSON.stringify(project)}${mediaInfo}${brandInfo}${docsInfo}\n\n${prefsText}Modification demandée : ${prompt}`
+    : `${docs.length ? `⚠️ PRIORITÉ : le client a joint ${docs.length} fichier(s) d'inspiration (voir plus bas). Ta pub DOIT s'en inspirer clairement et visiblement : mêmes couleurs dominantes (style.colors / accent), même rythme (vidéo rapide → blocs courts et bpm élevé ; lent → moins de blocs, bpm bas), même ambiance, mêmes arguments / produits. Dans "message", explique au client ce que tu as repris de ses fichiers.\n\n` : ''}${prefsText}Demande du client : ${prompt}${mediaInfo}${brandInfo}${docsInfo}\n\nCrée le concept puis le projet.`;
 
   try {
     let lastError = '';
@@ -626,8 +631,21 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
         const aiBrand = typeof r.brand === 'string' ? r.brand.trim() : '';
         const known = [prompt, brand?.company?.name, brand?.site?.title, brand?.notes, project?.brand].filter(Boolean).join(' ').toLowerCase();
         const brandName = (aiBrand && known.includes(aiBrand.toLowerCase()) ? aiBrand : brand?.company?.name ?? '').slice(0, 40);
-        const safeBlocks = aiBrand && !brandName ? scrubBrand(blocks, aiBrand) : blocks;
-        composed = composeProject(safeBlocks, inspiredStyle(safeStyle(r.style), docs), { brand: brandName, hasLogo: Boolean(parsed.data.hasLogo), format: fmt, photos: photos?.length ?? 0 });
+        let safeBlocks = aiBrand && !brandName ? scrubBrand(blocks, aiBrand) : blocks;
+        // Préférences du client appliquées à coup sûr (pas seulement « demandées » à l'IA).
+        const st = inspiredStyle(safeStyle(r.style), docs);
+        if (prefs?.colors?.length) st.accent = prefs.colors[0];
+        if (prefs?.look === 'clair') st.backdrop = 'paper';
+        else if (prefs?.look === 'colore') st.backdrop = 'mesh';
+        else if (prefs?.look === 'neon') st.backdrop = 'aurora';
+        if (prefs?.pace) st.bpm = prefs.pace === 'calme' ? 88 : prefs.pace === 'rapide' ? 134 : 118;
+        if (prefs?.transition) st.transition = prefs.transition;
+        if (prefs?.textStyles?.length) {
+          const allowed = prefs.textStyles;
+          let k = 0;
+          safeBlocks = safeBlocks.map((bl) => (bl.block === 'kinetic' && (!bl.style || !allowed.includes(bl.style as never)) ? ({ ...bl, style: allowed[k++ % allowed.length] } as Block) : bl));
+        }
+        composed = composeProject(safeBlocks, st, { brand: brandName, hasLogo: Boolean(parsed.data.hasLogo), format: fmt, photos: photos?.length ?? 0 });
         raw = { message: r.message, plan: r.plan, question: r.question, project: composed };
       }
       const wrapped = Boolean(raw && typeof raw === 'object' && 'project' in (raw as Record<string, unknown>));
@@ -653,8 +671,9 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
         scenes = scenes.map((sc) => (sc.type === 'mockup' && sc.photo !== undefined && sc.photo >= photoCount ? { ...sc, photo: undefined } : sc));
         // Une pub créée doit tenir ses ~15 s : si l'IA a fait trop court, on étire le rythme.
         const sum = scenes.reduce((n, sc) => n + sc.duration, 0);
-        if (!project && sum > 0 && sum < 13 && !/\b([1-9]|1[0-2]) ?(s|sec|secondes)\b/i.test(prompt)) {
-          const k = 15 / sum;
+        const target = prefs?.duration ?? 15;
+        if (!project && sum > 0 && (prefs?.duration ? Math.abs(sum - target) > 1.5 : sum < 13) && !/\b([1-9]|[1-5][0-9]) ?(s|sec|secondes)\b/i.test(prompt)) {
+          const k = target / sum;
           scenes = scenes.map((sc) => ({ ...sc, duration: Math.round(Math.min(sc.type === 'video' ? 15 : 8, sc.duration * k) * 10) / 10 }));
         }
         // Coupes calées sur la musique : chaque durée = un nombre entier de temps (2 temps minimum).
@@ -668,7 +687,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
           });
         }
         if (scenes.length) {
-          let finalProject: MotionProject = { ...result.data, scenes };
+          let finalProject: MotionProject = { ...result.data, scenes, ...(prefs?.transition ? { transition: prefs.transition } : {}) };
           if (free) finalProject = clampToFree(finalProject);
           let quota = { tier, used, limit: free ? FREE_MOTION_CREATIONS : null };
           if (!project) {

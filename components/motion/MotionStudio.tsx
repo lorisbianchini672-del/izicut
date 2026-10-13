@@ -49,6 +49,8 @@ import { buildSignatureAd } from '@/lib/motion/signature';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { drawFrame, layerBoxes, locate, type MotionAssets } from '@/lib/motion/render';
 import { LayerEditor, type LayerSel } from '@/components/motion/LayerEditor';
+import { AiPrefsPanel, loadPrefs } from '@/components/motion/AiPrefsPanel';
+import type { AiPrefs } from '@/lib/motion/prefs';
 import { BACKDROPS, BACKDROP_LABELS, drawBackdrop, type BackdropKind } from '@/lib/motion/gl-bg';
 import { SoundPlayer, renderSoundtrack, type VoiceTrack } from '@/lib/motion/sound';
 import { exportExact, mixWithMedia } from '@/lib/motion/export';
@@ -467,6 +469,8 @@ export function MotionStudio() {
 
   // ---------- Édition directe dans la vidéo (sélection + déplacement des calques) ----------
   const [sel, setSel] = useState<LayerSel | null>(null);
+  const [aiPrefs, setAiPrefs] = useState<AiPrefs>({});
+  useEffect(() => { setAiPrefs(loadPrefs()); }, []);
   const dragRef = useRef<{ layer: LayerSel | null; last: { x: number; y: number }; moved: boolean } | null>(null);
   const pointAt = (e: { clientX: number; clientY: number }) => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -839,6 +843,7 @@ export function MotionStudio() {
             ...(docs.length ? { docs } : {}),
             format: project.format,
             currentScene: current,
+            ...(Object.keys(aiPrefs).length ? { prefs: aiPrefs } : {}),
             ...(photos.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photos) }) : {}),
             brand: brand.company || brand.notes.trim() || brand.brief || brand.site || brand.link ? { ...brand, site: brand.site ?? null, link: brand.link || undefined } : undefined
           })
@@ -1238,6 +1243,7 @@ export function MotionStudio() {
             ) : null}
             {tab === 'ia' ? (
               <div className="flex h-full flex-col gap-3">
+                <AiPrefsPanel prefs={aiPrefs} onChange={setAiPrefs} />
                 {loggedIn === false ? (
                   <p className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-fg-muted">
                     <Lock className="mr-1 inline h-3.5 w-3.5" /> <Link href="/login?next=/studio" className="font-semibold text-neon underline">Connectez-vous</Link> (gratuit) pour que l’IA crée et modifie vos vidéos. Vous pouvez déjà tester les modèles et tout modifier à la main.
