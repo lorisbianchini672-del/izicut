@@ -22,41 +22,26 @@ function Blobs({ className = '' }: { className?: string }) {
   );
 }
 
-/** Lignes ondulées très légères en fond de panneau. */
-function Waves() {
-  return (
-    <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.35]" viewBox="0 0 1200 600" preserveAspectRatio="none">
-      {Array.from({ length: 22 }, (_, i) => (
-        <path key={i} d={`M -50 ${80 + i * 22} C 300 ${-40 + i * 30}, 700 ${260 + i * 14}, 1250 ${40 + i * 24}`} fill="none" stroke="#0b0b14" strokeOpacity="0.07" strokeWidth="1" />
-      ))}
-    </svg>
-  );
-}
-
-const TILE_BG = ['#d9d3f5', '#ffe6a6', '#f9d0c4', '#d9cff7', '#c8f0dd', '#ffd3dc'];
 const REELS = [
-  { biz: 'Boulangerie', line: 'Le vrai pain', accent: 'au levain', emoji: '🥖' },
-  { biz: 'Salle de sport', line: '-50 %', accent: 'le 1er mois', emoji: '💪' },
-  { biz: 'Restaurant', line: 'Nouvelle', accent: 'carte d’automne', emoji: '🍝' },
-  { biz: 'Coiffeur', line: 'Ton style,', accent: 'ta signature', emoji: '✂️' },
-  { biz: 'Boutique', line: 'Collection', accent: 'hiver', emoji: '🛍️' },
-  { biz: 'Association', line: 'Rejoins', accent: 'l’aventure', emoji: '🤝' }
+  { biz: 'Boulangerie', line: 'Le vrai pain', accent: 'au levain', tone: '#f5b5c3' },
+  { biz: 'Salle de sport', line: '-50 %', accent: 'le 1er mois', tone: '#f9cfa9' },
+  { biz: 'Restaurant', line: 'Nouvelle', accent: 'carte d’automne', tone: '#f5b5c3' },
+  { biz: 'Coiffeur', line: 'Ton style,', accent: 'ta signature', tone: '#f9cfa9' },
+  { biz: 'Boutique', line: 'Collection', accent: 'hiver', tone: '#f5b5c3' },
+  { biz: 'Association', line: 'Rejoins', accent: 'l’aventure', tone: '#f9cfa9' }
 ];
 
-/** Tuile arrondie façon « reel » : un mini motion design qui tourne en boucle. */
-function ReelTile({ i, className = '' }: { i: number; className?: string }) {
+/** Aperçu vertical d'une vidéo : une seule carte sombre, sans cadre autour. */
+function VideoCard({ i, className = '' }: { i: number; className?: string }) {
   const r = REELS[i % REELS.length];
   return (
-    <div className={`relative overflow-hidden rounded-[28px] shadow-[0_30px_60px_-35px_rgb(60_40_60/0.45)] ${className}`} style={{ background: TILE_BG[i % TILE_BG.length] }}>
-      <div className="absolute inset-[10%] overflow-hidden rounded-[20px] bg-[#0b0b14]">
-        <div className="absolute inset-0 bg-[radial-gradient(120%_70%_at_50%_0%,rgb(11_11_20/0.55),transparent_60%)]" />
-        <span className="izl-pop absolute left-1/2 top-[22%] -translate-x-1/2 text-[2.2em]" style={{ animationDelay: `${i * 0.35}s` }}>{r.emoji}</span>
-        <div className="absolute inset-x-[8%] top-[48%] text-center font-display font-extrabold uppercase leading-[0.95] tracking-[-0.03em] text-white">
-          <span className="izl-rise block text-[1.05em]" style={{ animationDelay: `${i * 0.35 + 0.2}s` }}>{r.line}</span>
-          <span className="izl-rise block text-[0.95em] text-[#ffb3c6]" style={{ animationDelay: `${i * 0.35 + 0.45}s` }}>{r.accent}</span>
-        </div>
-        <span className="absolute bottom-[8%] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white/15 px-2 py-0.5 text-[0.42em] font-semibold text-white/90 backdrop-blur">{r.biz}</span>
-        <span className="absolute inset-x-[10%] top-[6%] h-[3px] overflow-hidden rounded-full bg-white/20"><span className="izl-bar block h-full bg-white" style={{ animationDelay: `${i * 0.35}s` }} /></span>
+    <div className={`relative aspect-[9/16] overflow-hidden rounded-[22px] bg-[#0b0b14] ${className}`}>
+      <div className="absolute inset-0 opacity-60" style={{ background: `radial-gradient(90% 55% at 50% 100%, ${r.tone}55, transparent 70%)` }} />
+      <span className="absolute inset-x-[9%] top-[5%] h-[3px] overflow-hidden rounded-full bg-white/20"><span className="izl-bar block h-full bg-white" style={{ animationDelay: `${i * 0.35}s` }} /></span>
+      <span className="absolute left-[9%] top-[9%] text-[0.5em] font-semibold uppercase tracking-[0.14em] text-white/60">{r.biz}</span>
+      <div className="absolute inset-x-[9%] top-1/2 -translate-y-1/2 font-display font-extrabold uppercase leading-[0.95] tracking-[-0.03em] text-white">
+        <span className="izl-rise block text-[1.05em]" style={{ animationDelay: `${i * 0.35}s` }}>{r.line}</span>
+        <span className="izl-rise block text-[0.95em]" style={{ animationDelay: `${i * 0.35 + 0.25}s`, color: r.tone }}>{r.accent}</span>
       </div>
     </div>
   );
@@ -72,6 +57,16 @@ function H2({ children, className = '' }: { children: ReactNode; className?: str
 
 function Lead({ children }: { children: ReactNode }) {
   return <p className="mx-auto mt-5 max-w-2xl text-pretty text-base leading-relaxed text-[#55525f] sm:text-lg">{children}</p>;
+}
+
+function SectionHead({ eyebrow, title, lead }: { eyebrow?: string; title: string; lead?: string }) {
+  return (
+    <div className="mx-auto max-w-3xl text-center">
+      {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
+      <H2>{title}</H2>
+      {lead ? <Lead>{lead}</Lead> : null}
+    </div>
+  );
 }
 
 const btnDark = 'inline-flex items-center justify-center gap-2 rounded-full bg-[#0b0b14] px-7 py-4 text-[15px] font-semibold text-white shadow-[0_14px_30px_-14px_rgb(11_11_20/0.7)] transition hover:-translate-y-0.5 hover:bg-[#26232e]';
@@ -98,11 +93,11 @@ function Hero() {
           <Link href="/#pricing" className={btnLight}>Voir les tarifs</Link>
         </div>
       </div>
-      <div className="relative mx-auto mt-16 grid max-w-6xl grid-cols-2 items-end gap-4 px-4 text-[18px] sm:grid-cols-4 sm:gap-6 sm:px-6 sm:text-[22px]">
-        <ReelTile i={0} className="aspect-[3/4]" />
-        <ReelTile i={1} className="aspect-[3/4] sm:mb-10" />
-        <ReelTile i={2} className="hidden aspect-[3/4] sm:block" />
-        <ReelTile i={3} className="hidden aspect-[3/4] sm:mb-10 sm:block" />
+      <div className="relative mx-auto mt-16 grid max-w-5xl grid-cols-2 gap-4 px-4 text-[18px] sm:grid-cols-4 sm:gap-5 sm:px-6 sm:text-[20px]">
+        <VideoCard i={0} />
+        <VideoCard i={1} />
+        <VideoCard i={2} className="hidden sm:block" />
+        <VideoCard i={3} className="hidden sm:block" />
       </div>
     </section>
   );
@@ -131,23 +126,16 @@ const FEATURES = [
 ];
 function Features() {
   return (
-    <section id="features" className="px-3 py-20 sm:px-6 sm:py-28">
-      <div className="relative mx-auto max-w-7xl overflow-hidden rounded-[40px] bg-[#f3f2ef] px-5 py-16 sm:px-12 sm:py-24">
-        <Waves />
-        <div className="relative text-center">
-          <Eyebrow>Tout-en-un</Eyebrow>
-          <H2>Tout ce qu’il faut pour vos vidéos</H2>
-          <Lead>De l’idée à la vidéo prête à publier : création, montage, sous-titres, musique et export HD, au même endroit.</Lead>
-        </div>
-        <div className="relative mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map(({ icon: Icon, title, text }) => (
-            <article key={title} className="rounded-[26px] bg-white p-7 shadow-[0_1px_0_rgb(11_11_20/0.04),0_20px_40px_-30px_rgb(60_40_60/0.35)] transition hover:-translate-y-1">
-              <Icon className="h-9 w-9 text-[#0b0b14]" aria-hidden />
-              <h3 className="mt-6 font-display text-2xl font-bold tracking-[-0.03em] text-[#0b0b14]">{title}</h3>
-              <p className="mt-2 leading-relaxed text-[#55525f]">{text}</p>
-            </article>
-          ))}
-        </div>
+    <section id="features" className="px-4 py-24 sm:px-6 sm:py-32">
+      <SectionHead eyebrow="Tout-en-un" title="Tout ce qu’il faut pour vos vidéos" lead="De l’idée à la vidéo prête à publier : création, montage, sous-titres, musique et export HD, au même endroit." />
+      <div className="mx-auto mt-16 grid max-w-6xl gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+        {FEATURES.map(({ icon: Icon, title, text }) => (
+          <article key={title} className="border-t border-[#0b0b14]/10 pt-6">
+            <Icon className="h-7 w-7 text-[#0b0b14]" aria-hidden />
+            <h3 className="mt-5 font-display text-xl font-bold tracking-[-0.02em] text-[#0b0b14]">{title}</h3>
+            <p className="mt-2 leading-relaxed text-[#55525f]">{text}</p>
+          </article>
+        ))}
       </div>
     </section>
   );
@@ -160,29 +148,17 @@ const STEPS = [
 ];
 function HowItWorks() {
   return (
-    <section id="how" className="px-3 py-20 sm:px-6 sm:py-28">
-      <div className="mx-auto max-w-7xl text-center">
-        <Eyebrow>Comment ça marche</Eyebrow>
-        <H2>Simple comme bonjour</H2>
-        <Lead>Pas de logiciel à apprendre, pas de timeline : trois étapes et votre vidéo est prête.</Lead>
-      </div>
-      <div className="mx-auto mt-14 grid max-w-7xl items-center gap-6 lg:grid-cols-[1fr_1.1fr]">
-        <div className="relative overflow-hidden rounded-[36px] p-10 sm:p-14">
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,#fbe0d6,#f6b3c2_45%,#f9d7c8)]" />
-          <ReelTile i={4} className="relative mx-auto aspect-[3/4] max-w-[340px] text-[26px]" />
-        </div>
-        <div className="space-y-4">
-          {STEPS.map(([n, t, d]) => (
-            <article key={n} className="rounded-[28px] border border-[#0b0b14]/[0.06] bg-[#f9f8f6] p-7 text-left sm:p-8">
-              <div className="flex items-center gap-4">
-                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#0b0b14] font-display text-base font-bold text-white">{n}</span>
-                <h3 className="font-display text-2xl font-bold tracking-[-0.03em] text-[#0b0b14]">{t}</h3>
-              </div>
-              <p className="mt-4 leading-relaxed text-[#55525f]">{d}</p>
-            </article>
-          ))}
-        </div>
-      </div>
+    <section id="how" className="bg-white px-4 py-24 sm:px-6 sm:py-32">
+      <SectionHead eyebrow="Comment ça marche" title="Simple comme bonjour" lead="Pas de logiciel à apprendre, pas de timeline : trois étapes et votre vidéo est prête." />
+      <ol className="mx-auto mt-16 grid max-w-6xl gap-x-10 gap-y-12 md:grid-cols-3">
+        {STEPS.map(([n, t, d]) => (
+          <li key={n} className="border-t-2 border-[#0b0b14] pt-6">
+            <span className="font-display text-sm font-bold tracking-[0.1em] text-[#0b0b14]/50">{n}</span>
+            <h3 className="mt-3 font-display text-2xl font-bold tracking-[-0.03em] text-[#0b0b14]">{t}</h3>
+            <p className="mt-3 leading-relaxed text-[#55525f]">{d}</p>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
@@ -218,33 +194,26 @@ function CheckoutButton({ planKey, dark }: { planKey: string; dark: boolean }) {
 
 function Pricing() {
   return (
-    <section id="pricing" className="relative overflow-hidden px-3 py-20 sm:px-6 sm:py-28">
-      <Blobs className="opacity-70" />
-      <div className="relative mx-auto max-w-7xl text-center">
-        <Eyebrow>Tarifs</Eyebrow>
-        <H2>Commencez gratuitement, passez Pro quand vous voulez</H2>
-        <Lead>Sans engagement, résiliable à tout moment. Vos premières vidéos sont offertes.</Lead>
-      </div>
-      <div className="relative mx-auto mt-14 grid max-w-7xl gap-5 lg:grid-cols-3">
+    <section id="pricing" className="px-4 py-24 sm:px-6 sm:py-32">
+      <SectionHead eyebrow="Tarifs" title="Commencez gratuitement, passez Pro quand vous voulez" lead="Sans engagement, résiliable à tout moment. Vos premières vidéos sont offertes." />
+      <div className="mx-auto mt-16 grid max-w-6xl gap-5 lg:grid-cols-3">
         {DISPLAY_PLAN_KEYS.map((key) => {
           const p = PLANS[key];
           const mid = key === 'pro';
           return (
-            <article key={key} className={`rounded-[34px] bg-white p-3 shadow-[0_30px_60px_-40px_rgb(60_40_60/0.45)] ${mid ? 'lg:-translate-y-4' : ''}`}>
-              <div className="rounded-[26px] bg-[linear-gradient(135deg,#fbe1d6,#f5b5c3_55%,#f8cdbd)] p-7 text-left">
-                <h3 className="font-display text-3xl font-extrabold tracking-[-0.03em] text-[#0b0b14]">{p.name}</h3>
-                <p className="mt-2 text-[#3d3a48]">{p.description}</p>
-                <p className="mt-6 font-display text-5xl font-extrabold tracking-[-0.04em] text-[#0b0b14]">{p.free ? '0 €' : formatPrice(p.amount)}<span className="ml-1 text-lg font-medium text-[#3d3a48]">/mois</span></p>
+            <article key={key} className={`flex flex-col rounded-[24px] border bg-white p-8 text-left ${mid ? 'border-[#0b0b14] border-2' : 'border-[#0b0b14]/10'}`}>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-display text-2xl font-extrabold tracking-[-0.03em] text-[#0b0b14]">{p.name}</h3>
+                {mid ? <span className="rounded-full bg-[#0b0b14] px-3 py-1 text-xs font-semibold text-white">Populaire</span> : null}
               </div>
-              <div className="p-5 pt-6 text-left">
-                <CheckoutButton planKey={key} dark={mid} />
-                <p className="mt-6 font-semibold text-[#0b0b14]">Inclus</p>
-                <ul className="mt-3 space-y-2.5">
-                  {p.features.map((f) => (
-                    <li key={f} className="flex gap-3 text-[#3d3a48]"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#0b0b14]"><Check className="h-3 w-3 text-white" aria-hidden /></span>{f}</li>
-                  ))}
-                </ul>
-              </div>
+              <p className="mt-2 text-[#55525f]">{p.description}</p>
+              <p className="mt-6 font-display text-5xl font-extrabold tracking-[-0.04em] text-[#0b0b14]">{p.free ? '0 €' : formatPrice(p.amount)}<span className="ml-1 text-lg font-medium text-[#55525f]">/mois</span></p>
+              <div className="mt-6"><CheckoutButton planKey={key} dark={mid} /></div>
+              <ul className="mt-8 space-y-3 border-t border-[#0b0b14]/10 pt-6">
+                {p.features.map((f) => (
+                  <li key={f} className="flex gap-3 text-[#3d3a48]"><Check className="mt-0.5 h-5 w-5 shrink-0 text-[#0b0b14]" aria-hidden />{f}</li>
+                ))}
+              </ul>
             </article>
           );
         })}
@@ -260,24 +229,16 @@ const USES = [
 ];
 function UseCases() {
   return (
-    <section className="px-3 py-20 sm:px-6 sm:py-28">
-      <div className="relative mx-auto max-w-7xl overflow-hidden rounded-[40px] bg-[#f3f2ef] px-5 py-16 sm:px-12 sm:py-24">
-        <Waves />
-        <div className="relative text-center">
-          <Eyebrow>Exemples</Eyebrow>
-          <H2>Ce que vous pouvez créer</H2>
-          <Lead>Commerçants, artisans, associations, créateurs : une vidéo pro pour chaque occasion.</Lead>
-        </div>
-        <div className="relative mt-14 grid gap-5 lg:grid-cols-3">
-          {USES.map(({ icon: Icon, t, d }, i) => (
-            <article key={t} className="rounded-[28px] bg-white p-8 text-left shadow-[0_20px_40px_-30px_rgb(60_40_60/0.35)]">
-              <Icon className="h-8 w-8 text-[#0b0b14]" aria-hidden />
-              <h3 className="mt-6 font-display text-2xl font-bold tracking-[-0.03em] text-[#0b0b14]">{t}</h3>
-              <p className="mt-3 leading-relaxed text-[#55525f]">{d}</p>
-              <ReelTile i={i + 1} className="mt-7 aspect-[16/10] text-[15px]" />
-            </article>
-          ))}
-        </div>
+    <section className="bg-white px-4 py-24 sm:px-6 sm:py-32">
+      <SectionHead eyebrow="Exemples" title="Ce que vous pouvez créer" lead="Commerçants, artisans, associations, créateurs : une vidéo pro pour chaque occasion." />
+      <div className="mx-auto mt-16 grid max-w-5xl gap-10 sm:grid-cols-3">
+        {USES.map(({ t, d }, i) => (
+          <article key={t} className="text-left">
+            <VideoCard i={i + 1} className="mx-auto w-full max-w-[260px] text-[22px]" />
+            <h3 className="mt-6 font-display text-xl font-bold tracking-[-0.02em] text-[#0b0b14]">{t}</h3>
+            <p className="mt-2 leading-relaxed text-[#55525f]">{d}</p>
+          </article>
+        ))}
       </div>
     </section>
   );
@@ -293,27 +254,18 @@ const FAQ = [
 function Faq() {
   const [open, setOpen] = useState<number | null>(0);
   return (
-    <section id="faq" className="px-3 py-20 sm:px-6 sm:py-28">
-      <div className="mx-auto max-w-7xl text-center">
-        <H2 className="mt-0">Questions & réponses</H2>
-        <Lead>Tout ce qu’il faut savoir pour créer votre première vidéo.</Lead>
-      </div>
-      <div className="mx-auto mt-14 grid max-w-7xl items-start gap-6 lg:grid-cols-2">
-        <div className="relative hidden overflow-hidden rounded-[36px] p-14 lg:block">
-          <div className="absolute inset-0 bg-[linear-gradient(140deg,#fbe3dc,#f5b5c3_50%,#f9d0c4)]" />
-          <ReelTile i={5} className="relative mx-auto aspect-[3/4] max-w-[360px] text-[26px]" />
-        </div>
-        <div className="space-y-4">
-          {FAQ.map(([q, a], i) => (
-            <div key={q} className="rounded-[26px] border border-[#0b0b14]/[0.06] bg-[#f9f8f6] px-6 py-5 text-left sm:px-8">
-              <button type="button" onClick={() => setOpen(open === i ? null : i)} aria-expanded={open === i} className="flex w-full cursor-pointer items-center justify-between gap-4 text-left">
-                <span className="font-display text-lg font-semibold tracking-[-0.02em] text-[#0b0b14] sm:text-2xl">{q}</span>
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0b0b14] text-white">{open === i ? <Minus className="h-5 w-5" /> : <Plus className="h-5 w-5" />}</span>
-              </button>
-              {open === i ? <p className="mt-4 leading-relaxed text-[#55525f]">{a}</p> : null}
-            </div>
-          ))}
-        </div>
+    <section id="faq" className="px-4 py-24 sm:px-6 sm:py-32">
+      <SectionHead title="Questions & réponses" lead="Tout ce qu’il faut savoir pour créer votre première vidéo." />
+      <div className="mx-auto mt-14 max-w-3xl border-t border-[#0b0b14]/10">
+        {FAQ.map(([q, a], i) => (
+          <div key={q} className="border-b border-[#0b0b14]/10 py-5 text-left">
+            <button type="button" onClick={() => setOpen(open === i ? null : i)} aria-expanded={open === i} className="flex w-full cursor-pointer items-center justify-between gap-4 text-left">
+              <span className="font-display text-lg font-semibold tracking-[-0.02em] text-[#0b0b14] sm:text-xl">{q}</span>
+              {open === i ? <Minus className="h-5 w-5 shrink-0 text-[#0b0b14]" aria-hidden /> : <Plus className="h-5 w-5 shrink-0 text-[#0b0b14]" aria-hidden />}
+            </button>
+            {open === i ? <p className="mt-3 pr-8 leading-relaxed text-[#55525f]">{a}</p> : null}
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -321,21 +273,9 @@ function Faq() {
 
 function FinalCta() {
   return (
-    <section className="relative overflow-hidden py-28 sm:py-36">
-      <Waves />
-      <div className="relative mx-auto max-w-7xl px-4 text-[13px] sm:text-[16px]">
-        <ReelTile i={0} className="absolute left-[3%] top-[-6%] hidden aspect-square w-[15%] lg:block" />
-        <ReelTile i={2} className="absolute left-[40%] top-[-14%] hidden aspect-square w-[16%] lg:block" />
-        <ReelTile i={4} className="absolute right-[6%] top-[-8%] hidden aspect-square w-[15%] lg:block" />
-        <ReelTile i={1} className="absolute bottom-[-12%] left-[6%] hidden aspect-square w-[16%] lg:block" />
-        <ReelTile i={3} className="absolute bottom-[-18%] left-[42%] hidden aspect-square w-[13%] lg:block" />
-        <ReelTile i={5} className="absolute bottom-[-6%] right-[3%] hidden aspect-square w-[18%] lg:block" />
-        <div className="relative mx-auto max-w-3xl py-24 text-center lg:py-40">
-          <Eyebrow>Lancez-vous</Eyebrow>
-          <H2>Votre première vidéo en 2 minutes</H2>
-          <div className="mt-9"><Link href="/studio" className={btnDark}>Créer gratuitement <ArrowRight className="h-4 w-4" aria-hidden /></Link></div>
-        </div>
-      </div>
+    <section className="border-t border-[#0b0b14]/10 px-4 py-24 text-center sm:py-32">
+      <SectionHead eyebrow="Lancez-vous" title="Votre première vidéo en 2 minutes" />
+      <div className="mt-9"><Link href="/studio" className={btnDark}>Créer gratuitement <ArrowRight className="h-4 w-4" aria-hidden /></Link></div>
     </section>
   );
 }
