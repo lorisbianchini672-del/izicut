@@ -22,28 +22,57 @@ function Blobs({ className = '' }: { className?: string }) {
   );
 }
 
-const REELS = [
-  { biz: 'Boulangerie', line: 'Le vrai pain', accent: 'au levain', tone: '#f5b5c3' },
-  { biz: 'Salle de sport', line: '-50 %', accent: 'le 1er mois', tone: '#f9cfa9' },
-  { biz: 'Restaurant', line: 'Nouvelle', accent: 'carte d’automne', tone: '#f5b5c3' },
-  { biz: 'Coiffeur', line: 'Ton style,', accent: 'ta signature', tone: '#f9cfa9' },
-  { biz: 'Boutique', line: 'Collection', accent: 'hiver', tone: '#f5b5c3' },
-  { biz: 'Association', line: 'Rejoins', accent: 'l’aventure', tone: '#f9cfa9' }
-];
-
-/** Aperçu vertical d'une vidéo : une seule carte sombre, sans cadre autour. */
-function VideoCard({ i, className = '' }: { i: number; className?: string }) {
-  const r = REELS[i % REELS.length];
+/** Quatre aperçus de pubs, chacun avec sa propre mise en page. */
+function Frame({ biz, glow, children, className = '' }: { biz: string; glow: string; children: ReactNode; className?: string }) {
   return (
-    <div className={`relative aspect-[9/16] overflow-hidden rounded-[22px] bg-[#0b0b14] ${className}`}>
-      <div className="absolute inset-0 opacity-60" style={{ background: `radial-gradient(90% 55% at 50% 100%, ${r.tone}55, transparent 70%)` }} />
-      <span className="absolute inset-x-[9%] top-[5%] h-[3px] overflow-hidden rounded-full bg-white/20"><span className="izl-bar block h-full bg-white" style={{ animationDelay: `${i * 0.35}s` }} /></span>
-      <span className="absolute left-[9%] top-[9%] text-[0.5em] font-semibold uppercase tracking-[0.14em] text-white/60">{r.biz}</span>
-      <div className="absolute inset-x-[9%] top-1/2 -translate-y-1/2 font-display font-extrabold uppercase leading-[0.95] tracking-[-0.03em] text-white">
-        <span className="izl-rise block text-[1.05em]" style={{ animationDelay: `${i * 0.35}s` }}>{r.line}</span>
-        <span className="izl-rise block text-[0.95em]" style={{ animationDelay: `${i * 0.35 + 0.25}s`, color: r.tone }}>{r.accent}</span>
-      </div>
+    <div className={`relative aspect-[9/16] overflow-hidden rounded-[22px] bg-[#0b0b14] text-white ${className}`}>
+      <div className="absolute inset-0" style={{ background: `radial-gradient(100% 60% at 50% 105%, ${glow}, transparent 70%)` }} />
+      <span className="absolute inset-x-[9%] top-[5%] h-[3px] overflow-hidden rounded-full bg-white/20"><span className="izl-bar block h-full bg-white" /></span>
+      <span className="absolute left-[9%] top-[9%] text-[0.5em] font-semibold uppercase tracking-[0.14em] text-white/60">{biz}</span>
+      <div className="absolute inset-x-[9%] bottom-[9%] top-[17%] flex flex-col">{children}</div>
     </div>
+  );
+}
+
+function PreviewBakery({ className = '' }: { className?: string }) {
+  return (
+    <Frame className={className} biz="Boulangerie" glow="rgb(245 181 195 / 0.45)">
+      <p className="mt-auto font-display text-[1.25em] font-extrabold leading-[0.95] tracking-[-0.03em]">Le vrai pain<br /><span className="text-[#f5b5c3]">au levain.</span></p>
+      <span className="mt-[0.7em] w-fit rounded-full bg-white px-[0.7em] py-[0.25em] text-[0.55em] font-bold text-[#0b0b14]">Dès 6 h · 1,20 €</span>
+    </Frame>
+  );
+}
+
+function PreviewGym({ className = '' }: { className?: string }) {
+  return (
+    <Frame className={className} biz="Salle de sport" glow="rgb(249 207 169 / 0.4)">
+      <p className="my-auto text-center font-display text-[2.6em] font-extrabold leading-none tracking-[-0.05em] text-[#f9cfa9]">-50%</p>
+      <p className="text-center text-[0.6em] font-semibold uppercase tracking-[0.12em] text-white/80">le premier mois</p>
+    </Frame>
+  );
+}
+
+function PreviewRestaurant({ className = '' }: { className?: string }) {
+  return (
+    <Frame className={className} biz="Restaurant" glow="rgb(232 120 154 / 0.35)">
+      <p className="font-display text-[0.95em] font-extrabold leading-tight tracking-[-0.02em]">Nouvelle carte<br />d’automne</p>
+      <ul className="mt-[0.8em] space-y-[0.45em] text-[0.55em] text-white/85">
+        {['Velouté de courge', 'Risotto aux cèpes', 'Tarte aux figues'].map((d, k) => (
+          <li key={d} className="flex items-center gap-[0.6em]"><span className="grid h-[1.6em] w-[1.6em] place-items-center rounded-full bg-white/15 font-bold">{k + 1}</span>{d}</li>
+        ))}
+      </ul>
+    </Frame>
+  );
+}
+
+function PreviewHair({ className = '' }: { className?: string }) {
+  return (
+    <Frame className={className} biz="Coiffeur · face caméra" glow="rgb(245 181 195 / 0.3)">
+      <div className="mx-auto mt-[12%] h-[38%] w-[62%] rounded-t-full bg-gradient-to-b from-white/25 to-white/5" />
+      <p className="mt-auto text-center font-display text-[0.85em] font-extrabold uppercase leading-tight tracking-[-0.02em]">
+        Ton style, <span className="rounded-[0.2em] bg-[#f5b5c3] px-[0.15em] text-[#0b0b14]">ta</span> signature
+      </p>
+    </Frame>
   );
 }
 
@@ -94,10 +123,10 @@ function Hero() {
         </div>
       </div>
       <div className="relative mx-auto mt-16 grid max-w-5xl grid-cols-2 gap-4 px-4 text-[18px] sm:grid-cols-4 sm:gap-5 sm:px-6 sm:text-[20px]">
-        <VideoCard i={0} />
-        <VideoCard i={1} />
-        <VideoCard i={2} className="hidden sm:block" />
-        <VideoCard i={3} className="hidden sm:block" />
+        <PreviewBakery />
+        <PreviewGym />
+        <PreviewRestaurant className="hidden sm:block" />
+        <PreviewHair className="hidden sm:block" />
       </div>
     </section>
   );
@@ -118,7 +147,7 @@ function ForStrip() {
 
 const FEATURES = [
   { icon: Wand2, title: 'Une phrase suffit', text: '« Pub pour ma boulangerie, -20 % ce week-end » : l’IA écrit, anime et sonorise la vidéo complète.' },
-  { icon: Clapperboard, title: 'Montage façon After Effects', text: 'Déposez une vidéo où vous parlez : accroche brillante, sous-titres mot à mot, photos et listes animées.' },
+  { icon: Clapperboard, title: 'Montage automatique', text: 'Déposez une vidéo où vous parlez : accroche brillante, sous-titres mot à mot, photos et listes animées.' },
   { icon: Type, title: 'Sous-titres mot à mot', text: 'Chaque mot s’allume au moment exact où il est prononcé, dans les zones lisibles de TikTok.' },
   { icon: Palette, title: 'Vos couleurs, votre style', text: 'Ambiances, fonds animés, couleurs et textes modifiables en direct, la vidéo toujours sous les yeux.' },
   { icon: MessageSquareText, title: 'Retouches en parlant', text: '« Titre en jaune », « plus dynamique », « ajoute nos horaires » : l’IA comprend et applique.' },
@@ -231,11 +260,11 @@ function UseCases() {
   return (
     <section className="bg-white px-4 py-24 sm:px-6 sm:py-32">
       <SectionHead eyebrow="Exemples" title="Ce que vous pouvez créer" lead="Commerçants, artisans, associations, créateurs : une vidéo pro pour chaque occasion." />
-      <div className="mx-auto mt-16 grid max-w-5xl gap-10 sm:grid-cols-3">
-        {USES.map(({ t, d }, i) => (
-          <article key={t} className="text-left">
-            <VideoCard i={i + 1} className="mx-auto w-full max-w-[190px] text-[18px] sm:max-w-[260px] sm:text-[22px]" />
-            <h3 className="mt-6 font-display text-xl font-bold tracking-[-0.02em] text-[#0b0b14]">{t}</h3>
+      <div className="mx-auto mt-16 grid max-w-6xl gap-x-10 gap-y-12 sm:grid-cols-3">
+        {USES.map(({ icon: Icon, t, d }) => (
+          <article key={t} className="border-t border-[#0b0b14]/10 pt-6 text-left">
+            <Icon className="h-7 w-7 text-[#0b0b14]" aria-hidden />
+            <h3 className="mt-5 font-display text-xl font-bold tracking-[-0.02em] text-[#0b0b14]">{t}</h3>
             <p className="mt-2 leading-relaxed text-[#55525f]">{d}</p>
           </article>
         ))}

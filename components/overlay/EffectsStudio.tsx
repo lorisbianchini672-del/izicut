@@ -700,7 +700,7 @@ export function EffectsStudio({ clipId }: { clipId: string | null }) {
             {panel === 'styles' ? (
               <div className="space-y-4">
                 <div className="rounded-2xl border border-neon/40 bg-neon/[0.07] p-3">
-                  <p className="text-sm font-bold text-fg">🎬 Montage « After Effects » (vidéo où vous parlez)</p>
+                  <p className="text-sm font-bold text-fg">🎬 Montage automatique (vidéo où vous parlez)</p>
                   <p className="mt-1 text-[11px] leading-snug text-fg-muted">Accroche brillante, sous-titres mot à mot, photos qui surgissent sur vos mots clés, liste numérotée animée, zooms. Un rendu différent à chaque version.</p>
                   <p className="mt-1 text-[11px] text-fg-subtle">{listening !== null ? `J’écoute votre vidéo… ${Math.round(listening * 100)} %` : words.length ? `${words.length} mots compris ✓` : 'Pas de parole détectée pour l’instant.'}</p>
                   <div className="mt-2 grid grid-cols-2 gap-2">
