@@ -123,8 +123,8 @@ export function SiteNav() {
   return (
     <header
       className={`fixed inset-x-0 top-0 z-50 font-display transition-all duration-300 ${
-        scrolled || open ? 'border-b border-line bg-ink-950/80 backdrop-blur-xl' : `border-b border-transparent ${pathname === '/' ? 'izi-dark-scope' : ''}`
-      }`}
+        scrolled || open ? 'border-b border-line bg-ink-950/80 backdrop-blur-xl' : 'border-b border-transparent'
+      } ${pathname === '/' ? 'izi-dark-scope' : ''}`}
     >
       <nav aria-label="Navigation principale" className="mx-auto flex h-16 max-w-7xl items-center gap-8 px-4 sm:px-6 lg:px-8">
         <Link href="/" className="izi-focus flex items-center gap-2.5 rounded-lg" aria-label="izicut, accueil">

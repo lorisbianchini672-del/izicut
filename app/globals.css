@@ -755,8 +755,10 @@ html.izi-light .izi-dark-scope {
   --color-ink-950: #05060a; --color-ink-900: #0b0b14; --color-ink-850: #13131c; --color-ink-800: #1b1b26; --color-ink-700: #2a2a36;
   --color-fg: #ffffff; --color-fg-muted: #c9c7d1; --color-fg-subtle: #8f8c99;
   --color-neon: #ff8fb1; --color-neon-dim: #e8789a;
+  --color-line: rgb(255 255 255 / 0.08); --color-line-strong: rgb(255 255 255 / 0.15);
   color: #fff;
 }
 html.izi-light .izi-dark-scope .text-white { color: #fff; }
 html.izi-light .izi-dark-scope [class*="bg-white/"] { background-color: rgb(255 255 255 / 0.15); }
-html.izi-light .izi-dark-scope [class*="border-white/"] { border-color: rgb(255 255 255 / 0.15); }
+html.izi-light .izi-dark-scope [class*="border-white/"] { border-color: rgb(255 255 255 / 0.1); }
+html.izi-light .izi-dark-scope [class*="bg-white/\[0.08\]"] { background-color: rgb(255 255 255 / 0.08); }
