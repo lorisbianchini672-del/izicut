@@ -239,6 +239,11 @@ export function MotionStudio() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [isPaid, setIsPaid] = useState(false);
   const [prompt, setPrompt] = useState('');
+  // Idée tapée sur l'accueil (/studio?idee=…) : pré-remplit le chat.
+  useEffect(() => {
+    const idee = new URLSearchParams(window.location.search).get('idee');
+    if (idee) setPrompt(idee.slice(0, 600));
+  }, []);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [aiBusy, setAiBusy] = useState(false);
   useEffect(() => {

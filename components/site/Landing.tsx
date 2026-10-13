@@ -15,9 +15,9 @@ import { DISPLAY_PLAN_KEYS, PLANS, formatPrice } from '@/lib/plans';
 function Blobs({ className = '' }: { className?: string }) {
   return (
     <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>
-      <div className="izl-blob absolute -left-[12%] top-[8%] h-[70%] w-[55%] rounded-full bg-[#f4a6b8] opacity-55 blur-[110px]" />
-      <div className="izl-blob izl-blob-2 absolute right-[-10%] top-[-5%] h-[65%] w-[50%] rounded-full bg-[#f9cfa9] opacity-60 blur-[120px]" />
-      <div className="izl-blob izl-blob-3 absolute bottom-[-20%] left-[25%] h-[60%] w-[55%] rounded-full bg-[#f7c3cf] opacity-55 blur-[120px]" />
+      <div className="izl-blob absolute -left-[12%] top-[8%] h-[70%] w-[55%] rounded-full bg-[#7f9cff] opacity-35 blur-[110px]" />
+      <div className="izl-blob izl-blob-2 absolute right-[-10%] top-[-5%] h-[65%] w-[50%] rounded-full bg-[#f7a3e6] opacity-45 blur-[120px]" />
+      <div className="izl-blob izl-blob-3 absolute bottom-[-20%] left-[25%] h-[60%] w-[55%] rounded-full bg-[#ff8a7a] opacity-35 blur-[120px]" />
     </div>
   );
 }
@@ -105,24 +105,51 @@ const btnLight = 'inline-flex items-center justify-center gap-2 rounded-full bor
 /* Sections                                                            */
 /* ------------------------------------------------------------------ */
 
+/** Grand dégradé vif (bleu → rose → rouge) qui monte du bas, sur fond presque noir. */
+function HeroGlow() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0">
+      <div className="absolute inset-0 bg-[#171717]" />
+      <div className="absolute inset-x-[-20%] bottom-[-35%] h-[110%] rounded-[50%] bg-[#3b6cf6] opacity-90 blur-[90px]" />
+      <div className="absolute inset-x-[-15%] bottom-[-45%] h-[85%] rounded-[50%] bg-[#f28be0] blur-[90px]" />
+      <div className="absolute inset-x-[-10%] bottom-[-55%] h-[70%] rounded-[50%] bg-[#ff4d3d] blur-[80px]" />
+      <div className="absolute inset-x-0 top-0 h-[45%] bg-gradient-to-b from-[#171717] to-transparent" />
+    </div>
+  );
+}
+
+function HeroPrompt() {
+  const [idea, setIdea] = useState('');
+  const go = () => {
+    const q = idea.trim();
+    window.location.href = q ? `/studio?idee=${encodeURIComponent(q)}` : '/studio';
+  };
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); go(); }} className="mx-auto mt-9 w-full max-w-2xl rounded-[22px] border border-white/10 bg-[#1c1c1c]/95 p-4 text-left shadow-[0_30px_80px_-30px_rgb(0_0_0/0.8)]">
+      <label htmlFor="hero-idea" className="sr-only">Décrivez votre vidéo</label>
+      <textarea id="hero-idea" value={idea} onChange={(e) => setIdea(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } }} rows={2} placeholder="Demande à izicut une pub pour ma boulangerie, -20 % ce week-end…" className="w-full resize-none bg-transparent text-[15px] leading-relaxed text-white outline-none placeholder:text-white/45" />
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <span className="text-xs text-white/45">Gratuit · sans carte bancaire</span>
+        <button type="submit" aria-label="Créer la vidéo" className="grid h-10 w-10 cursor-pointer place-items-center rounded-full bg-white text-[#171717] transition hover:scale-105"><ArrowRight className="h-4 w-4" aria-hidden /></button>
+      </div>
+    </form>
+  );
+}
+
 function Hero() {
   return (
-    <section className="relative overflow-hidden pb-10 pt-32 sm:pt-40">
-      <Blobs />
+    <section className="izi-dark-scope relative overflow-hidden pb-16 pt-32 sm:pt-44">
+      <HeroGlow />
       <div className="relative mx-auto max-w-6xl px-4 text-center sm:px-6">
-        <Eyebrow>Pubs & vidéos en motion design · IA</Eyebrow>
-        <h1 className="mx-auto mt-6 max-w-5xl text-balance font-display text-[3rem] font-extrabold leading-[0.98] tracking-[-0.045em] text-[#0b0b14] sm:text-7xl lg:text-[5.6rem]">
+        <h1 className="mx-auto max-w-4xl text-balance font-display text-[2.8rem] font-extrabold leading-[1] tracking-[-0.045em] text-white sm:text-7xl">
           Des vidéos qui arrêtent le scroll.
         </h1>
-        <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-[#55525f]">
-          Décrivez votre pub ou déposez votre vidéo : l’IA la monte comme une agence — accroche, sous-titres mot à mot, animations, photos, musique. Prête pour TikTok et Instagram.
+        <p className="mx-auto mt-5 max-w-xl text-pretty text-lg leading-relaxed text-white/75">
+          Créez vos pubs et montez vos vidéos en discutant avec l’IA.
         </p>
-        <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Link href="/studio" className={btnDark}>Créer ma pub gratuitement <ArrowRight className="h-4 w-4" aria-hidden /></Link>
-          <Link href="/#pricing" className={btnLight}>Voir les tarifs</Link>
-        </div>
+        <HeroPrompt />
       </div>
-      <div className="relative mx-auto mt-16 grid max-w-5xl grid-cols-2 gap-4 px-4 text-[18px] sm:grid-cols-4 sm:gap-5 sm:px-6 sm:text-[20px]">
+      <div className="relative mx-auto mt-20 grid max-w-5xl grid-cols-2 gap-4 px-4 text-[18px] sm:grid-cols-4 sm:gap-5 sm:px-6 sm:text-[20px]">
         <PreviewBakery />
         <PreviewGym />
         <PreviewRestaurant className="hidden sm:block" />
