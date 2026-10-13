@@ -19,12 +19,12 @@ const gradText = `${GRAD} bg-clip-text text-transparent`;
 function Glow({ className = '' }: { className?: string }) {
   return (
     <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>
-      <div className="absolute inset-x-[-25%] bottom-[-30%] h-[95%] rounded-[50%] bg-[#3b6cf6] blur-[80px]" />
-      <div className="absolute inset-x-[-20%] bottom-[-40%] h-[72%] rounded-[50%] bg-[#f28be0] blur-[80px]" />
-      <div className="absolute inset-x-[-15%] bottom-[-42%] h-[55%] rounded-[50%] bg-[#ff4d3d] blur-[70px]" />
+      <div className="absolute inset-x-[-25%] bottom-[2%] h-[80%] rounded-[50%] bg-[#3b6cf6] blur-[80px]" />
+      <div className="absolute inset-x-[-20%] bottom-[0%] h-[58%] rounded-[50%] bg-[#f28be0] blur-[80px]" />
+      <div className="absolute inset-x-[-15%] bottom-[4%] h-[36%] rounded-[50%] bg-[#ff4d3d] blur-[70px]" />
       <div className="absolute inset-x-0 top-0 h-[35%] bg-gradient-to-b from-[#0a0a0a] to-transparent" />
       {/* Fondu doux vers le noir en bas : le dégradé ne se coupe jamais net. */}
-      <div className="absolute inset-x-0 bottom-0 h-[45%] bg-[linear-gradient(to_bottom,transparent,rgb(10_10_10/0.55)_45%,#0a0a0a)]" />
+      <div className="absolute inset-x-0 bottom-0 h-[26%] bg-[linear-gradient(to_bottom,transparent,rgb(10_10_10/0.6)_55%,#0a0a0a)]" />
     </div>
   );
 }
