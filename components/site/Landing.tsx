@@ -23,6 +23,8 @@ function Glow({ className = '' }: { className?: string }) {
       <div className="absolute inset-x-[-20%] bottom-[-40%] h-[72%] rounded-[50%] bg-[#f28be0] blur-[80px]" />
       <div className="absolute inset-x-[-15%] bottom-[-42%] h-[55%] rounded-[50%] bg-[#ff4d3d] blur-[70px]" />
       <div className="absolute inset-x-0 top-0 h-[35%] bg-gradient-to-b from-[#0a0a0a] to-transparent" />
+      {/* Fondu doux vers le noir en bas : le dégradé ne se coupe jamais net. */}
+      <div className="absolute inset-x-0 bottom-0 h-[45%] bg-[linear-gradient(to_bottom,transparent,rgb(10_10_10/0.55)_45%,#0a0a0a)]" />
     </div>
   );
 }
