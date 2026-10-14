@@ -651,7 +651,7 @@ export function MotionStudio() {
       const added: Photo[] = imgs.map((img, i) => ({ name: `Visuel du site ${start + i + 1}`, url: img.src, img }));
       const all = [...photosRef.current, ...added];
       if (added.length) { setPhotos(all); photosRef.current = all; }
-      setNotice(`${logoImg ? 'Logo' : 'Aucun logo'} et ${imgs.length} visuel${imgs.length > 1 ? 's' : ''} importé${imgs.length > 1 ? 's' : ''} depuis votre site ✓ Demandez maintenant une pub à l’IA.`);
+      setNotice(`${logoImg ? 'Logo' : 'Aucun logo'} et ${imgs.length} visuel${imgs.length > 1 ? 's' : ''} importé${imgs.length > 1 ? 's' : ''} depuis le site ✓`);
       return all;
     })();
   };
@@ -1070,7 +1070,8 @@ export function MotionStudio() {
     if (!loggedIn) { setBrandError('Connectez-vous (gratuit) pour analyser une entreprise.'); return; }
     setBrandBusy(true);
     setBrandError(null);
-    let b: BrandProfile = { ...brandRef.current };
+    // Nouvelle entreprise analysée : on repart d'une fiche vierge (pas de mélange avec l'ancienne).
+    let b: BrandProfile = { ...EMPTY_BRAND };
     const save = (next: BrandProfile) => { b = next; brandRef.current = next; setBrand(next); };
     try {
       const looksLikeUrl = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(value) && !/\s/.test(value);

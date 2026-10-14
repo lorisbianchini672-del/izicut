@@ -121,12 +121,17 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
       }
       if (style === 'stack') {
         // Lignes géantes empilées qui claquent tour à tour de gauche et de droite, la dernière en dégradé.
-        const gap = 0.12;
+        // Taille calée sur la longueur de la ligne (jamais de retour à la ligne qui ferait chevaucher les lignes).
+        const sizes = b.lines.map((l) => Math.round(Math.max(64, Math.min(n > 2 ? 120 : 150, ((c.vertical ? 1000 : 1700) / Math.max(4, l.length)) * 1.55))));
+        const H = c.vertical ? 1920 : 1080;
+        const tot = sizes.reduce((a, z) => a + z * 1.08, 0);
+        let yy = 0.47 - tot / 2 / H;
         b.lines.forEach((l, k) => {
-          const y = 0.47 + (k - (n - 1) / 2) * gap;
+          const y = yy + (sizes[k] * 1.08) / 2 / H;
+          yy += (sizes[k] * 1.08) / H;
           const from = k % 2 ? 1.7 : -0.7;
           const at = 0.08 + k * 0.32;
-          layers.push({ kind: 'text', x: [e(at, from), e(at + 0.42, 0.5, 'expo')], y, text: l.toUpperCase(), size: n > 2 ? 120 : 150, weight: 900, tracking: -0.02, maxWidth: 0.96, motionBlur: true, rotate: [e(at, k % 2 ? 6 : -6), e(at + 0.5, 0, 'spring')], ...(k === n - 1 ? { fill: { from: c.text, to: c.accent, angle: 90 } } : { color: c.text }) });
+          layers.push({ kind: 'text', x: [e(at, from), e(at + 0.42, 0.5, 'expo')], y, text: l.toUpperCase(), size: sizes[k], weight: 900, tracking: -0.02, maxWidth: 0.96, motionBlur: true, rotate: [e(at, k % 2 ? 6 : -6), e(at + 0.5, 0, 'spring')], ...(k === n - 1 ? { fill: { from: c.text, to: c.accent, angle: 90 } } : { color: c.text }) });
         });
         const dur = Math.min(4.5, 1.5 + n * 0.45);
         return { ...base, duration: dur, name: 'Empilé', camera: { zoom: [e(0, 1, 'linear'), e(0.5 + (n - 1) * 0.32, 1.08, 'expo'), e(dur, 1.03, 'smooth')] }, layers, cues: b.lines.map((_, k) => ({ at: 0.1 + k * 0.32, sfx: 'impact' as const })) };

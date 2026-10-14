@@ -599,18 +599,19 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
     : `${docs.length ? `⚠️ PRIORITÉ : le client a joint ${docs.length} fichier(s) d'inspiration (voir plus bas). Ta pub DOIT s'en inspirer clairement et visiblement : mêmes couleurs dominantes (style.colors / accent), même rythme (vidéo rapide → blocs courts et bpm élevé ; lent → moins de blocs, bpm bas), même ambiance, mêmes arguments / produits. Dans "message", explique au client ce que tu as repris de ses fichiers.\n\n` : ''}${prefsText}Demande du client : ${prompt}${mediaInfo}${brandInfo}${docsInfo}\n\nCrée le concept puis le projet.`;
 
   /** IA saturée : on monte quand même une vraie pub motion design (blocs animés tirés au sort), jamais un modèle figé ni une erreur. */
+  const localArgs = () => ({
+    prompt,
+    brand: (brand?.company?.name ?? '').slice(0, 40),
+    tagline: brand?.brief?.pitch,
+    strengths: brand?.brief?.strengths?.slice(0, 5),
+    city: brand?.company?.city ?? undefined,
+    link: brand?.link || undefined,
+    photos: photos?.length ?? 0,
+    videos: media?.length ?? 0
+  });
   const localFallback = async () => {
     const name = (brand?.company?.name ?? '').slice(0, 40);
-    const blocks = localBlocks({
-      prompt,
-      brand: name,
-      tagline: brand?.brief?.pitch,
-      strengths: brand?.brief?.strengths?.slice(0, 5),
-      city: brand?.company?.city ?? undefined,
-      link: brand?.link || undefined,
-      photos: photos?.length ?? 0,
-      videos: media?.length ?? 0
-    });
+    const blocks = localBlocks(localArgs());
     for (const bl of blocks) if (bl.block === 'map' && !bl.geo) bl.geo = (await fetchMap(bl.place).catch(() => null)) ?? undefined;
     const pal = brand?.brief?.palette;
     const accent = prefs?.colors?.[0] ?? pal?.primary ?? brand?.site?.colors?.find((c: string) => /^#[0-9a-f]{6}$/i.test(c) && !/^#(f{6}|0{6})$/i.test(c));
@@ -661,6 +662,12 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
           lastError = 'il faut un champ "blocks" avec au moins 3 blocs valides';
           continue;
         }
+        // Pub trop courte (blocs invalides écartés) : on complète avec d'autres scènes animées plutôt que d'étirer les scènes.
+        if (blocks.length < 6) {
+          const extra = localBlocks(localArgs()).filter((x) => x.block !== 'kinetic' && x.block !== 'cta' && !blocks.some((y) => y.block === x.block));
+          const ctaAt = blocks.findIndex((y) => y.block === 'cta');
+          blocks.splice(ctaAt >= 0 ? ctaAt : blocks.length, 0, ...extra.slice(0, 6 - blocks.length));
+        }
         // Cartes : vraies données OpenStreetMap du lieu demandé.
         for (const bl of blocks) if (bl.block === 'map' && !bl.geo) bl.geo = (await fetchMap(bl.place)) ?? undefined;
         const fmt = pick(['9:16', '16:9', '1:1'] as const, r.format) ?? parsed.data.format ?? '9:16';
@@ -710,7 +717,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
         const sum = scenes.reduce((n, sc) => n + sc.duration, 0);
         const target = prefs?.duration ?? 15;
         if (!project && sum > 0 && (prefs?.duration ? Math.abs(sum - target) > 1.5 : sum < 13) && !/\b([1-9]|[1-5][0-9]) ?(s|sec|secondes)\b/i.test(prompt)) {
-          const k = target / sum;
+          const k = composed ? Math.min(1.3, target / sum) : target / sum;
           scenes = scenes.map((sc) => ({ ...sc, duration: Math.round(Math.min(sc.type === 'video' ? 15 : 8, sc.duration * k) * 10) / 10 }));
         }
         // Coupes calées sur la musique : chaque durée = un nombre entier de temps (2 temps minimum).
