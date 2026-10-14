@@ -77,6 +77,7 @@ export async function POST(request: Request) {
 
   const t0 = Date.now();
   let feedback = '';
+  let lastErr = '';
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0 && Date.now() - t0 > 170_000) break;
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
         raw = (await chatJson({ system, user: feedback ? `${baseUser}\n\n${feedback}` : baseUser, maxTokens: 16000, temperature: current ? 0.5 : 0.9, think: attempt === 0 ? 2000 : 0, timeoutMs: 150_000, deadline: t0 + 280_000 })) as Record<string, unknown>;
       } catch (err) {
         if (err instanceof AiNotConfiguredError) throw err;
+        lastErr = (err as Error).message?.slice(0, 200) ?? 'erreur IA';
         continue;
       }
       const message = typeof raw?.message === 'string' ? raw.message.slice(0, 1200) : '';
@@ -110,7 +112,7 @@ export async function POST(request: Request) {
       }
       return NextResponse.json({ comp, message, quota });
     }
-    return NextResponse.json({ error: 'La création n’a pas abouti, réessayez dans un instant.', code: 'retry' }, { status: 502 });
+    return NextResponse.json({ error: 'La création n’a pas abouti, réessayez dans un instant.', code: 'retry', reason: (feedback || lastErr).slice(0, 400) }, { status: 502 });
   } catch (err) {
     if (err instanceof AiNotConfiguredError) return NextResponse.json({ error: err.message }, { status: 503 });
     console.error('[motion2] génération :', err);
