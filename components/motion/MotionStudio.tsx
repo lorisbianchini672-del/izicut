@@ -44,7 +44,8 @@ import { QuickBar } from '@/components/motion/QuickBar';
 import { Button } from '@/components/ui/button';
 import type { BrandProfile } from '@/lib/brand/types';
 import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, type MotionQuota } from '@/lib/motion/plan';
-import { buildCinematicAd, displayName } from '@/lib/motion/autoad';
+import { displayName } from '@/lib/motion/autoad';
+import { BlockSchema, blockScene } from '@/lib/motion/compose';
 import { buildSignatureAd } from '@/lib/motion/signature';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { nudge } from '@/lib/motion/keys';
@@ -91,7 +92,7 @@ import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
 const motionFont = Montserrat({ subsets: ['latin'], weight: ['800', '900'], display: 'swap' });
-const STORAGE_KEY = 'izicut-motion-project-v1';
+const STORAGE_KEY = 'izicut-motion-project-v2';
 const CONCEPT_KEY = 'izicut-motion-concept-v1';
 
 type Tab = 'ia' | 'marque' | 'medias' | 'scenes' | 'style';
@@ -179,6 +180,8 @@ export function MotionStudio() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const [project, setProject] = useState<MotionProject>(BLANK_PROJECT);
+  /** Écran : « start » = on décrit la vidéo, « edit » = on la modifie et on la télécharge. */
+  const [stage, setStage] = useState<'start' | 'edit'>('start');
   const [assets, setAssets] = useState<MotionAssets>({});
   // Documents d'inspiration : gardés en mémoire seulement (jamais enregistrés dans le navigateur ni sur le serveur).
   const [docs, setDocs] = useState<{ name: string; text: string }[]>([]);
@@ -336,7 +339,7 @@ export function MotionStudio() {
   // Projet sauvegardé dans ce navigateur + connexion / offre.
   useEffect(() => {
     const saved = loadSaved();
-    if (saved?.scenes?.length) setProject(saved);
+    if (saved?.scenes?.length) { setProject(saved); if (saved.scenes.some((sc) => sc.type === 'free')) setStage('edit'); }
     setBrand(loadBrand());
     brandLoaded.current = true;
     try {
@@ -727,12 +730,7 @@ export function MotionStudio() {
       setAutoStep('Le directeur de création IA imagine une pub unique…');
       setTab('ia');
       const ok = await askAi('Crée une pub motion design UNIQUE et spectaculaire pour cette entreprise, en t’appuyant sur toutes ses données (registre, fiche marque, faits, site web, couleurs, logo, visuels). Invente l’esthétique qui lui correspond (n’applique aucun modèle), dessine-la avec des scènes libres, mets ses vraies photos en valeur et utilise des images du web libres de droits si elles servent l’idée.', { fresh: true, brand: b, photos: photosNow });
-      // Secours seulement si l'IA est indisponible : une pub montée à partir des vraies données, jamais d'écran vide.
-      if (!ok) {
-        const quick = buildCinematicAd(b, { photos: photosNow.length, format: project.format });
-        replaceProject(isPaid ? quick : clampToFree(quick));
-        setNotice('L’IA est très sollicitée : voici une première version montée avec vos données. Relancez la création dans un instant pour une pub sur mesure.');
-      }
+      if (ok) setStage('edit');
     } finally {
       setAutoStep(null);
     }
@@ -1059,195 +1057,382 @@ export function MotionStudio() {
   };
 
 
+  // ---------- Nouveau parcours : 1. on décrit / on donne sa marque / ses images → 2. on modifie → 3. on télécharge ----------
+  const [brandInput, setBrandInput] = useState('');
+  const [brandBusy, setBrandBusy] = useState(false);
+  const [brandError, setBrandError] = useState<string | null>(null);
+  const [panel, setPanel] = useState<'ia' | 'add' | 'style'>('ia');
+
+  /** Analyse d'une entreprise à partir de son lien (site) OU de son nom (registre officiel puis recherche du site). */
+  const analyzeBrand = async (raw: string) => {
+    const value = raw.trim();
+    if (value.length < 2) return;
+    if (!loggedIn) { setBrandError('Connectez-vous (gratuit) pour analyser une entreprise.'); return; }
+    setBrandBusy(true);
+    setBrandError(null);
+    let b: BrandProfile = { ...brandRef.current };
+    const save = (next: BrandProfile) => { b = next; brandRef.current = next; setBrand(next); };
+    try {
+      const looksLikeUrl = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(value) && !/\s/.test(value);
+      if (looksLikeUrl) {
+        const r = await fetch(`/api/brand/site?url=${encodeURIComponent(value)}`);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.site) throw new Error(j.error ?? 'Site introuvable : vérifiez l’adresse.');
+        save({ ...b, site: j.site, link: String(j.site.url).replace(/^https?:\/\//, '').replace(/\/$/, '') });
+      } else {
+        const r = await fetch(`/api/brand/search?q=${encodeURIComponent(value)}`);
+        const j = await r.json().catch(() => ({}));
+        const first = Array.isArray(j.results) ? j.results[0] : null;
+        if (first) save({ ...b, company: first });
+        else save({ ...b, notes: b.notes || value });
+        const f = await fetch(`/api/brand/find-site?name=${encodeURIComponent(first?.name ?? value)}&city=${encodeURIComponent(first?.city ?? '')}`).then((x) => x.json()).catch(() => ({}));
+        if (f.url) {
+          const s = await fetch(`/api/brand/site?url=${encodeURIComponent(f.url)}`).then((x) => x.json()).catch(() => ({}));
+          if (s.site) save({ ...b, site: s.site, link: b.link || String(s.site.url).replace(/^https?:\/\//, '').replace(/\/$/, '') });
+        }
+        if (!first && !f.url) setBrandError('Entreprise introuvable : collez plutôt le lien de son site, ou décrivez-la dans l’idée.');
+      }
+      // Couleurs du site reprises tout de suite.
+      if (b.site?.colors?.length) {
+        const vivid = b.site.colors.filter((c) => /^#[0-9a-f]{6}$/i.test(c) && !/^#(f{6}|0{6})$/i.test(c));
+        if (vivid[0]) setProject((p) => ({ ...p, theme: { ...p.theme, primary: vivid[0], accent: vivid[1] ?? p.theme.accent } }));
+      }
+      // Logo et visuels du site importés pour la pub (le client est le titulaire de la marque).
+      if (b.site && (b.site.logo || b.site.images?.length) && !photosRef.current.length) await importSite({ logo: b.site.logo, images: b.site.images ?? [] });
+    } catch (err) {
+      setBrandError(err instanceof Error ? err.message : 'Analyse impossible.');
+    } finally {
+      setBrandBusy(false);
+    }
+  };
+
+  /** Lance la création depuis l'écran d'accueil du Studio. */
+  const startCreate = async () => {
+    const b = brandRef.current;
+    const who = b.company?.name || b.site?.title || '';
+    const text = prompt.trim() || (who ? `Crée une pub motion design pour ${who}` : '');
+    if (!text) { setNotice('Décrivez votre vidéo en une phrase (ex. : pub pour ma boulangerie, -20 % ce week-end).'); return; }
+    trackAd('ViewContent', { content_name: 'create' });
+    const ok = await askAi(text, { fresh: true });
+    if (ok) { setStage('edit'); setPanel('ia'); }
+  };
+
+  /** Ajoute une scène animée (bloc premium, style tiré au sort) juste après la scène en cours. */
+  const addBlock = (block: Record<string, unknown>) => {
+    const parsedB = BlockSchema.safeParse(block);
+    if (!parsedB.success) return;
+    setProject((p) => {
+      if (p.scenes.length >= MAX_SCENES) return p;
+      const at = Math.min(p.scenes.length, locate(p, timeRef.current).index + 1);
+      const scene = blockScene(parsedB.data, p, at, { hasLogo: Boolean(assetsRef.current.logo), photos: photosRef.current.length, videos: mediaRef.current.length });
+      const scenes = p.scenes.slice();
+      scenes.splice(at, 0, scene);
+      window.setTimeout(() => seek(scenes.slice(0, at).reduce((n, x) => n + x.duration, 0)), 30);
+      return { ...p, scenes };
+    });
+    setPlaying(true);
+  };
+
+
   const current = locate(project, time).index;
+  const sceneName = (s: Scene) => (s.type === 'free' ? s.name ?? 'Scène' : SCENE_LABELS[s.type]);
+  const brandName = brand.company?.name || brand.site?.title || '';
+  const proxied = (u: string) => `/api/brand/image?url=${encodeURIComponent(u)}`;
+  const createSteps = ['Analyse de votre demande', 'Idée créative et direction artistique', 'Animation des scènes', 'Musique, bruitages et finitions'];
+  const stepIndex = Math.max(0, ['Je lis', 'Je réfléchis', 'Je dessine', 'J’anime', 'Sound', 'Contrôle', 'Je peaufine', 'Dernière'].findIndex((k) => (aiStatus ?? '').startsWith(k)));
+
+  const noticeBar = notice ? (
+    <div className="mb-4 flex items-start justify-between gap-3 border-l-2 border-[#f28be0] bg-white/[0.04] px-4 py-3 text-sm text-white/90">
+      <span>
+        {notice}{' '}
+        {notice.includes('Connectez-vous') ? <Link href="/login?next=/studio" className="font-semibold text-white underline">Se connecter</Link> : null}
+      </span>
+      <button type="button" className="cursor-pointer text-white/50 hover:text-white" onClick={() => setNotice(null)} aria-label="Fermer">×</button>
+    </div>
+  ) : null;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-16 pt-24 sm:px-6">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-neon/30 bg-neon/10 px-3 py-1 text-xs font-semibold text-neon">
-            <Sparkles className="h-3.5 w-3.5" /> Nouveau
-          </p>
-          <h1 className="izi-title-gradient font-display text-3xl font-semibold tracking-tight sm:text-5xl">Studio Motion</h1>
-          {quota ? (
-            <p className="izi-glass-pill mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs text-fg-muted">
-              {quota.limit === null ? (
-                <><Sparkles className="h-3.5 w-3.5 text-neon" /> Offre {quota.tier === 'agency' ? 'Agence' : 'Pro'} · pubs illimitées</>
-              ) : (
-                <>
-                  <Sparkles className="h-3.5 w-3.5 text-neon" /> Essai gratuit · {Math.max(0, quota.limit - quota.used)}/{quota.limit} pubs restantes
-                  <Link href="/#pricing" className="font-semibold text-neon underline">Passer en Pro</Link>
-                </>
-              )}
-            </p>
-          ) : null}
-          <p className="mt-1 max-w-xl text-sm text-fg-muted">
-            Décrivez votre vidéo, l’IA crée l’animation. Modifiez-la en lui parlant, puis téléchargez-la.
-          </p>
-        </div>
-        <Button variant="gradient" className="hidden rounded-xl font-bold lg:inline-flex" disabled={exporting !== null} onClick={exportVideo}>
-          <Download className="h-4 w-4" />
-          {exporting !== null ? `Export… ${exporting} %` : 'Télécharger la vidéo'}
-        </Button>
+    <div className="izi-dark-scope relative min-h-dvh overflow-hidden bg-[#0a0a0a] font-[family-name:var(--font-geist)] text-white">
+      {/* Halo dégradé de la marque izicut (bleu → rose → rouge), fondu en haut et en bas. */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[70vh] opacity-60">
+        <div className="absolute left-1/2 top-[-30%] h-[90%] w-[120%] -translate-x-1/2 rounded-[50%] bg-[radial-gradient(closest-side,rgba(59,108,246,.35),transparent)] blur-3xl" />
+        <div className="absolute left-[60%] top-[-20%] h-[70%] w-[70%] -translate-x-1/2 rounded-[50%] bg-[radial-gradient(closest-side,rgba(242,139,224,.28),transparent)] blur-3xl" />
+        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-b from-transparent to-[#0a0a0a]" />
       </div>
 
-      {notice ? (
-        <div className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-neon/30 bg-neon/[0.06] px-4 py-3 text-sm text-fg">
-          <span>
-            {notice}{' '}
-            {notice.includes('Connectez-vous') ? <Link href="/login?next=/studio" className="font-semibold text-neon underline">Se connecter</Link> : null}
-          </span>
-          <button type="button" className="cursor-pointer text-fg-muted" onClick={() => setNotice(null)} aria-label="Fermer">×</button>
-        </div>
-      ) : null}
-
-      {/* Téléphone : on choisit clairement entre modifier la vidéo et la télécharger. */}
-      <div className="mb-4 grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 lg:hidden" role="tablist" aria-label="Espace de travail">
-        {([['edit', 'Modifier', <Wand2 key="e" className="h-4 w-4" />], ['export', 'Télécharger', <Download key="d" className="h-4 w-4" />]] as ['edit' | 'export', string, ReactNode][]).map(([id, label, icon]) => (
-          <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)} className={cn('flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition', view === id ? 'bg-neon text-ink-950' : 'text-fg-muted hover:bg-white/[0.05]')}>
-            {icon}{label}
-          </button>
-        ))}
-      </div>
-
-      {ready ? (
-        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-neon/30 bg-neon/[0.06] p-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-semibold text-fg">Votre vidéo est prête ({(ready.blob.size / 1_000_000).toFixed(1)} Mo).</p>
-          <div className="flex gap-2">
-            <a href={ready.url} download={ready.name} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-neon px-4 py-2.5 text-sm font-bold text-ink-950 sm:flex-none">
-              <Download className="h-4 w-4" /> Enregistrer la vidéo
-            </a>
-            <button type="button" onClick={() => void shareReady()} className="inline-flex flex-1 cursor-pointer items-center justify-center rounded-xl border border-white/15 px-4 py-2.5 text-sm font-semibold text-fg sm:flex-none">
-              Partager / Photos
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
-        {/* ---------- Aperçu ---------- */}
-        <div className={cn('z-30 -mx-4 flex min-w-0 flex-col items-center px-4 pb-2 pt-2 lg:sticky lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none', view === 'edit' ? 'sticky top-0 bg-[var(--color-ink-950,#09090b)]/95 backdrop-blur-xl' : 'relative')}>
-
-          <div
-            className={cn('relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] lg:max-w-[min(100%,calc(68vh*var(--r)))]', view === 'export' ? 'max-w-[min(100%,calc(58dvh*var(--r)))]' : 'max-w-[min(100%,calc(34dvh*var(--r)))]')}
-            style={{ aspectRatio: `${size.width} / ${size.height}`, ['--r' as string]: String(size.width / size.height) }}
-          >
-            <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className={cn('block h-full w-full max-w-full', sel ? 'cursor-move' : 'cursor-pointer')} style={{ touchAction: sel ? 'none' : 'auto' }} onPointerDown={onCanvasDown} onPointerMove={onCanvasMove} onPointerUp={onCanvasUp} onPointerCancel={() => { dragRef.current = null; }} title="Cliquez sur un texte ou une forme pour le modifier" />
-            {sel ? (() => {
-              const b = boxesNow().boxes.find((x) => x.i === sel.layer);
-              if (!b || locate(project, time).index !== sel.scene) return null;
-              return <div className="pointer-events-none absolute rounded-md border-2 border-dashed border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.6)]" style={{ left: `${((b.x - b.w / 2) / size.width) * 100}%`, top: `${((b.y - b.h / 2) / size.height) * 100}%`, width: `${(b.w / size.width) * 100}%`, height: `${(b.h / size.height) * 100}%` }} />;
-            })() : null}
-            {safeZones && project.format === '9:16' ? (
-              // Zones masquées par l'interface TikTok / Reels (aperçu seulement, jamais dans la vidéo exportée).
-              <div className="pointer-events-none absolute inset-0" aria-hidden>
-                <div className="absolute inset-x-0 top-0 h-[12%] border-b border-dashed border-red-400/70 bg-red-500/15" />
-                <div className="absolute inset-x-0 bottom-0 h-[22%] border-t border-dashed border-red-400/70 bg-red-500/15" />
-                <div className="absolute bottom-[22%] right-0 top-[40%] w-[14%] border-l border-dashed border-red-400/70 bg-red-500/15" />
-              </div>
-            ) : null}
-            {exporting !== null ? (
-              <div className="absolute inset-x-0 bottom-0 bg-black/70 px-4 py-3 text-center text-xs text-white">
-                Enregistrement de la vidéo… gardez cet onglet ouvert ({exporting} %)
-              </div>
-            ) : null}
-          </div>
-          {Object.keys(webCredits).length ? (
-            <p className="mt-1.5 max-w-2xl text-center text-[10px] text-fg-subtle">Photos libres de droits : {[...new Set(Object.values(webCredits))].slice(0, 6).join(' · ')}</p>
-          ) : null}
-          {/* Lecture + scènes */}
-          <div className="mt-3 w-full max-w-2xl">
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={() => setPlaying((p) => !p)} className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-full bg-neon text-ink-950" aria-label={playing ? 'Pause' : 'Lecture'}>
-                {playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
-              </button>
-              <div className="relative flex h-10 flex-1 overflow-hidden rounded-xl bg-white/[0.04]">
-                {project.scenes.map((s, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => seek(project.scenes.slice(0, i).reduce((n, x) => n + x.duration, 0))}
-                    className={cn('h-full cursor-pointer border-r border-black/40 px-1 text-[10px] font-semibold transition', i === current ? 'bg-neon/25 text-neon' : 'text-fg-subtle hover:bg-white/[0.05]')}
-                    style={{ width: `${(s.duration / duration) * 100}%` }}
-                  >
-                    <span className="block truncate">{SCENE_LABELS[s.type]}</span>
-                  </button>
-                ))}
-                <span className="pointer-events-none absolute inset-y-0 w-0.5 bg-white" style={{ left: `${(time / duration) * 100}%` }} />
-              </div>
-              {project.format === '9:16' ? (
-                <button type="button" onClick={() => setSafeZones((v) => !v)} className={cn('grid h-10 shrink-0 cursor-pointer place-items-center rounded-full border px-2.5 text-[10px] font-bold transition', safeZones ? 'border-red-400/60 text-red-300' : 'border-white/10 text-fg-muted hover:text-fg')} title="Afficher les zones cachées par TikTok / Reels" aria-label="Zones de sécurité">
-                  ZONES
-                </button>
+      <div className="relative mx-auto max-w-7xl px-4 pb-16 pt-20 sm:px-6">
+        {stage === 'start' ? (
+          /* ======================= 1. CRÉER ======================= */
+          <div className="mx-auto max-w-3xl">
+            <div className="mb-8 text-center">
+              <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-white/50">Studio izicut</p>
+              <h1 className="text-balance text-4xl font-semibold tracking-[-0.04em] sm:text-6xl">Votre vidéo en motion design</h1>
+              <p className="mx-auto mt-3 max-w-xl text-pretty text-base text-white/60">Décrivez votre idée, ajoutez votre entreprise et vos images. L’IA conçoit et anime chaque scène ; vous retouchez ensuite en un message ou à la main.</p>
+              {quota ? (
+                <p className="mt-4 text-xs text-white/50">
+                  {quota.limit === null ? `Offre ${quota.tier === 'agency' ? 'Agence' : 'Pro'} · vidéos illimitées` : <>Essai gratuit · {Math.max(0, quota.limit - quota.used)}/{quota.limit} vidéos restantes · <Link href="/#pricing" className="text-white underline">Passer en Pro</Link></>}
+                </p>
               ) : null}
-              <button
-                type="button"
-                onClick={() => { void playerRef.current?.unlock(); setSoundOn((v) => !v); }}
-                className={cn('grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-full border transition', soundOn ? 'border-neon/50 text-neon' : 'border-white/10 text-fg-muted hover:text-fg')}
-                aria-label={soundOn ? 'Couper le son' : 'Activer le son'}
-                title={soundOn ? 'Couper le son' : 'Écouter la musique et les effets'}
-              >
-                {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-              </button>
-              <span className="shrink-0 whitespace-nowrap text-right font-code text-[11px] text-fg-muted sm:text-xs">{time.toFixed(1)}/{duration.toFixed(0)} s</span>
-              <button type="button" onClick={() => setView('export')} className={cn('grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-full bg-neon text-ink-950 lg:hidden', view === 'export' && 'hidden')} aria-label="Télécharger la vidéo" title="Télécharger la vidéo">
-                <Download className="h-4 w-4" />
-              </button>
             </div>
-          </div>
-          <div className="hidden w-full justify-center lg:flex">
-            <LayerEditor time={time} videos={media.length} photos={photos.length} project={project} sel={sel} onSelect={setSel} onChange={setProject} onSeek={seek} sceneStart={project.scenes.slice(0, sel?.scene ?? 0).reduce((n, x) => n + x.duration, 0)} accent={project.theme.primary} />
-          </div>
-          {!sel ? <p className="mt-2 text-center text-[11px] text-fg-subtle">Astuce : touchez ou cliquez sur un texte dans la vidéo pour le modifier, l’animer ou le déplacer.</p> : null}
-          <div className="hidden w-full justify-center lg:flex">
-            <QuickBar project={project} onChange={setProject} canUse={(tr) => isPaid || FREE_LIMITS.transitions.includes(tr)} onLocked={proOnly} />
-          </div>
-          {view === 'export' ? (
-            <div className="mt-4 w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-4 lg:hidden">
-              <p className="font-display text-lg font-semibold text-fg">Votre vidéo</p>
-              <p className="mt-1 text-sm text-fg-muted">
-                Format {project.format === '9:16' ? 'vertical 9:16 (TikTok, Reels, Shorts)' : project.format === '16:9' ? 'horizontal 16:9 (YouTube)' : 'carré 1:1'} · {duration.toFixed(0)} s · MP4 HD
-              </p>
-              <Button variant="gradient" className="mt-4 h-12 w-full rounded-xl text-base font-bold" disabled={exporting !== null} onClick={exportVideo}>
-                <Download className="h-5 w-5" />
-                {exporting !== null ? `Export… ${exporting} %` : 'Télécharger la vidéo'}
-              </Button>
-              <p className="mt-2 text-center text-xs text-fg-subtle">Gardez cet écran ouvert pendant l’export.</p>
-              <button type="button" onClick={() => setView('edit')} className="mt-3 w-full cursor-pointer rounded-xl border border-white/10 py-2.5 text-sm font-semibold text-fg transition hover:bg-white/[0.05]">
-                Revenir aux modifications
-              </button>
-            </div>
-          ) : null}
-        </div>
 
-        {/* ---------- Panneau d'édition ---------- */}
-        <div className={cn('min-h-[420px] flex-col rounded-2xl border border-white/10 bg-white/[0.03] lg:sticky lg:top-4 lg:flex lg:h-[calc(100dvh-2rem)] lg:self-start', view === 'export' ? 'hidden' : 'flex')}>
-          <div className="grid grid-cols-4 gap-1 border-b border-white/10 p-1.5">
-            {([['ia', 'Créer', <Wand2 key="i" className="h-4 w-4" />], ['medias', 'Mes images', <Film key="m" className="h-4 w-4" />], ['marque', 'Ma marque', <Building2 key="b" className="h-4 w-4" />], ['style', 'Réglages', <Palette key="p" className="h-4 w-4" />]] as [Tab, string, ReactNode][]).map(([id, label, icon]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTab(id)}
-                className={cn('flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[11px] font-semibold transition sm:flex-row sm:gap-1 sm:text-xs', tab === id ? 'bg-neon text-ink-950' : 'text-fg-muted hover:bg-white/[0.05]')}
-              >
-                {icon}
-                {label}
-              </button>
-            ))}
-          </div>
+            {noticeBar}
 
-          <div className="border-b border-white/10 px-3 pb-3 lg:hidden [&>div]:mt-3">
-            <QuickBar project={project} onChange={setProject} canUse={(tr) => isPaid || FREE_LIMITS.transitions.includes(tr)} onLocked={proOnly} />
-          </div>
-          <div ref={panelScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
-            {sel ? (
-              <div className="lg:hidden [&>div]:mt-0 [&>div]:mb-4">
-                <LayerEditor time={time} videos={media.length} photos={photos.length} project={project} sel={sel} onSelect={setSel} onChange={setProject} onSeek={seek} sceneStart={project.scenes.slice(0, sel.scene).reduce((n, x) => n + x.duration, 0)} accent={project.theme.primary} />
+            {aiBusy ? (
+              /* Création en cours : étapes claires, pas d'écran figé. */
+              <div className="mx-auto max-w-md py-10 text-center">
+                <div className="relative mx-auto mb-6 h-20 w-20">
+                  <div className="absolute inset-0 animate-spin rounded-full bg-[conic-gradient(from_0deg,#8fa6ff,#f28be0,#ff7a62,transparent_70%)] [animation-duration:1.6s]" />
+                  <div className="absolute inset-[3px] grid place-items-center rounded-full bg-[#0a0a0a]"><Sparkles className="h-6 w-6 text-white" /></div>
+                </div>
+                <p className="text-lg font-semibold">Votre vidéo se crée</p>
+                <p className="mt-1 text-sm text-white/55">{aiStatus ?? 'Création en cours…'}</p>
+                <ol className="mt-6 space-y-2 text-left text-sm">
+                  {createSteps.map((s, k) => {
+                    const done = k < Math.min(3, Math.floor(stepIndex / 1.6));
+                    const active = k === Math.min(3, Math.floor(stepIndex / 1.6));
+                    return (
+                      <li key={s} className={cn('flex items-center gap-3', done ? 'text-white/80' : active ? 'text-white' : 'text-white/35')}>
+                        <span className={cn('grid h-5 w-5 place-items-center rounded-full text-[10px]', done ? 'bg-white text-black' : active ? 'border border-white' : 'border border-white/20')}>{done ? '✓' : k + 1}</span>
+                        {s}
+                      </li>
+                    );
+                  })}
+                </ol>
+                <p className="mt-6 text-xs text-white/40">Environ 1 minute. Gardez cette page ouverte.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-white/10 border-y border-white/10">
+                {/* Étape 1 : l'idée */}
+                <section className="grid gap-4 py-6 sm:grid-cols-[150px_1fr]">
+                  <div><p className="text-xs text-white/40">01</p><p className="font-medium">Votre idée</p></div>
+                  <div>
+                    <textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      rows={3}
+                      maxLength={600}
+                      placeholder="Ex. : pub pour ma boulangerie à Lyon, nouveau pain au levain, -20 % ce week-end"
+                      className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-base text-white outline-none placeholder:text-white/30 focus:border-white/30"
+                    />
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {NEW_IDEAS.map((idea) => (
+                        <button key={idea} type="button" onClick={() => setPrompt(idea)} className="cursor-pointer rounded-full border border-white/10 px-3 py-1 text-xs text-white/60 transition hover:border-white/30 hover:text-white">{idea}</button>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+
+                {/* Étape 2 : l'entreprise */}
+                <section className="grid gap-4 py-6 sm:grid-cols-[150px_1fr]">
+                  <div><p className="text-xs text-white/40">02</p><p className="font-medium">Votre entreprise</p><p className="text-xs text-white/40">facultatif</p></div>
+                  <div>
+                    <form onSubmit={(e) => { e.preventDefault(); void analyzeBrand(brandInput); }} className="flex gap-2">
+                      <input value={brandInput} onChange={(e) => setBrandInput(e.target.value)} placeholder="Lien du site (monsite.fr) ou nom de l’entreprise" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/30" />
+                      <button type="submit" disabled={brandBusy || brandInput.trim().length < 2} className="shrink-0 cursor-pointer rounded-xl border border-white/15 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-white/[0.06] disabled:cursor-default disabled:opacity-40">{brandBusy ? 'Analyse…' : 'Analyser'}</button>
+                    </form>
+                    {brandError ? <p className="mt-2 text-xs text-[#ff9a8a]">{brandError}</p> : null}
+                    {brandName || brand.site ? (
+                      <div className="mt-3 flex items-center gap-3">
+                        {brand.site?.logo ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={proxied(brand.site.logo)} alt="" className="h-10 w-10 rounded-lg bg-white object-contain p-1" />
+                        ) : <span className="grid h-10 w-10 place-items-center rounded-lg bg-white/[0.06] text-sm font-semibold">{(brandName || '?').slice(0, 1)}</span>}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{brandName || brand.site?.url}</p>
+                          <p className="truncate text-xs text-white/45">{[brand.company?.activityLabel, brand.company?.city, brand.site ? 'site analysé' : null].filter(Boolean).join(' · ')}</p>
+                        </div>
+                        {brand.site?.colors?.slice(0, 4).map((c) => <span key={c} className="h-5 w-5 rounded-full border border-white/20" style={{ background: c }} />)}
+                        <button type="button" onClick={() => { setBrand(EMPTY_BRAND); brandRef.current = EMPTY_BRAND; setBrandInput(''); }} className="cursor-pointer text-xs text-white/40 hover:text-white">Retirer</button>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+
+                {/* Étape 3 : les images */}
+                <section className="grid gap-4 py-6 sm:grid-cols-[150px_1fr]">
+                  <div><p className="text-xs text-white/40">03</p><p className="font-medium">Vos images</p><p className="text-xs text-white/40">facultatif</p></div>
+                  <div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <label className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed border-white/15 px-2 py-4 text-center text-xs text-white/70 transition hover:border-white/40">
+                        <Images className="h-5 w-5" /> Photos
+                        <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+                      </label>
+                      <label className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed border-white/15 px-2 py-4 text-center text-xs text-white/70 transition hover:border-white/40">
+                        <Film className="h-5 w-5" /> Vidéo
+                        <input type="file" accept="video/*,.mov" className="sr-only" onChange={(e) => { addVideo(e.target.files?.[0]); e.target.value = ''; }} />
+                      </label>
+                      <label className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed border-white/15 px-2 py-4 text-center text-xs text-white/70 transition hover:border-white/40">
+                        <Building2 className="h-5 w-5" /> {assets.logo ? 'Logo ✓' : 'Logo'}
+                        <input type="file" accept="image/*" className="sr-only" onChange={(e) => { loadImage(e.target.files?.[0], 'logo'); e.target.value = ''; }} />
+                      </label>
+                    </div>
+                    {photos.length || media.length ? (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {photos.map((ph, i) => (
+                          <span key={ph.url} className="relative h-14 w-14 overflow-hidden rounded-lg">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={ph.url} alt={ph.name} className="h-full w-full object-cover" />
+                            <button type="button" aria-label="Retirer la photo" onClick={() => removePhoto(i)} className="absolute right-0.5 top-0.5 grid h-4 w-4 cursor-pointer place-items-center rounded-full bg-black/70 text-[10px]">×</button>
+                          </span>
+                        ))}
+                        {media.map((m, i) => (
+                          <span key={m.url} className="relative grid h-14 w-20 place-items-center rounded-lg bg-white/[0.06] text-[10px] text-white/70">
+                            <Film className="h-4 w-4" /> {m.duration.toFixed(0)} s
+                            <button type="button" aria-label="Retirer la vidéo" onClick={() => removeVideo(i)} className="absolute right-0.5 top-0.5 grid h-4 w-4 cursor-pointer place-items-center rounded-full bg-black/70 text-[10px]">×</button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : <p className="mt-2 text-xs text-white/40">Sans images, l’IA utilise des photos libres de droits adaptées.</p>}
+                  </div>
+                </section>
+
+                {/* Étape 4 : format + style */}
+                <section className="grid gap-4 py-6 sm:grid-cols-[150px_1fr]">
+                  <div><p className="text-xs text-white/40">04</p><p className="font-medium">Format</p></div>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-1 rounded-xl bg-white/[0.04] p-1">
+                      {([['9:16', 'Vertical', 'TikTok · Reels'], ['16:9', 'Horizontal', 'YouTube'], ['1:1', 'Carré', 'Post']] as const).map(([f, l, s]) => (
+                        <button key={f} type="button" onClick={() => setProject((p) => ({ ...p, format: f }))} className={cn('cursor-pointer rounded-lg py-2 text-sm transition', project.format === f ? 'bg-white text-black' : 'text-white/60 hover:text-white')}>
+                          <span className="block font-medium">{l}</span>
+                          <span className="block text-[10px] opacity-60">{s}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <AiPrefsPanel prefs={aiPrefs} onChange={setAiPrefs} />
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {!aiBusy ? (
+              <div className="mt-8 flex flex-col items-center gap-3">
+                {loggedIn === false ? (
+                  <Link href="/login?next=/studio" className="inline-flex h-12 items-center justify-center rounded-full bg-white px-8 text-base font-semibold text-black">Se connecter pour créer (gratuit)</Link>
+                ) : (
+                  <button type="button" onClick={() => void startCreate()} disabled={docsBusy} className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-white px-8 text-base font-semibold text-black shadow-[0_0_0_1px_rgba(255,255,255,.2),0_10px_40px_-10px_rgba(242,139,224,.6)] transition hover:scale-[1.02] disabled:opacity-50">
+                    <Sparkles className="h-4 w-4" /> Créer ma vidéo
+                  </button>
+                )}
+                {!isBlankProject(project) ? (
+                  <button type="button" onClick={() => setStage('edit')} className="cursor-pointer text-sm text-white/50 underline-offset-4 hover:text-white hover:underline">Reprendre ma vidéo en cours</button>
+                ) : null}
               </div>
             ) : null}
-            {tab === 'ia' ? (
+          </div>
+        ) : (
+          /* ======================= 2. MODIFIER / 3. TÉLÉCHARGER ======================= */
+          <div>
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <button type="button" onClick={() => { setSel(null); setStage('start'); }} className="inline-flex cursor-pointer items-center gap-2 text-sm text-white/60 transition hover:text-white">
+                <RotateCcw className="h-4 w-4" /> Nouvelle vidéo
+              </button>
+              <div className="hidden min-w-0 text-center sm:block">
+                <p className="truncate text-sm font-medium">{project.brand || brandName || 'Ma vidéo'}</p>
+                <p className="text-xs text-white/45">{project.format === '9:16' ? 'Vertical' : project.format === '16:9' ? 'Horizontal' : 'Carré'} · {project.scenes.length} scènes · {duration.toFixed(0)} s</p>
+              </div>
+              <button type="button" disabled={exporting !== null} onClick={exportVideo} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full bg-white px-5 text-sm font-semibold text-black transition hover:scale-[1.02] disabled:opacity-60">
+                <Download className="h-4 w-4" /> {exporting !== null ? `Export… ${exporting} %` : 'Télécharger'}
+              </button>
+            </div>
+
+            {noticeBar}
+            {ready ? (
+              <div className="mb-4 flex flex-col gap-2 border-l-2 border-[#8fa6ff] bg-white/[0.04] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-medium">Votre vidéo est prête ({(ready.blob.size / 1_000_000).toFixed(1)} Mo).</p>
+                <div className="flex gap-2">
+                  <a href={ready.url} download={ready.name} className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black sm:flex-none"><Download className="h-4 w-4" /> Enregistrer</a>
+                  <button type="button" onClick={() => void shareReady()} className="inline-flex flex-1 cursor-pointer items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm font-medium sm:flex-none">Partager / Photos</button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
+              {/* ---------- Aperçu + timeline ---------- */}
+              <div className="z-30 -mx-4 flex min-w-0 flex-col items-center bg-[#0a0a0a]/95 px-4 pb-2 pt-1 backdrop-blur-xl max-lg:sticky max-lg:top-0 lg:sticky lg:top-4 lg:mx-0 lg:self-start lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
+                <div
+                  className="relative w-full max-w-[min(100%,calc(36dvh*var(--r)))] overflow-hidden rounded-2xl bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9),0_0_0_1px_rgba(255,255,255,.08)] lg:max-w-[min(100%,calc(66vh*var(--r)))]"
+                  style={{ aspectRatio: `${size.width} / ${size.height}`, ['--r' as string]: String(size.width / size.height) }}
+                >
+                  <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className={cn('block h-full w-full max-w-full', sel ? 'cursor-move' : 'cursor-pointer')} style={{ touchAction: sel ? 'none' : 'auto' }} onPointerDown={onCanvasDown} onPointerMove={onCanvasMove} onPointerUp={onCanvasUp} onPointerCancel={() => { dragRef.current = null; }} title="Cliquez sur un élément pour le modifier" />
+                  {sel ? (() => {
+                    const b = boxesNow().boxes.find((x) => x.i === sel.layer);
+                    if (!b || locate(project, time).index !== sel.scene) return null;
+                    return <div className="pointer-events-none absolute rounded-md border-2 border-dashed border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.6)]" style={{ left: `${((b.x - b.w / 2) / size.width) * 100}%`, top: `${((b.y - b.h / 2) / size.height) * 100}%`, width: `${(b.w / size.width) * 100}%`, height: `${(b.h / size.height) * 100}%` }} />;
+                  })() : null}
+                  {safeZones && project.format === '9:16' ? (
+                    <div className="pointer-events-none absolute inset-0" aria-hidden>
+                      <div className="absolute inset-x-0 top-0 h-[12%] border-b border-dashed border-red-400/70 bg-red-500/15" />
+                      <div className="absolute inset-x-0 bottom-0 h-[22%] border-t border-dashed border-red-400/70 bg-red-500/15" />
+                      <div className="absolute bottom-[22%] right-0 top-[40%] w-[14%] border-l border-dashed border-red-400/70 bg-red-500/15" />
+                    </div>
+                  ) : null}
+                  {aiBusy ? (
+                    <div className="absolute inset-0 grid place-items-center bg-black/55 backdrop-blur-sm">
+                      <div className="text-center"><Sparkles className="mx-auto h-6 w-6 animate-pulse" /><p className="mt-2 text-sm">{aiStatus ?? 'L’IA modifie la vidéo…'}</p></div>
+                    </div>
+                  ) : null}
+                  {exporting !== null ? <div className="absolute inset-x-0 bottom-0 bg-black/70 px-4 py-3 text-center text-xs">Enregistrement… gardez cet onglet ouvert ({exporting} %)</div> : null}
+                </div>
+                {Object.keys(webCredits).length ? <p className="mt-1.5 max-w-2xl text-center text-[10px] text-white/35">Photos libres de droits : {[...new Set(Object.values(webCredits))].slice(0, 6).join(' · ')}</p> : null}
+
+                {/* Lecture */}
+                <div className="mt-3 flex w-full max-w-2xl items-center gap-2">
+                  <button type="button" onClick={() => setPlaying((p) => !p)} className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-full bg-white text-black" aria-label={playing ? 'Pause' : 'Lecture'}>
+                    {playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
+                  </button>
+                  <span className="w-20 shrink-0 font-code text-xs text-white/55">{time.toFixed(1)} / {duration.toFixed(0)} s</span>
+                  <div className="flex-1" />
+                  {project.format === '9:16' ? (
+                    <button type="button" onClick={() => setSafeZones((v) => !v)} className={cn('h-9 shrink-0 cursor-pointer rounded-full border px-3 text-[11px] transition', safeZones ? 'border-red-400/60 text-red-300' : 'border-white/10 text-white/55 hover:text-white')} title="Zones cachées par TikTok / Reels">Zones TikTok</button>
+                  ) : null}
+                  <button type="button" onClick={() => { void playerRef.current?.unlock(); setSoundOn((v) => !v); }} className={cn('grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-full border transition', soundOn ? 'border-white/50 text-white' : 'border-white/10 text-white/55 hover:text-white')} aria-label={soundOn ? 'Couper le son' : 'Activer le son'}>
+                    {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                  </button>
+                </div>
+
+                {/* Timeline des scènes */}
+                <div className="mt-3 w-full max-w-2xl">
+                  <div className="relative flex gap-1 overflow-x-auto pb-1">
+                    {project.scenes.map((s, i) => (
+                      <div key={i} className={cn('group relative shrink-0 rounded-lg border px-2 py-1.5 text-left transition', i === current ? 'border-white bg-white/[0.08]' : 'border-white/10 hover:border-white/30')} style={{ width: `${Math.max(92, (s.duration / duration) * 640)}px` }}>
+                        <button type="button" onClick={() => seek(project.scenes.slice(0, i).reduce((n, x) => n + x.duration, 0))} className="block w-full cursor-pointer text-left">
+                          <span className="block text-[10px] text-white/40">{i + 1} · {s.duration.toFixed(1)} s</span>
+                          <span className="block truncate text-xs font-medium">{sceneName(s)}</span>
+                        </button>
+                        <span className="absolute right-1 top-1 hidden gap-0.5 group-hover:flex">
+                          <button type="button" aria-label="Avancer la scène" onClick={() => moveScene(i, -1)} className="grid h-5 w-5 cursor-pointer place-items-center rounded bg-black/60 text-white/70 hover:text-white"><ArrowUp className="h-3 w-3 -rotate-90" /></button>
+                          <button type="button" aria-label="Reculer la scène" onClick={() => moveScene(i, 1)} className="grid h-5 w-5 cursor-pointer place-items-center rounded bg-black/60 text-white/70 hover:text-white"><ArrowDown className="h-3 w-3 -rotate-90" /></button>
+                          <button type="button" aria-label="Supprimer la scène" onClick={() => removeScene(i)} className="grid h-5 w-5 cursor-pointer place-items-center rounded bg-black/60 text-[#ff9a8a]"><Trash2 className="h-3 w-3" /></button>
+                        </span>
+                        {i === current ? <span className="pointer-events-none absolute bottom-0 left-0 h-0.5 rounded bg-gradient-to-r from-[#8fa6ff] via-[#f28be0] to-[#ff7a62]" style={{ width: `${Math.min(100, ((time - project.scenes.slice(0, i).reduce((n, x) => n + x.duration, 0)) / s.duration) * 100)}%` }} /> : null}
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => setPanel('add')} className="grid w-12 shrink-0 cursor-pointer place-items-center rounded-lg border border-dashed border-white/15 text-white/50 hover:border-white/40 hover:text-white" aria-label="Ajouter une scène"><Plus className="h-4 w-4" /></button>
+                  </div>
+                </div>
+
+                <div className="hidden w-full justify-center lg:flex">
+                  <LayerEditor time={time} videos={media.length} photos={photos.length} project={project} sel={sel} onSelect={setSel} onChange={setProject} onSeek={seek} sceneStart={project.scenes.slice(0, sel?.scene ?? 0).reduce((n, x) => n + x.duration, 0)} accent={project.theme.primary} />
+                </div>
+                {!sel ? <p className="mt-2 text-center text-[11px] text-white/40">Cliquez sur un texte, une image ou une forme dans la vidéo pour le modifier, l’animer ou le déplacer.</p> : null}
+              </div>
+
+              {/* ---------- Panneau ---------- */}
+              <div className="flex min-h-[420px] flex-col rounded-2xl bg-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,.08)] lg:sticky lg:top-4 lg:h-[calc(100dvh-2rem)] lg:self-start">
+                <div className="grid grid-cols-3 gap-1 p-1.5">
+                  {([['ia', 'Modifier', <Wand2 key="i" className="h-4 w-4" />], ['add', 'Ajouter', <Plus key="a" className="h-4 w-4" />], ['style', 'Style', <Palette key="s" className="h-4 w-4" />]] as ['ia' | 'add' | 'style', string, ReactNode][]).map(([id, label, icon]) => (
+                    <button key={id} type="button" onClick={() => setPanel(id)} className={cn('flex cursor-pointer items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-medium transition', panel === id ? 'bg-white text-black' : 'text-white/55 hover:bg-white/[0.05] hover:text-white')}>{icon}{label}</button>
+                  ))}
+                </div>
+                <div ref={panelScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+                  {sel ? (
+                    <div className="lg:hidden [&>div]:mb-4 [&>div]:mt-0">
+                      <LayerEditor time={time} videos={media.length} photos={photos.length} project={project} sel={sel} onSelect={setSel} onChange={setProject} onSeek={seek} sceneStart={project.scenes.slice(0, sel.scene).reduce((n, x) => n + x.duration, 0)} accent={project.theme.primary} />
+                    </div>
+                  ) : null}
+
+                  {panel === 'ia' ? (
               <div className="flex h-full flex-col gap-3">
-                <AiPrefsPanel prefs={aiPrefs} onChange={setAiPrefs} />
                 {loggedIn === false ? (
                   <p className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-fg-muted">
                     <Lock className="mr-1 inline h-3.5 w-3.5" /> <Link href="/login?next=/studio" className="font-semibold text-neon underline">Connectez-vous</Link> (gratuit) pour que l’IA crée et modifie vos vidéos. Vous pouvez déjà tester les modèles et tout modifier à la main.
@@ -1379,182 +1564,74 @@ export function MotionStudio() {
                   </Button>
                 </form>
               </div>
-            ) : null}
+                  ) : null}
 
-            {tab === 'marque' ? (
-              <BrandPanel
-                profile={brand}
-                onChange={setBrand}
-                loggedIn={loggedIn}
-                onApplyPalette={(pal) => setProject((p) => {
-                  const light = parseInt(pal.background.slice(1, 3), 16) * 0.299 + parseInt(pal.background.slice(3, 5), 16) * 0.587 + parseInt(pal.background.slice(5, 7), 16) * 0.114 > 160;
-                  return { ...p, theme: { ...p.theme, primary: pal.primary, accent: pal.accent, background: pal.background, text: light ? '#101225' : '#ffffff' } };
-                })}
-                onImportSite={(a) => { void importSite(a); }}
-                onAutoAd={autoAd}
-                autoStep={autoStep}
-                onCreateAd={(idea) => { setTab('ia'); void askAi(`Crée cette pub pour ma marque : ${idea}`, { fresh: true }); }}
-              />
-            ) : null}
-
-            {tab === 'medias' ? (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-neon/30 bg-neon/[0.05] p-3 text-sm text-fg">
-                  <p className="font-semibold">Partez de vos propres images</p>
-                  <p className="mt-1 text-xs text-fg-muted">Photos et vidéos de vos produits, de votre boutique, de votre équipe, de vos événements… L’IA les regarde et construit la pub animée autour.</p>
-                </div>
-                <label className="flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed border-neon/40 p-5 text-center text-sm text-fg hover:bg-neon/[0.04]">
-                  <Images className="h-6 w-6 text-neon" />
-                  <span className="font-semibold">Ajouter des photos</span>
-                  <span className="text-[11px] text-fg-muted">JPG, PNG, WebP · plusieurs à la fois · {MAX_PHOTOS} maximum</span>
-                  <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
-                </label>
-                {photos.length ? (
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {photos.map((ph, i) => (
-                      <div key={ph.url} className="group relative aspect-square overflow-hidden rounded-lg border border-white/10">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={ph.url} alt={ph.name} className="h-full w-full object-cover" />
-                        <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px] font-bold text-white">{i + 1}</span>
-                        <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/70 opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100">
-                          <button type="button" title="Ajouter en scène" onClick={() => setProject((p) => (p.scenes.length >= MAX_SCENES ? p : { ...p, scenes: [...p.scenes, { type: 'photo', duration: 3, photo: i, layout: 'full' }] }))} className="flex-1 cursor-pointer py-0.5 text-[10px] text-white hover:text-neon">+ Scène</button>
-                          <button type="button" title="Retirer" aria-label="Retirer la photo" onClick={() => removePhoto(i)} className="cursor-pointer px-1.5 py-0.5 text-[10px] text-red-300">×</button>
+                  {panel === 'add' ? (
+                    <div className="space-y-6">
+                      <div>
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/40">Scènes animées</p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {([
+                            ['Texte qui claque', { block: 'kinetic', lines: ['Votre *message*', 'en grand'], style: 'stack' }],
+                            ['Texte surligné', { block: 'kinetic', lines: ['L’offre', 'à ne pas *rater*'], style: 'highlight' }],
+                            ['Mot géant en écho', { block: 'kinetic', lines: ['WOW', 'Votre phrase ici'], style: 'echo' }],
+                            ['Barre de recherche', { block: 'search', query: brandName || project.brand || 'votre recherche', imgs: photos.length ? photos.slice(0, 6).map((_, k) => `photo:${k}`) : undefined }],
+                            ['Bouton qui se transforme', { block: 'button', label: 'Réserver', final: (project.brand || brandName || 'À très vite').slice(0, 30), icon: 'calendar' }],
+                            ['Conversation', { block: 'chat', ask: 'Vous êtes ouverts ce week-end ?', reply: 'Oui, on vous attend !' }],
+                            ['Chiffre dans un anneau', { block: 'clock', big: '24 h', sub: 'pour vous répondre' }],
+                            ['Atouts en cartes', { block: 'problem', title: 'Pourquoi *nous*', items: [{ icon: '★', text: 'Qualité' }, { icon: '✓', text: 'Rapidité' }, { icon: '♥', text: 'Proximité' }] }],
+                            ['Liste qui défile', { block: 'list', title: 'Au programme', lines: ['Première ligne', 'Deuxième ligne', 'Troisième ligne'] }],
+                            ['Signature finale', { block: 'cta', title: (project.brand || brandName) ? `${project.brand || brandName}, *on vous attend*` : 'À *très vite*', button: 'Découvrir' }]
+                          ] as [string, Record<string, unknown>][]).map(([label, block]) => (
+                            <button key={label} type="button" onClick={() => addBlock(block)} className="cursor-pointer rounded-xl border border-white/10 px-3 py-2.5 text-left text-sm text-white/80 transition hover:border-white/30 hover:text-white">{label}</button>
+                          ))}
+                        </div>
+                        <form className="mt-1.5 flex gap-1.5" onSubmit={(e) => { e.preventDefault(); const v = (e.currentTarget.elements.namedItem('place') as HTMLInputElement | null)?.value.trim(); if (v) void (async () => { const r = await fetch(`/api/motion/map?place=${encodeURIComponent(v)}`).then((x) => (x.ok ? x.json() : null)).catch(() => null); addBlock({ block: 'map', place: v.slice(0, 60), ...(r?.geo ? { geo: r.geo } : {}) }); })(); }}>
+                          <input name="place" placeholder="Carte animée : ville, quartier, adresse…" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/30" />
+                          <button type="submit" className="shrink-0 cursor-pointer rounded-xl border border-white/15 px-3 text-sm">Ajouter</button>
+                        </form>
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/40">Vos photos et vidéos</p>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {photos.map((ph, i) => (
+                            <button key={ph.url} type="button" title="Ajouter cette photo en scène (mise en scène tirée au sort)" onClick={() => addBlock({ block: 'photo', img: `photo:${i}`, imgs: photos.slice(0, 8).map((_, k) => `photo:${k}`) })} className="group relative aspect-square cursor-pointer overflow-hidden rounded-lg">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={ph.url} alt={ph.name} className="h-full w-full object-cover transition group-hover:scale-105" />
+                              <span className="absolute inset-x-0 bottom-0 bg-black/70 py-0.5 text-center text-[10px] opacity-0 transition group-hover:opacity-100">+ Scène</span>
+                            </button>
+                          ))}
+                          <label className="grid aspect-square cursor-pointer place-items-center rounded-lg border border-dashed border-white/15 text-white/50 hover:border-white/40 hover:text-white" title="Ajouter des photos">
+                            <Images className="h-5 w-5" />
+                            <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+                          </label>
+                        </div>
+                        {photos.length >= 3 ? <button type="button" onClick={() => addBlock({ block: 'masonry', imgs: photos.slice(0, 12).map((_, k) => `photo:${k}`), title: 'Tout pour vous' })} className="mt-1.5 w-full cursor-pointer rounded-xl border border-white/10 py-2 text-sm text-white/80 hover:border-white/30">Colonnes de photos qui défilent</button> : null}
+                        <div className="mt-3 space-y-1.5">
+                          {media.map((m, i) => (
+                            <div key={m.url} className="flex items-center gap-2 text-sm">
+                              <Film className="h-4 w-4 shrink-0 text-white/50" />
+                              <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                              <button type="button" onClick={() => addBlock({ block: 'phone', img: `video:${i}`, hook: 'Regardez ça', caption: project.brand || brandName || undefined })} className="cursor-pointer rounded-full border border-white/15 px-2.5 py-1 text-xs">+ Téléphone 3D</button>
+                              <button type="button" onClick={() => { setPendingVideo(m.file); router.push('/montage/nouveau'); }} className="cursor-pointer rounded-full border border-white/15 px-2.5 py-1 text-xs">Monter le clip</button>
+                            </div>
+                          ))}
+                          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 py-2 text-sm text-white/60 hover:border-white/40 hover:text-white">
+                            <Film className="h-4 w-4" /> Ajouter une vidéo
+                            <input type="file" accept="video/*,.mov" className="sr-only" onChange={(e) => { addVideo(e.target.files?.[0]); e.target.value = ''; }} />
+                          </label>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : null}
-                <label className="flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed border-neon/40 p-5 text-center text-sm text-fg hover:bg-neon/[0.04]">
-                  <Film className="h-6 w-6 text-neon" />
-                  <span className="font-semibold">Ajouter une vidéo</span>
-                  <span className="text-[11px] text-fg-muted">MP4, MOV, WebM · 3 vidéos maximum</span>
-                  <input type="file" accept="video/*,.mov" className="sr-only" onChange={(e) => { addVideo(e.target.files?.[0]); e.target.value = ''; }} />
-                </label>
-                {media.map((m, i) => (
-                  <div key={m.url} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <p className="min-w-0 truncate text-sm font-semibold text-fg">Vidéo {i + 1} · {m.name}</p>
-                      <span className="shrink-0 font-code text-xs text-fg-muted">{m.duration.toFixed(1)} s</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <button type="button" onClick={() => setProject((p) => (p.scenes.length >= MAX_SCENES ? p : { ...p, scenes: [...p.scenes, { type: 'video', duration: Math.min(8, Math.max(2, m.duration)), media: i, from: 0, layout: 'full' }] }))} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Plein écran</button>
-                      <button type="button" onClick={() => setProject((p) => (p.scenes.length >= MAX_SCENES ? p : { ...p, scenes: [...p.scenes, { type: 'video', duration: Math.min(6, Math.max(2, m.duration)), media: i, from: 0, layout: 'frame', caption: 'Votre *produit*' }] }))} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Dans un cadre</button>
-                      <button type="button" onClick={() => removeVideo(i)} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-red-300 hover:border-red-400/40">Retirer</button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => { setPendingVideo(m.file); router.push('/montage/nouveau'); }}
-                      className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-neon to-[#f6b48f] px-2 py-1.5 text-xs font-bold text-ink-950"
-                    >
-                      <Wand2 className="h-3.5 w-3.5" /> Modifier directement cette vidéo (ralentis, effets, rythme…)
-                    </button>
-                  </div>
-                ))}
-                {photos.length ? (
-                  <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => signatureAd()}>
-                    <Wand2 className="h-4 w-4" /> Pub signature « grandes applis » avec mes photos
-                  </Button>
-                ) : null}
-                {media.length || photos.length ? (
-                  <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => { setTab('ia'); void askAi('Crée une pub professionnelle à partir de mes photos et vidéos : accroche forte, mes images en vedette avec des textes animés, mes points forts, et un appel à l’action', { fresh: true }); }}>
-                    <Sparkles className="h-4 w-4" /> Créer une pub avec mes médias (IA)
-                  </Button>
-                ) : null}
-                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-                  <p className="flex items-center gap-1.5 text-sm font-semibold text-fg"><FileText className="h-4 w-4 text-neon" /> Documents d’inspiration</p>
-                  <p className="mt-1 text-[11px] text-fg-muted">Brochure, menu, fiche produit, brief, charte, ou une vidéo qui vous plaît (rythme, couleurs, style)… L’IA s’en inspire (ton, produits, arguments) sans recopier. Confidentiel : emails, téléphones et numéros sont masqués, rien n’est enregistré, et ces documents ne sont envoyés qu’à des IA qui ne s’entraînent pas sur vos données.</p>
-                  <label className={cn('mt-2 flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-neon/40 px-3 py-2 text-xs font-semibold text-fg hover:bg-neon/[0.04]', docsBusy && 'pointer-events-none opacity-60')}>
-                    {docsBusy ? 'Analyse…' : 'Ajouter un document ou une vidéo d’inspiration'}
-                    <input type="file" accept=".pdf,.docx,.txt,.md,.csv,application/pdf,text/plain,video/*,.mov" multiple className="sr-only" onChange={(e) => { void addDocs(e.target.files); e.target.value = ''; }} />
-                  </label>
-                  {docs.length ? (
-                    <ul className="mt-2 space-y-1">
-                      {docs.map((d) => (
-                        <li key={d.name} className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.04] px-2 py-1 text-xs text-fg">
-                          <span className="min-w-0 truncate">{d.name}</span>
-                          <button type="button" aria-label="Retirer le document" onClick={() => setDocs((x) => x.filter((y) => y.name !== d.name))} className="cursor-pointer text-red-300">×</button>
-                        </li>
-                      ))}
-                    </ul>
                   ) : null}
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Upload label="Logo" hint="scène finale" loaded={Boolean(assets.logo)} onFile={(f) => loadImage(f, 'logo')} onClear={() => setAssets((a) => ({ ...a, logo: null }))} />
-                  <Upload label="Capture d’écran" hint="scène « capture produit »" loaded={Boolean(assets.screenshot)} onFile={(f) => loadImage(f, 'screenshot')} onClear={() => setAssets((a) => ({ ...a, screenshot: null }))} />
-                </div>
-                <p className="text-[11px] text-fg-subtle">Vos fichiers restent sur votre appareil : ils ne sont pas envoyés sur nos serveurs. Gardez cette page ouverte pendant votre création.</p>
-              </div>
-            ) : null}
 
-            {tab === 'style' ? (
-              <div className="mb-4">
-                <CertificationPanel
-              project={project}
-              onFix={(next) => { setProject(next); timeRef.current = 0; setPlaying(true); setNotice('Pub corrigée ✓ Vérifiez le résultat dans l’aperçu.'); }}
-              hasLogo={Boolean(assets.logo)}
-              link={brand.link}
-              notes={brand.notes}
-              concept={concept?.creative_concept}
-              loggedIn={loggedIn}
-              onExport={exportVideo}
-              exporting={exporting}
-            />
-              </div>
-            ) : null}
-            {tab === 'style' ? (
-              <div className="space-y-3">
-                <p className="text-xs text-fg-subtle">Astuce : mettez un mot entre *astérisques* pour le colorer.</p>
-                {project.scenes.map((scene, i) => (
-                  <div key={i} className={cn('rounded-xl border p-3', i === current ? 'border-neon/40 bg-neon/[0.04]' : 'border-white/10 bg-white/[0.02]')}>
-                    <div className="mb-2 flex items-center justify-between">
-                      <button type="button" className="cursor-pointer text-sm font-semibold text-fg" onClick={() => seek(project.scenes.slice(0, i).reduce((n, x) => n + x.duration, 0))}>
-                        {i + 1}. {SCENE_LABELS[scene.type]}
-                      </button>
-                      <div className="flex items-center gap-1 text-fg-muted">
-                        <IconBtn label="Monter" onClick={() => moveScene(i, -1)}><ArrowUp className="h-3.5 w-3.5" /></IconBtn>
-                        <IconBtn label="Descendre" onClick={() => moveScene(i, 1)}><ArrowDown className="h-3.5 w-3.5" /></IconBtn>
-                        <IconBtn label="Supprimer" onClick={() => removeScene(i)}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
-                      </div>
-                    </div>
-                    <SceneFields scene={scene} media={media} photos={photos} onChange={(patch) => updateScene(i, patch)} />
-                    <MagicFields magic={scene.magic ?? []} duration={scene.duration} onChange={(magic) => updateScene(i, { magic: magic.length ? magic : undefined })} />
-                    <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
-                      Animation du texte
-                      <select value={scene.anim ?? ''} onChange={(e) => updateScene(i, { anim: (e.target.value || undefined) as TextAnim | undefined })} className="flex-1 cursor-pointer rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-fg outline-none">
-                        <option value="">Par défaut</option>
-                        {TEXT_ANIMS.map((x) => <option key={x} value={x}>{TEXT_ANIM_LABELS[x]}</option>)}
-                      </select>
-                    </label>
-                    <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
-                      Son d’entrée
-                      <select value={scene.sfx ?? ''} onChange={(e) => updateScene(i, { sfx: (e.target.value || undefined) as Sfx | undefined })} className="flex-1 cursor-pointer rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-fg outline-none">
-                        <option value="">Automatique</option>
-                        {SFX.map((x) => <option key={x} value={x}>{SFX_LABELS[x]}</option>)}
-                      </select>
-                    </label>
-                    <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
-                      Durée
-                      <input type="range" min={1.5} max={scene.type === 'video' ? 15 : 8} step={0.5} value={scene.duration} onChange={(e) => updateScene(i, { duration: Number(e.target.value) })} className="flex-1 accent-[var(--color-neon)]" />
-                      <span className="w-8 text-right font-code">{scene.duration}s</span>
-                    </label>
-                  </div>
-                ))}
-                {project.scenes.length < MAX_SCENES ? (
-                  <div>
-                    <p className="mb-1.5 text-xs font-semibold text-fg-muted">Ajouter une scène</p>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {(Object.keys(SCENE_LABELS) as SceneType[]).map((type) => (
-                        <button key={type} type="button" onClick={() => addScene(type)} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">
-                          + {SCENE_LABELS[type]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {tab === 'style' ? (
+                  {panel === 'style' ? (
+                    <div className="space-y-5">
+                      <QuickBar project={project} onChange={setProject} canUse={(tr) => isPaid || FREE_LIMITS.transitions.includes(tr)} onLocked={proOnly} />
+                      <AiPrefsPanel prefs={aiPrefs} onChange={setAiPrefs} />
+                      <details className="group">
+                        <summary className="cursor-pointer select-none text-sm font-medium text-white/70 hover:text-white">Réglages avancés (fond, couleurs, musique, scènes…)</summary>
+                        <div className="mt-4 space-y-5">
               <div className="space-y-5">
                 <Field label="Format">
                   <div className="grid grid-cols-3 gap-1.5">
@@ -1610,7 +1687,7 @@ export function MotionStudio() {
                       const wish = input?.value.trim();
                       if (!wish) return;
                       if (input) input.value = '';
-                      setTab('ia');
+                      setPanel('ia');
                       void askAi(`Change uniquement le fond animé de la pub (theme.backdrop) selon ce souhait : « ${wish} ». Choisis le fond le plus adapté avec ses couleurs et réglages, ou invente-le en "custom" (glsl) si aucun ne correspond. Ne modifie rien d’autre.`);
                     }}
                   >
@@ -1700,17 +1777,172 @@ export function MotionStudio() {
                 </Field>
                 <p className="text-[11px] text-fg-subtle">Logo, photos et vidéos : onglet « Médias ».</p>
               </div>
-            ) : null}
+              <div className="mb-4">
+                <CertificationPanel
+              project={project}
+              onFix={(next) => { setProject(next); timeRef.current = 0; setPlaying(true); setNotice('Pub corrigée ✓ Vérifiez le résultat dans l’aperçu.'); }}
+              hasLogo={Boolean(assets.logo)}
+              link={brand.link}
+              notes={brand.notes}
+              concept={concept?.creative_concept}
+              loggedIn={loggedIn}
+              onExport={exportVideo}
+              exporting={exporting}
+            />
+              </div>
+              <div className="space-y-3">
+                <p className="text-xs text-fg-subtle">Astuce : mettez un mot entre *astérisques* pour le colorer.</p>
+                {project.scenes.map((scene, i) => (
+                  <div key={i} className={cn('rounded-xl border p-3', i === current ? 'border-neon/40 bg-neon/[0.04]' : 'border-white/10 bg-white/[0.02]')}>
+                    <div className="mb-2 flex items-center justify-between">
+                      <button type="button" className="cursor-pointer text-sm font-semibold text-fg" onClick={() => seek(project.scenes.slice(0, i).reduce((n, x) => n + x.duration, 0))}>
+                        {i + 1}. {SCENE_LABELS[scene.type]}
+                      </button>
+                      <div className="flex items-center gap-1 text-fg-muted">
+                        <IconBtn label="Monter" onClick={() => moveScene(i, -1)}><ArrowUp className="h-3.5 w-3.5" /></IconBtn>
+                        <IconBtn label="Descendre" onClick={() => moveScene(i, 1)}><ArrowDown className="h-3.5 w-3.5" /></IconBtn>
+                        <IconBtn label="Supprimer" onClick={() => removeScene(i)}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
+                      </div>
+                    </div>
+                    <SceneFields scene={scene} media={media} photos={photos} onChange={(patch) => updateScene(i, patch)} />
+                    <MagicFields magic={scene.magic ?? []} duration={scene.duration} onChange={(magic) => updateScene(i, { magic: magic.length ? magic : undefined })} />
+                    <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
+                      Animation du texte
+                      <select value={scene.anim ?? ''} onChange={(e) => updateScene(i, { anim: (e.target.value || undefined) as TextAnim | undefined })} className="flex-1 cursor-pointer rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-fg outline-none">
+                        <option value="">Par défaut</option>
+                        {TEXT_ANIMS.map((x) => <option key={x} value={x}>{TEXT_ANIM_LABELS[x]}</option>)}
+                      </select>
+                    </label>
+                    <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
+                      Son d’entrée
+                      <select value={scene.sfx ?? ''} onChange={(e) => updateScene(i, { sfx: (e.target.value || undefined) as Sfx | undefined })} className="flex-1 cursor-pointer rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-fg outline-none">
+                        <option value="">Automatique</option>
+                        {SFX.map((x) => <option key={x} value={x}>{SFX_LABELS[x]}</option>)}
+                      </select>
+                    </label>
+                    <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted">
+                      Durée
+                      <input type="range" min={1.5} max={scene.type === 'video' ? 15 : 8} step={0.5} value={scene.duration} onChange={(e) => updateScene(i, { duration: Number(e.target.value) })} className="flex-1 accent-[var(--color-neon)]" />
+                      <span className="w-8 text-right font-code">{scene.duration}s</span>
+                    </label>
+                  </div>
+                ))}
+                </div>
+                          <div>
+                            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/40">Marque</p>
+              <BrandPanel
+                profile={brand}
+                onChange={setBrand}
+                loggedIn={loggedIn}
+                onApplyPalette={(pal) => setProject((p) => {
+                  const light = parseInt(pal.background.slice(1, 3), 16) * 0.299 + parseInt(pal.background.slice(3, 5), 16) * 0.587 + parseInt(pal.background.slice(5, 7), 16) * 0.114 > 160;
+                  return { ...p, theme: { ...p.theme, primary: pal.primary, accent: pal.accent, background: pal.background, text: light ? '#101225' : '#ffffff' } };
+                })}
+                onImportSite={(a) => { void importSite(a); }}
+                onAutoAd={autoAd}
+                autoStep={autoStep}
+                onCreateAd={(idea) => { setPanel('ia'); void askAi(`Crée cette pub pour ma marque : ${idea}`, { fresh: true }); }}
+              />
+                          </div>
+                          <div>
+                            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/40">Médias et documents</p>
+              <div className="space-y-4">
+                <div className="rounded-xl border border-neon/30 bg-neon/[0.05] p-3 text-sm text-fg">
+                  <p className="font-semibold">Partez de vos propres images</p>
+                  <p className="mt-1 text-xs text-fg-muted">Photos et vidéos de vos produits, de votre boutique, de votre équipe, de vos événements… L’IA les regarde et construit la pub animée autour.</p>
+                </div>
+                <label className="flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed border-neon/40 p-5 text-center text-sm text-fg hover:bg-neon/[0.04]">
+                  <Images className="h-6 w-6 text-neon" />
+                  <span className="font-semibold">Ajouter des photos</span>
+                  <span className="text-[11px] text-fg-muted">JPG, PNG, WebP · plusieurs à la fois · {MAX_PHOTOS} maximum</span>
+                  <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+                </label>
+                {photos.length ? (
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {photos.map((ph, i) => (
+                      <div key={ph.url} className="group relative aspect-square overflow-hidden rounded-lg border border-white/10">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={ph.url} alt={ph.name} className="h-full w-full object-cover" />
+                        <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px] font-bold text-white">{i + 1}</span>
+                        <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/70 opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100">
+                          <button type="button" title="Ajouter en scène" onClick={() => addBlock({ block: 'photo', img: `photo:${i}`, imgs: photos.slice(0, 8).map((_, k) => `photo:${k}`) })} className="flex-1 cursor-pointer py-0.5 text-[10px] text-white hover:text-neon">+ Scène</button>
+                          <button type="button" title="Retirer" aria-label="Retirer la photo" onClick={() => removePhoto(i)} className="cursor-pointer px-1.5 py-0.5 text-[10px] text-red-300">×</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <label className="flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed border-neon/40 p-5 text-center text-sm text-fg hover:bg-neon/[0.04]">
+                  <Film className="h-6 w-6 text-neon" />
+                  <span className="font-semibold">Ajouter une vidéo</span>
+                  <span className="text-[11px] text-fg-muted">MP4, MOV, WebM · 3 vidéos maximum</span>
+                  <input type="file" accept="video/*,.mov" className="sr-only" onChange={(e) => { addVideo(e.target.files?.[0]); e.target.value = ''; }} />
+                </label>
+                {media.map((m, i) => (
+                  <div key={m.url} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="min-w-0 truncate text-sm font-semibold text-fg">Vidéo {i + 1} · {m.name}</p>
+                      <span className="shrink-0 font-code text-xs text-fg-muted">{m.duration.toFixed(1)} s</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button type="button" onClick={() => addBlock({ block: 'photo', img: `video:${i}`, style: 'full' })} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Plein écran</button>
+                      <button type="button" onClick={() => addBlock({ block: 'phone', img: `video:${i}`, hook: 'Regardez ça' })} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-fg-muted hover:border-neon/40 hover:text-fg">+ Dans un cadre</button>
+                      <button type="button" onClick={() => removeVideo(i)} className="cursor-pointer rounded-lg border border-white/10 px-2 py-1.5 text-xs text-red-300 hover:border-red-400/40">Retirer</button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setPendingVideo(m.file); router.push('/montage/nouveau'); }}
+                      className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-neon to-[#f6b48f] px-2 py-1.5 text-xs font-bold text-ink-950"
+                    >
+                      <Wand2 className="h-3.5 w-3.5" /> Modifier directement cette vidéo (ralentis, effets, rythme…)
+                    </button>
+                  </div>
+                ))}
+                {photos.length ? (
+                  <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => signatureAd()}>
+                    <Wand2 className="h-4 w-4" /> Pub signature « grandes applis » avec mes photos
+                  </Button>
+                ) : null}
+                {media.length || photos.length ? (
+                  <Button variant="gradient" className="w-full rounded-xl font-bold" disabled={aiBusy} onClick={() => { setPanel('ia'); void askAi('Crée une pub professionnelle à partir de mes photos et vidéos : accroche forte, mes images en vedette avec des textes animés, mes points forts, et un appel à l’action', { fresh: true }); }}>
+                    <Sparkles className="h-4 w-4" /> Créer une pub avec mes médias (IA)
+                  </Button>
+                ) : null}
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-fg"><FileText className="h-4 w-4 text-neon" /> Documents d’inspiration</p>
+                  <p className="mt-1 text-[11px] text-fg-muted">Brochure, menu, fiche produit, brief, charte, ou une vidéo qui vous plaît (rythme, couleurs, style)… L’IA s’en inspire (ton, produits, arguments) sans recopier. Confidentiel : emails, téléphones et numéros sont masqués, rien n’est enregistré, et ces documents ne sont envoyés qu’à des IA qui ne s’entraînent pas sur vos données.</p>
+                  <label className={cn('mt-2 flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-neon/40 px-3 py-2 text-xs font-semibold text-fg hover:bg-neon/[0.04]', docsBusy && 'pointer-events-none opacity-60')}>
+                    {docsBusy ? 'Analyse…' : 'Ajouter un document ou une vidéo d’inspiration'}
+                    <input type="file" accept=".pdf,.docx,.txt,.md,.csv,application/pdf,text/plain,video/*,.mov" multiple className="sr-only" onChange={(e) => { void addDocs(e.target.files); e.target.value = ''; }} />
+                  </label>
+                  {docs.length ? (
+                    <ul className="mt-2 space-y-1">
+                      {docs.map((d) => (
+                        <li key={d.name} className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.04] px-2 py-1 text-xs text-fg">
+                          <span className="min-w-0 truncate">{d.name}</span>
+                          <button type="button" aria-label="Retirer le document" onClick={() => setDocs((x) => x.filter((y) => y.name !== d.name))} className="cursor-pointer text-red-300">×</button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Upload label="Logo" hint="scène finale" loaded={Boolean(assets.logo)} onFile={(f) => loadImage(f, 'logo')} onClear={() => setAssets((a) => ({ ...a, logo: null }))} />
+                  <Upload label="Capture d’écran" hint="scène « capture produit »" loaded={Boolean(assets.screenshot)} onFile={(f) => loadImage(f, 'screenshot')} onClear={() => setAssets((a) => ({ ...a, screenshot: null }))} />
+                </div>
+                <p className="text-[11px] text-fg-subtle">Vos fichiers restent sur votre appareil : ils ne sont pas envoyés sur nos serveurs. Gardez cette page ouverte pendant votre création.</p>
+              </div>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+                  ) : null}
+                </div>
+                {watermark ? <p className="border-t border-white/10 px-4 py-2 text-center text-[11px] text-white/40">Offre Free : petite mention « Réalisé avec izicut ». <Link href="/#pricing" className="text-white underline">Passer en Pro</Link></p> : null}
+              </div>
+            </div>
           </div>
-          {watermark ? (
-            <p className="border-t border-white/10 px-4 py-2 text-center text-[11px] text-fg-subtle">
-              Offre Free : petite mention « Réalisé avec izicut ». <Link href="/#pricing" className="text-neon underline">Passer en Pro</Link> pour la retirer.
-            </p>
-          ) : null}
-          <button type="button" onClick={() => { replaceProject(BLANK_PROJECT); setMessages([]); setAssets({}); setPhotos([]); setConcept(null); setHooks([]); try { window.localStorage.removeItem(CONCEPT_KEY); } catch { /* rien */ } }} className="flex cursor-pointer items-center justify-center gap-1.5 border-t border-white/10 py-2 text-xs text-fg-subtle hover:text-fg">
-            <RotateCcw className="h-3 w-3" /> Repartir de zéro
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );

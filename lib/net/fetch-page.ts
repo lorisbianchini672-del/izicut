@@ -4,13 +4,20 @@
  */
 import { safeUrl } from './safe-url';
 
+const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+
+/** Lecture d'une page : d'abord en se présentant comme izicut, puis comme un navigateur (beaucoup de sites bloquent les robots). */
 export async function fetchHtml(start: URL, opts: { maxBytes?: number; timeoutMs?: number } = {}): Promise<{ url: URL; html: string } | null> {
+  return (await fetchHtmlAs(start, opts, 'Mozilla/5.0 (compatible; IziCutBot/1.0; +https://izicut.vercel.app)')) ?? (await fetchHtmlAs(start, opts, BROWSER_UA));
+}
+
+async function fetchHtmlAs(start: URL, opts: { maxBytes?: number; timeoutMs?: number }, ua: string): Promise<{ url: URL; html: string } | null> {
   const maxBytes = opts.maxBytes ?? 1_500_000;
   let target: URL | null = start;
   let res: Response | null = null;
   for (let hop = 0; hop < 4 && target; hop++) {
     res = await fetch(target, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; IziCutBot/1.0; +https://izicut.vercel.app)', Accept: 'text/html', 'Accept-Language': 'fr-FR,fr;q=0.9' },
+      headers: { 'User-Agent': ua, Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.6' },
       redirect: 'manual',
       signal: AbortSignal.timeout(opts.timeoutMs ?? 8000)
     }).catch(() => null);
@@ -20,7 +27,7 @@ export async function fetchHtml(start: URL, opts: { maxBytes?: number; timeoutMs
     target = await safeUrl(new URL(loc, target).toString());
     res = null;
   }
-  if (!res || !target || !res.ok || !(res.headers.get('content-type') ?? '').includes('html')) return null;
+  if (!res || !target || !res.ok || !/html|xml/.test(res.headers.get('content-type') ?? 'html')) return null;
   const reader = res.body?.getReader();
   let html = '';
   if (reader) {

@@ -711,3 +711,66 @@ export function blockScene(block: Block, project: MotionProject, index: number, 
   const fixed = JSON.parse(JSON.stringify(block, (k, v) => (k === 'img' || k === 'before' || k === 'after' ? fixImg(String(v)) : k === 'imgs' && Array.isArray(v) ? v.map((x: unknown) => fixImg(String(x))) : v))) as Block;
   return sceneFor(fixed, index, c);
 }
+
+/**
+ * Pub motion design montée SANS IA (secours quand les IA sont saturées) :
+ * on choisit des blocs animés à partir de la demande, de la marque et des
+ * médias du client, avec un tirage au sort pour que deux pubs ne se
+ * ressemblent pas. Jamais de « modèle » figé.
+ */
+export function localBlocks(o: { prompt: string; brand?: string; tagline?: string; strengths?: string[]; city?: string; link?: string; photos: number; videos: number; seed?: number }): Block[] {
+  const seed = o.seed ?? Math.floor(Math.random() * 1000);
+  const r = (k: number) => { const x = Math.sin((seed + 1) * 9301 + k * 49297) * 233280; return x - Math.floor(x); };
+  const pick = <T,>(arr: readonly T[], k: number): T => arr[Math.floor(r(k) * arr.length) % arr.length];
+  const clean = o.prompt.replace(/\s+/g, ' ').trim();
+  const subject = (clean
+    .replace(/^(fais|fait|faire|cr[ée]e[rz]?|g[ée]n[èe]re[rz]?|r[ée]alise[rz]?|monte[rz]?|je veux|j'aimerais|peux-tu)\s+(moi\s+)?/i, '')
+    .replace(/^(une?|la|le)\s+/i, '')
+    .replace(/^(pub(licit[ée])?|vid[ée]o|annonce|spot|reel|tiktok)s?\s+(motion design\s+)?(pour|de|sur)\s+/i, '')
+    .replace(/^(mon|ma|mes|notre|nos|votre|vos)\s+/i, '')
+    .split(/[,.;!?]| avec | qui | et /i)[0] || o.brand || 'votre projet').slice(0, 40).trim();
+  const name = (o.brand || '').trim();
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  const low = clean.toLowerCase();
+  const verb = /resto|restaurant|pizz|burger|caf[ée]|bar\b|brasserie|traiteur|boulang|p[âa]tisser/.test(low) ? 'Commander'
+    : /coiff|barb|salon|spa|beaut|ongle|massage|m[ée]decin|cabinet|dentist|kin[ée]|coach|sport|salle|yoga|fitness/.test(low) ? 'Réserver'
+    : /boutique|shop|magasin|mode|v[êe]tement|bijou|cosm[ée]t/.test(low) ? 'Découvrir'
+    : /asso|club|[ée]v[ée]nement|festival|concert|soir[ée]e/.test(low) ? 'Participer' : 'Découvrir';
+  const icon = verb === 'Commander' ? 'bag' : verb === 'Réserver' ? 'calendar' : verb === 'Participer' ? 'star' : 'sparkle';
+  const photosList = Array.from({ length: Math.min(o.photos, 12) }, (_, k) => `photo:${k}`);
+  const webImgs = [`search:${subject}`, `search:${subject} detail`, `search:${subject} ambiance`];
+  const imgs = photosList.length ? photosList : webImgs;
+  const out: Block[] = [];
+  // 1. Accroche (style tiré au sort).
+  const hooks: [string, string][] = [
+    [`${cap(subject)}`, 'comme *jamais*'],
+    ['Envie de *nouveau* ?', cap(subject)],
+    [name || cap(subject), 'Le bon plan *près de chez vous*'],
+    ['Vous allez *adorer*', cap(subject)]
+  ];
+  const [h1, h2] = pick(hooks, 1);
+  const hookKind = pick(['stack', 'highlight', 'echo', 'blur', 'mask', 'wave'] as const, 2);
+  out.push(hookKind === 'echo' ? { block: 'kinetic', lines: [h1.replace(/\*/g, '').split(' ')[0].slice(0, 14), h2], style: 'echo' } : { block: 'kinetic', lines: [h1, h2], style: hookKind });
+  // 2. Médias du client en vedette.
+  if (o.videos > 0) out.push({ block: 'phone', img: 'video:0', kicker: name ? `${name} en vidéo` : 'En vidéo', hook: o.tagline?.split(/[.!?]/)[0]?.slice(0, 40) || 'Regardez ça', caption: cap(subject).slice(0, 60) });
+  const styles = ['card', 'polaroid', 'strips', 'circle', 'zoom', 'tilt', 'stack'] as const;
+  const nPhotoScenes = photosList.length ? Math.min(3, photosList.length) : 1;
+  for (let k = 0; k < nPhotoScenes; k++) {
+    const captions = o.strengths?.length ? o.strengths : ['Fait avec *passion*', 'Le souci du *détail*', 'Rien que pour vous'];
+    out.push({ block: 'photo', img: imgs[k % imgs.length], imgs, style: pick(styles, 10 + k), caption: captions[k % captions.length].slice(0, 70) });
+  }
+  // 3. Atouts (cartes en verre ou liste), ou recherche animée.
+  if (o.strengths?.length) {
+    const ic = ['★', '✓', '♥'];
+    out.push(r(20) > 0.5
+      ? { block: 'problem', kicker: name ? `Pourquoi ${name}` : 'Pourquoi nous', title: 'Ce qui fait *la différence*', items: o.strengths.slice(0, 3).map((s, k) => ({ icon: ic[k], text: s.slice(0, 40) })) }
+      : { block: 'list', title: 'Nos *atouts*', lines: o.strengths.slice(0, 5).map((s) => s.slice(0, 60)) });
+  } else out.push({ block: 'search', query: subject.slice(0, 50), imgs });
+  if (imgs.length >= 3 && r(30) > 0.4) out.push({ block: 'masonry', imgs, title: pick(['Tout pour vous', 'À découvrir', 'Laissez-vous tenter'], 31) });
+  // 4. Où nous trouver.
+  if (o.city) out.push({ block: 'map', place: o.city, label: pick(['Juste à côté de chez vous', 'On vous attend', 'Venez nous voir'], 40) });
+  // 5. Bouton qui se transforme, puis signature.
+  out.push({ block: 'button', label: verb, final: (name || cap(subject)).slice(0, 30), icon });
+  out.push({ block: 'cta', title: name ? `${name}, *on vous attend*` : 'À *très vite*', button: verb, ...(o.link ? { link: o.link.slice(0, 60) } : {}) });
+  return out.slice(0, 9);
+}

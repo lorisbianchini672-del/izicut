@@ -48,7 +48,25 @@ export async function GET(request: Request) {
   if (!url) return NextResponse.json({ error: 'Site introuvable : vérifiez l’adresse (ex. monsite.fr).' }, { status: 400 });
   try {
     const page = await fetchHtml(url);
-    if (!page) return NextResponse.json({ error: 'Impossible de lire ce site (page introuvable ou protégée).' }, { status: 502 });
+    if (!page) {
+      // Site protégé contre les robots : on continue quand même avec ce qu'on sait (nom, adresse, icône),
+      // l'IA s'appuie sur la description du client. Jamais de blocage.
+      const host = url.hostname.replace(/^www\./, '');
+      const nameGuess = host.split('.')[0].replace(/[-_]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+      return NextResponse.json({
+        site: {
+          url: url.toString().slice(0, 200),
+          title: nameGuess.slice(0, 120),
+          description: '',
+          colors: [],
+          fonts: [],
+          logo: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=256`,
+          images: [],
+          text: `Site ${host} (contenu protégé, non lisible automatiquement).`,
+          partial: true
+        }
+      });
+    }
     const html = page.html;
     const res = { url: page.url.toString() };
     const title = decode(html.match(/<title[^>]*>([^<]{1,200})<\/title>/i)?.[1] ?? meta(html, 'og:title') ?? '');

@@ -10,7 +10,7 @@ import { sendEmail } from '@/lib/email/send';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, BackdropSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { FREE_DOC } from '@/lib/motion/prompt';
-import { BLOCKS_DOC, StyleSchema, composeProject, parseBlocks, type Block } from '@/lib/motion/compose';
+import { BLOCKS_DOC, StyleSchema, composeProject, localBlocks, parseBlocks, type Block } from '@/lib/motion/compose';
 import { AiPrefsSchema, prefsPrompt } from '@/lib/motion/prefs';
 import { fetchMap } from '@/lib/motion/osm';
 import { EDIT_OPS_DOC, applyOps, describeOps, quickOps, summarize } from '@/lib/motion/edit-ops';
@@ -598,12 +598,38 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
     ? `Projet actuel :\n${JSON.stringify(project)}${mediaInfo}${brandInfo}${docsInfo}\n\n${prefsText}Modification demandée : ${prompt}`
     : `${docs.length ? `⚠️ PRIORITÉ : le client a joint ${docs.length} fichier(s) d'inspiration (voir plus bas). Ta pub DOIT s'en inspirer clairement et visiblement : mêmes couleurs dominantes (style.colors / accent), même rythme (vidéo rapide → blocs courts et bpm élevé ; lent → moins de blocs, bpm bas), même ambiance, mêmes arguments / produits. Dans "message", explique au client ce que tu as repris de ses fichiers.\n\n` : ''}${prefsText}Demande du client : ${prompt}${mediaInfo}${brandInfo}${docsInfo}\n\nCrée le concept puis le projet.`;
 
+  /** IA saturée : on monte quand même une vraie pub motion design (blocs animés tirés au sort), jamais un modèle figé ni une erreur. */
+  const localFallback = async () => {
+    const name = (brand?.company?.name ?? '').slice(0, 40);
+    const blocks = localBlocks({
+      prompt,
+      brand: name,
+      tagline: brand?.brief?.pitch,
+      strengths: brand?.brief?.strengths?.slice(0, 5),
+      city: brand?.company?.city ?? undefined,
+      link: brand?.link || undefined,
+      photos: photos?.length ?? 0,
+      videos: media?.length ?? 0
+    });
+    for (const bl of blocks) if (bl.block === 'map' && !bl.geo) bl.geo = (await fetchMap(bl.place).catch(() => null)) ?? undefined;
+    const pal = brand?.brief?.palette;
+    const accent = prefs?.colors?.[0] ?? pal?.primary ?? brand?.site?.colors?.find((c: string) => /^#[0-9a-f]{6}$/i.test(c) && !/^#(f{6}|0{6})$/i.test(c));
+    let fp = composeProject(blocks, { ...(accent ? { accent } : {}), ...(prefs?.look === 'clair' ? { backdrop: 'paper' as const } : {}), ...(prefs?.transition ? { transition: prefs.transition } : {}) }, { brand: name, hasLogo: Boolean(parsed.data.hasLogo), format: parsed.data.format ?? '9:16', photos: photos?.length ?? 0, videos: media?.length ?? 0 });
+    if (free) fp = clampToFree(fp);
+    return NextResponse.json({
+      project: fp,
+      message: 'Notre IA créative est très demandée en ce moment : je t’ai monté une première version animée avec tes infos et tes images. Demande-moi n’importe quelle modification, ou relance la création dans un instant pour une version 100 % sur mesure.',
+      quota: { tier, used, limit: free ? FREE_MOTION_CREATIONS : null }
+    });
+  };
+
   try {
     let lastError = '';
     const t0 = Date.now();
     for (let attempt = 0; attempt < (project ? 2 : 3); attempt++) {
       // Pas de seconde tentative si le temps manque (limite Vercel 300 s).
-      if (attempt > 0 && Date.now() - t0 > 200_000) break;
+      // Création : au-delà d'environ 1 min 30, on monte la version animée de secours plutôt que de faire attendre.
+      if (attempt > 0 && Date.now() - t0 > (project ? 200_000 : 70_000)) break;
       // Création : d'abord par blocs (rendu premium garanti), en dernier recours la version libre légère.
       const composer = !project && attempt < 2;
       const lite = !project && !composer;
@@ -616,9 +642,9 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
           temperature: project ? 0.5 : 0.85,
           // Réflexion approfondie de Claude au premier essai.
           think: attempt === 0 ? (project ? 3000 : 4000) : 0,
-          timeoutMs: 150_000,
+          timeoutMs: project ? 150_000 : 80_000,
           confidential,
-          deadline: t0 + 280_000
+          deadline: t0 + (project ? 280_000 : 100_000)
         });
       } catch (err) {
         if (err instanceof AiNotConfiguredError) throw err;
@@ -720,9 +746,11 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
       }
       lastError = (result.error?.issues ?? []).slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     }
+    if (!project) return await localFallback();
     return NextResponse.json({ error: 'La création n’a pas abouti du premier coup.', code: 'retry' }, { status: 502 });
   } catch (err) {
     if (err instanceof AiNotConfiguredError) return NextResponse.json({ error: err.message }, { status: 503 });
+    if (!project) { try { return await localFallback(); } catch { /* secours impossible */ } }
     console.error('[motion] génération :', err);
     return NextResponse.json({ error: 'Notre IA est très demandée en ce moment.', code: 'busy' }, { status: 503 });
   }
