@@ -34,7 +34,7 @@ function labelOf(L: Layer): string {
   if (L.kind === 'text') return L.text.replace(/\*/g, '').slice(0, 26);
   if (L.kind === 'image' && L.src.startsWith('video:')) return `Vidéo ${Number(L.src.slice(6)) + 1}`;
   if (L.kind === 'image' && L.src.startsWith('photo:')) return `Photo ${Number(L.src.slice(6)) + 1}`;
-  return ({ rect: 'Forme', ellipse: 'Cercle', path: 'Tracé', image: 'Image', callout: 'Annotation', gallery: 'Galerie', list: 'Liste', particles: 'Particules', glow: 'Lumière', flow: 'Fond lumineux', group: 'Groupe' } as Record<string, string>)[L.kind] ?? L.kind;
+  return ({ icon: 'Icône', rect: 'Forme', ellipse: 'Cercle', path: 'Tracé', image: 'Image', callout: 'Annotation', gallery: 'Galerie', list: 'Liste', particles: 'Particules', glow: 'Lumière', flow: 'Fond lumineux', group: 'Groupe' } as Record<string, string>)[L.kind] ?? L.kind;
 }
 
 /** Mouvement d'entrée prêt à l'emploi : images clés posées à partir de l'apparition du calque. */

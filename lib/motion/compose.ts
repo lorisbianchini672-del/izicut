@@ -29,7 +29,10 @@ export const BlockSchema = z.discriminatedUnion('block', [
   z.object({ block: z.literal('stat'), value: z.number().min(-1e9).max(1e9), prefix: z.string().max(4).optional(), suffix: z.string().max(8).optional(), label: txt(60) }),
   z.object({ block: z.literal('explain'), img, title: z.string().trim().max(60).optional(), notes: z.array(z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1), text: txt(40), sub: z.string().trim().max(50).optional() })).min(1).max(3) }),
   z.object({ block: z.literal('compare'), before: img, after: img, labelBefore: z.string().trim().max(24).optional(), labelAfter: z.string().trim().max(24).optional(), title: z.string().trim().max(60).optional() }),
-  z.object({ block: z.literal('photo'), img, caption: z.string().trim().max(70).optional() }),
+  z.object({ block: z.literal('photo'), img, caption: z.string().trim().max(70).optional(), style: z.enum(['full', 'card', 'polaroid', 'strips', 'circle', 'zoom', 'tilt', 'stack']).optional(), imgs: z.array(img).max(8).optional() }),
+  z.object({ block: z.literal('search'), query: txt(50), imgs: z.array(img).max(8).optional() }),
+  z.object({ block: z.literal('masonry'), imgs: z.array(img).min(1).max(12), title: z.string().trim().max(50).optional() }),
+  z.object({ block: z.literal('button'), label: txt(24), final: z.string().trim().max(30).optional(), icon: z.string().max(12).optional() }),
   // Scène 100 % sur mesure quand aucun bloc ne convient (calques libres, validés avant d'être gardés).
   z.object({ block: z.literal('free'), duration: z.number().min(1.2).max(8), name: z.string().max(40).optional(), layers: z.array(z.record(z.string(), z.unknown())).min(1).max(16), camera: z.record(z.string(), z.unknown()).optional() }),
   z.object({ block: z.literal('map'), place: txt(60), label: z.string().trim().max(60).optional(), geo: z.object({ name: z.string().max(80), roads: z.array(z.string().max(3000)).max(14), major: z.array(z.string().max(3000)).max(6), water: z.array(z.string().max(3000)).max(3) }).optional() }),
@@ -67,7 +70,7 @@ function mix(a: string, b: string, k: number): string {
   return '#' + ((1 << 24) | (m(16) << 16) | (m(8) << 8) | m(0)).toString(16).slice(1);
 }
 
-type Ctx = { accent: string; text: string; sub: string; brand: string; hasLogo: boolean; vertical: boolean };
+type Ctx = { accent: string; text: string; sub: string; brand: string; hasLogo: boolean; vertical: boolean; /** Tirage au sort par pub : deux pubs ne se ressemblent jamais. */ seed?: number; light?: boolean };
 /** Hauteur de l'écran en px (petit côté = 1080). */
 const Hpx = (c: Ctx) => (c.vertical ? 1920 : 1080);
 /** Petit titre au-dessus d'une scène (« Le problème », « Ta vidéo »…). */
@@ -96,7 +99,7 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
       return { ...base, duration: b.line ? 3 : 2.4, name: 'Révélation', layers, cues: [{ at: 0.2, sfx: 'riser' }, { at: 0.6, sfx: 'chime' }, ...(b.line ? [{ at: 1.45, sfx: 'whoosh' as const }] : [])] };
     }
     case 'kinetic': {
-      const style = b.style ?? (['push', 'highlight', 'stack', 'blur', 'echo', 'mask', 'wave', 'slam'] as const)[i % 8];
+      const style = b.style ?? (['push', 'highlight', 'stack', 'blur', 'echo', 'mask', 'wave', 'slam'] as const)[(i + (c.seed ?? 0)) % 8];
       const layers: Layer[] = [];
       const step = 0.75;
       const W = c.vertical ? 1080 : 1920;
@@ -281,18 +284,10 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
         ],
         cues: [{ at: 1, sfx: 'swipe' }]
       };
-    case 'photo':
-      return {
-        ...base, duration: 2.4, name: 'Photo',
-        layers: [
-          { kind: 'image', src: b.img, x: 0.5, y: 0.5, w: 1080, h: 1920, fit: 'cover', reveal: (['iris', 'blinds', 'split', 'wipe'] as const)[i % 4], revealDur: 0.7, zoom: [e(0, 1.04, 'linear'), e(2.4, 1.16, 'linear')] },
-          ...(b.caption ? [
-            { kind: 'rect' as const, x: 0.5, y: 0.74, w: 960, h: 170, radius: 36, glass: true, opacity: [e(0.5, 0, 'linear'), e(0.8, 1, 'out')] },
-            { kind: 'text' as const, x: 0.5, y: 0.74, text: b.caption, size: 50, weight: 800, maxWidth: 0.8, color: '#ffffff', reveal: 'blur' as const, revealBy: 'word' as const, revealAt: 0.6 }
-          ] : [])
-        ],
-        cues: [{ at: 0.05, sfx: 'whoosh' }]
-      };
+    case 'photo': return photoScene(b, i, c);
+    case 'search': return searchScene(b, c);
+    case 'masonry': return masonryScene(b, c);
+    case 'button': return buttonScene(b, c);
     case 'free':
       return { type: 'free', bg: 'theme', duration: b.duration, name: b.name ?? 'Sur mesure', layers: b.layers as unknown as Layer[], ...(b.camera ? { camera: b.camera as Scene extends { camera?: infer C } ? C : never } : {}) } as Scene;
     case 'map': {
@@ -421,14 +416,223 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
   }
 }
 
+const ICON_SET = ['heart', 'star', 'share', 'pin', 'edit', 'search', 'check', 'plus', 'play', 'cart', 'bag', 'phone', 'mail', 'location', 'calendar', 'clock', 'user', 'camera', 'bell', 'home', 'gift', 'sparkle', 'like', 'message', 'send', 'music', 'bolt', 'lock', 'arrow', 'euro', 'download', 'eye'];
+const pickN = <T,>(arr: readonly T[], k: number): T => arr[((k % arr.length) + arr.length) % arr.length];
+/** Couleur qui change d'un coup à l'instant t. */
+const colAt = (t: number, a: string, b: string) => [{ t: 0, v: a }, { t, v: a }, { t: t + 0.1, v: b, e: 'linear' as const }];
+const PHOTO_STYLES = ['card', 'polaroid', 'strips', 'circle', 'zoom', 'tilt', 'stack', 'full'] as const;
+const capOf = (cap: string | undefined, y: number, c: Ctx, at: number, reveal: 'swirl' | 'rise' | 'blur' | 'mask' = 'swirl', size = 60): Layer[] =>
+  cap ? [{ kind: 'text', x: 0.5, y, text: cap, size, weight: 800, maxWidth: 0.86, color: c.text, reveal, revealBy: reveal === 'swirl' ? 'char' : 'word', revealAt: at } as Layer] : [];
+
+/** Photo mise en scène : 8 façons différentes, tirées au sort à chaque pub (jamais toujours la même chose). */
+function photoScene(b: Extract<Block, { block: 'photo' }>, i: number, c: Ctx): Scene {
+  const st = b.style ?? pickN(PHOTO_STYLES, (c.seed ?? 0) + i * 3);
+  const base = { type: 'free' as const, bg: 'theme' as const };
+  const V = c.vertical, W = V ? 1080 : 1920, H = V ? 1920 : 1080;
+  const others = (b.imgs ?? []).filter((x) => x !== b.img);
+  const alt = (k: number) => (others.length ? others[Math.abs(k) % others.length] : b.img);
+  const ink = c.light ? '#141414' : '#ffffff';
+  switch (st) {
+    case 'card': {
+      // Carte photo qui arrive en tournoyant, boutons d'action qui gravitent autour puis se posent ; l'un est « appuyé ».
+      const cw = V ? 620 : 480, ch = V ? 780 : 600;
+      const icons = ['edit', 'pin', 'heart', 'share'] as const;
+      const L: Layer[] = [
+        { kind: 'image', src: b.img, x: 0.5, y: 0.46, w: cw, h: ch, radius: 56, fit: 'cover', shadow: true, motionBlur: true, rotate: [e(0, -38), e(0.75, 4, 'smooth'), e(1.1, 0, 'spring')], scale: [e(0, 0.35), e(0.75, 1.04, 'smooth'), e(1.1, 1, 'spring')], ry: [e(0, 50), e(0.8, 0, 'smooth')], opacity: [e(0, 0, 'linear'), e(0.2, 1, 'out')], zoom: [e(0, 1.25, 'linear'), e(3.2, 1, 'smooth')] } as Layer
+      ];
+      icons.forEach((name, k) => {
+        const fx = 0.5 + (cw / 2 + 70) / W, fy = 0.46 + ((k - 1.5) * 150) / H;
+        const at = 0.55 + k * 0.1;
+        const pressed = k === 1;
+        L.push({
+          kind: 'icon', name, size: 34, shadow: true, motionBlur: true,
+          x: [e(at, 0.5 + Math.cos(k * 1.7) * 0.3), e(at + 0.6, fx, 'spring')],
+          y: [e(at, 0.46 + Math.sin(k * 1.7) * 0.18), e(at + 0.6, fy, 'spring')],
+          rotate: [e(at, 160), e(at + 0.6, 0, 'spring')],
+          color: pressed ? colAt(1.7, '#1a1a1a', '#ffffff') : '#1a1a1a',
+          bg: pressed ? colAt(1.7, '#ffffff', c.accent) : '#ffffff',
+          ...(pressed ? { scale: [e(1.55, 1), e(1.65, 0.8, 'in'), e(1.9, 1.15, 'spring'), e(2.2, 1)] } : {}),
+          opacity: [e(at, 0, 'linear'), e(at + 0.15, 1, 'out')]
+        } as Layer);
+      });
+      L.push({ kind: 'particles', x: 0.5 + (cw / 2 + 70) / W, y: 0.46 - 75 / H, mode: 'burst', count: 26, color: c.accent, color2: '#ffffff', size: 7, spread: 0.12, at: 1.7, from: 1.6 } as Layer);
+      L.push(...capOf(b.caption, V ? 0.76 : 0.88, c, 1.3, 'swirl', V ? 60 : 52));
+      return { ...base, duration: 3.2, name: 'Carte photo', layers: L, camera: { zoom: [e(0, 1.08, 'linear'), e(1.2, 1, 'smooth'), e(3.2, 1.04, 'linear')] }, cues: [{ at: 0.05, sfx: 'whoosh' }, { at: 0.7, sfx: 'pop' }, { at: 1.7, sfx: 'click' }] };
+    }
+    case 'polaroid': {
+      // Photos façon tirage papier qui tombent et s'empilent, légende écrite sur le cadre.
+      const pw = V ? 640 : 420, ph = pw * 1.1;
+      const L: Layer[] = [];
+      [alt(1), b.img].forEach((src, k) => {
+        const at = k * 0.35, rot = k ? -4 : 9, dx = k ? 0 : 0.06;
+        L.push({ kind: 'group', x: 0.5 + dx, y: [e(at, -0.4), e(at + 0.7, V ? 0.46 : 0.5, 'spring')], rotate: [e(at, k ? 18 : -14), e(at + 0.75, rot, 'spring')], motionBlur: true, children: [
+          { kind: 'rect', x: 0.5, y: 0.5, w: pw + 50, h: ph + 190, radius: 10, color: '#fbfaf7', shadow: true },
+          { kind: 'image', src, x: 0.5, y: 0.5 - 60 / H, w: pw, h: ph, radius: 4, fit: 'cover' },
+          ...(k && b.caption ? [{ kind: 'text' as const, x: 0.5, y: 0.5 + (ph / 2 + 30) / H, text: b.caption, size: V ? 44 : 34, weight: 600, italic: true, maxWidth: (pw - 20) / W, color: '#2a2a2a', reveal: 'type' as const, revealAt: 1.2, revealDur: 1 }] : [])
+        ] } as Layer);
+      });
+      return { ...base, duration: 3.2, name: 'Tirages photo', layers: L, camera: { zoom: [e(0, 1, 'linear'), e(3.2, 1.06, 'linear')], rotate: [e(0, 2, 'linear'), e(3.2, 0, 'smooth')] }, cues: [{ at: 0.5, sfx: 'swipe' }, { at: 0.9, sfx: 'swipe' }, { at: 1.2, sfx: 'click' }] };
+    }
+    case 'strips': {
+      // La photo découpée en bandes qui glissent en sens alterné et se recollent.
+      const n = V ? 3 : 5, sw = W / n;
+      const L: Layer[] = [];
+      for (let k = 0; k < n; k++) {
+        const from = k % 2 ? 1.6 : -0.6, at = k * 0.08;
+        L.push({ kind: 'image', src: b.img, x: (k + 0.5) / n, y: [e(at, from), e(at + 0.65, 0.5, 'expo')], w: sw + 1, h: H, fit: 'cover', slice: [k / n, (k + 1) / n], zoom: [e(0, 1.2, 'linear'), e(2.8, 1.05, 'smooth')], motionBlur: true } as Layer);
+      }
+      if (b.caption) {
+        L.push({ kind: 'rect', x: 0.5, y: 0.78, w: [e(0.8, 0), e(1.2, W * 0.86, 'expo')], h: V ? 150 : 120, radius: 20, color: c.accent } as Layer);
+        L.push({ kind: 'text', x: 0.5, y: 0.78, text: b.caption, size: V ? 54 : 46, weight: 900, maxWidth: 0.8, color: lum(c.accent) > 150 ? '#0b0b0b' : '#ffffff', reveal: 'mask', revealBy: 'word', revealAt: 1.0 } as Layer);
+      }
+      return { ...base, duration: 2.8, name: 'Bandes', layers: L, cues: [{ at: 0.05, sfx: 'swipe' }, { at: 0.3, sfx: 'swipe' }, { at: 0.9, sfx: 'impact' }] };
+    }
+    case 'circle': {
+      // Photo dans un cercle qui s'ouvre depuis un point, anneau qui se dessine, anneau fin qui tourne en sens inverse.
+      const d = V ? 760 : 520;
+      const cy = V ? 0.44 : 0.45;
+      const L: Layer[] = [
+        { kind: 'ellipse', x: 0.5, y: cy, w: [e(0, 0), e(0.35, 60, 'out'), e(0.9, d + 70, 'smooth')], color: c.accent } as Layer,
+        { kind: 'image', src: b.img, x: 0.5, y: cy, w: [e(0.25, 1), e(0.95, d, 'smooth')], h: [e(0.25, 1), e(0.95, d, 'smooth')], radius: 1000, fit: 'cover', zoom: [e(0, 1.4, 'linear'), e(3, 1, 'smooth')] } as Layer,
+        { kind: 'ellipse', x: 0.5, y: cy, w: d + 150, stroke: { color: c.accent, width: 4 }, progress: [e(0.6, 0, 'linear'), e(1.6, 1, 'smooth')], rotate: [e(0, -90, 'linear'), e(3, 30, 'linear')] } as Layer,
+        { kind: 'ellipse', x: 0.5, y: cy, w: d + 230, stroke: { color: ink, width: 2 }, opacity: 0.25, progress: [e(0.8, 0, 'linear'), e(1.8, 0.7, 'smooth')], rotate: [e(0, 90, 'linear'), e(3, -60, 'linear')] } as Layer
+      ];
+      L.push(...capOf(b.caption, V ? 0.73 : 0.86, c, 1.1, 'swirl', V ? 64 : 52));
+      return { ...base, duration: 3, name: 'Cercle', layers: L, cues: [{ at: 0.1, sfx: 'pop' }, { at: 0.6, sfx: 'whoosh' }] };
+    }
+    case 'zoom': {
+      // Mur de vignettes ; la caméra plonge dans celle du centre qui devient plein écran.
+      const tw = V ? 300 : 300, th = tw * 1.3, gap = 30;
+      const L: Layer[] = [];
+      for (let r = -2; r <= 2; r++) for (let q = -2; q <= 2; q++) {
+        const center = r === 0 && q === 0;
+        const x = 0.5 + (q * (tw + gap)) / W, y = 0.5 + (r * (th + gap)) / H;
+        L.push(center
+          ? { kind: 'image', src: b.img, x, y, w: tw, h: th, radius: 26, fit: 'cover', shadow: true } as Layer
+          : { kind: 'image', src: alt(r * 5 + q + 12), x, y, w: tw, h: th, radius: 26, fit: 'cover', opacity: [e(0, 0.9, 'linear'), e(1.0, 0.35, 'smooth')], blur: [e(0, 0, 'linear'), e(1.0, 12, 'smooth')] } as Layer);
+      }
+      const big = Math.max(W / tw, H / th) * 1.04;
+      return { ...base, duration: 3, name: 'Plongée', layers: L, camera: { zoom: [e(0, 0.85, 'linear'), e(0.6, 1, 'smooth'), e(1.6, big, 'expo'), e(3, big * 1.05, 'linear')], rotate: [e(0, -8, 'linear'), e(1.6, 0, 'expo')] }, cues: [{ at: 0.6, sfx: 'riser' }, { at: 1.5, sfx: 'impact' }] };
+    }
+    case 'tilt': {
+      // Photo qui pivote en 3D devant son propre reflet flou, reflet lumineux qui balaie.
+      const pw = V ? 820 : 900, ph = V ? 1100 : 560;
+      const L: Layer[] = [
+        { kind: 'image', src: b.img, x: 0.5, y: 0.5, w: W * 1.3, h: H * 1.3, fit: 'cover', blur: 40, opacity: 0.55 } as Layer,
+        { kind: 'image', src: b.img, x: 0.5, y: 0.47, w: pw, h: ph, radius: 40, fit: 'cover', shadow: true, ry: [e(0, 55), e(0.9, -10, 'smooth'), e(1.5, 0, 'spring')], scale: [e(0, 0.8), e(0.9, 1, 'smooth')], opacity: [e(0, 0, 'linear'), e(0.25, 1, 'out')], motionBlur: true } as Layer,
+        { kind: 'rect', x: [e(0.9, -0.3, 'linear'), e(1.7, 1.3, 'inOut')], y: 0.47, w: 160, h: H * 1.4, rotate: 20, color: '#ffffff', opacity: 0.25, blur: 30, blend: 'screen' } as Layer
+      ];
+      L.push(...capOf(b.caption, V ? 0.85 : 0.9, c, 1.2, 'rise', V ? 58 : 48).map((l) => ({ ...l, color: '#ffffff', shadow: true } as Layer)));
+      return { ...base, duration: 3, name: 'Bascule 3D', layers: L, cues: [{ at: 0.05, sfx: 'whoosh' }, { at: 0.9, sfx: 'chime' }] };
+    }
+    case 'stack': {
+      // Pile de cartes en éventail qui arrive, puis une carte s'envole sur le côté.
+      const cw = V ? 620 : 420, ch = cw * 1.3;
+      const L: Layer[] = [];
+      [alt(2), alt(1), b.img].forEach((src, k) => {
+        const at = k * 0.12, rot = (k - 1) * 8;
+        const fly = k === 1;
+        L.push({ kind: 'image', src, y: [e(at, 1.5), e(at + 0.6, 0.47, 'expo')], w: cw, h: ch, radius: 36, fit: 'cover', shadow: true, motionBlur: true,
+          x: fly ? [e(0, 0.5), e(1.2, 0.5), e(1.6, -0.6, 'in')] : 0.5,
+          rotate: fly ? [e(at, rot * 3), e(at + 0.6, rot, 'spring'), e(1.2, rot), e(1.6, -40, 'in')] : k === 2 ? [e(at, 20), e(at + 0.6, 0, 'spring')] : [e(at, rot * 3), e(at + 0.6, rot, 'spring')] } as Layer);
+      });
+      L.push(...capOf(b.caption, V ? 0.8 : 0.9, c, 1.0, 'swirl', V ? 60 : 50));
+      return { ...base, duration: 3, name: 'Pile de cartes', layers: L, cues: [{ at: 0.1, sfx: 'swipe' }, { at: 0.35, sfx: 'swipe' }, { at: 1.25, sfx: 'whoosh' }] };
+    }
+    default: {
+      const rv = pickN(['iris', 'blinds', 'split', 'wipe', 'rise'] as const, i + (c.seed ?? 0));
+      return {
+        ...base, duration: 2.6, name: 'Photo',
+        layers: [
+          { kind: 'image', src: b.img, x: 0.5, y: 0.5, w: W, h: H, fit: 'cover', reveal: rv, revealDur: 0.7, zoom: [e(0, 1.04, 'linear'), e(2.6, 1.16, 'linear')] } as Layer,
+          ...(b.caption ? [
+            { kind: 'rect', x: 0.5, y: 0.74, w: V ? 960 : 1200, h: 170, radius: 36, glass: true, opacity: [e(0.5, 0, 'linear'), e(0.8, 1, 'out')] } as Layer,
+            { kind: 'text', x: 0.5, y: 0.74, text: b.caption, size: 50, weight: 800, maxWidth: 0.8, color: '#ffffff', reveal: 'blur', revealBy: 'word', revealAt: 0.6 } as Layer
+          ] : [])
+        ],
+        cues: [{ at: 0.05, sfx: 'whoosh' }]
+      };
+    }
+  }
+}
+
+/** Barre de recherche qui s'écrit (la caméra part de très près), puis résultats en mosaïque qui apparaissent en cascade. */
+function searchScene(b: Extract<Block, { block: 'search' }>, c: Ctx): Scene {
+  const V = c.vertical, W = V ? 1080 : 1920, H = V ? 1920 : 1080;
+  const bw = V ? 900 : 1100, by = V ? 0.24 : 0.2;
+  const L: Layer[] = [
+    { kind: 'rect', x: 0.5, y: by, w: bw, h: 120, radius: 60, color: '#ffffff', shadow: true, stroke: { color: '#e4e4e7', width: 2 } } as Layer,
+    { kind: 'icon', name: 'search', x: 0.5 + (bw / 2 - 70) / W, y: by, size: 40, color: '#3f3f46' } as Layer,
+    { kind: 'text', x: 0.5 - (bw / 2 - 50) / W, y: by, align: 'left', text: b.query, size: 44, weight: 500, maxWidth: (bw - 160) / W, color: '#18181b', reveal: 'type', revealAt: 0.3, revealDur: Math.min(1.4, 0.3 + b.query.length * 0.05) } as Layer
+  ];
+  const cols = V ? 3 : 5, cw = V ? 290 : 300, gap = 26;
+  const imgs = b.imgs ?? [];
+  const hues = [c.accent, mix(c.accent, '#000000', 0.4), mix(c.accent, '#ffffff', 0.5), '#3f4a5a', '#6b7a3a', '#a33a2c', '#d8d4cc', '#2b2f3a'];
+  let k = 0;
+  for (let q = 0; q < cols; q++) {
+    let y = by + 160 / H;
+    for (let r = 0; r < 5; r++) {
+      const hgt = [300, 380, 240, 340][(q + r * 2) % 4];
+      const x = 0.5 + ((q - (cols - 1) / 2) * (cw + gap)) / W;
+      const cy = y + hgt / 2 / H;
+      const at = 1.5 + k * 0.04;
+      const common = { x, y: [e(at, cy + 0.05), e(at + 0.5, cy, 'expo')], w: cw, h: hgt, radius: 24, opacity: [e(at, 0, 'linear'), e(at + 0.2, 1, 'out')], scale: [e(at, 0.7), e(at + 0.5, 1, 'spring')], motionBlur: true };
+      L.push((imgs.length ? { kind: 'image', src: imgs[k % imgs.length], fit: 'cover', ...common } : { kind: 'rect', color: hues[k % hues.length], ...common }) as Layer);
+      y += (hgt + gap) / H;
+      k++;
+    }
+  }
+  return { type: 'free', bg: 'theme', duration: 3.6, name: 'Recherche', layers: L.slice(0, 40), camera: { zoom: [e(0, 2.3, 'linear'), e(1.4, 2.15, 'linear'), e(2.0, 1, 'expo')], y: [e(0, by - 0.5, 'linear'), e(1.4, by - 0.5, 'linear'), e(2.0, 0, 'expo')], x: [e(0, -0.1, 'linear'), e(1.4, 0.04, 'linear'), e(2.0, 0, 'expo')] }, cues: [{ at: 0.3, sfx: 'click' }, { at: 1.4, sfx: 'whoosh' }, { at: 1.6, sfx: 'pop' }] };
+}
+
+/** Colonnes d'images qui défilent en sens alterné avec accélération / freinage (flou de vitesse), titre par-dessus. */
+function masonryScene(b: Extract<Block, { block: 'masonry' }>, c: Ctx): Scene {
+  const V = c.vertical, W = V ? 1080 : 1920, H = V ? 1920 : 1080;
+  const cols = V ? 4 : 6, cw = V ? 240 : 290, gap = 22;
+  const L: Layer[] = [];
+  let k = 0;
+  for (let q = 0; q < cols; q++) {
+    const kids: Layer[] = [];
+    let y = 0.5 - 1.1;
+    for (let r = 0; r < 8; r++) {
+      const hgt = [320, 420, 280, 380][(q + r) % 4];
+      kids.push({ kind: 'image', src: b.imgs[k++ % b.imgs.length], x: 0.5, y: y + hgt / 2 / H, w: cw, h: hgt, radius: 22, fit: 'cover' } as Layer);
+      y += (hgt + gap) / H;
+    }
+    const dir = q % 2 ? 1 : -1;
+    L.push({ kind: 'group', x: 0.5 + ((q - (cols - 1) / 2) * (cw + gap)) / W, y: [e(0, 0.5 + dir * 0.35, 'linear'), e(0.9, 0.5 - dir * 0.05, 'out'), e(2.2, 0.5 - dir * 0.12, 'linear'), e(3.2, 0.5 - dir * 0.6, 'in')], motionBlur: true, children: kids } as Layer);
+  }
+  if (b.title) {
+    L.push({ kind: 'rect', x: 0.5, y: 0.5, w: [e(0.8, 0), e(1.2, Math.min(W * 0.9, b.title.length * 34 + 140), 'spring')], h: V ? 170 : 150, radius: 85, color: c.light ? '#ffffff' : '#0b0b0f', shadow: true } as Layer);
+    L.push({ kind: 'text', x: 0.5, y: 0.5, text: b.title, size: V ? 60 : 56, weight: 800, maxWidth: 0.82, color: c.light ? '#141414' : '#ffffff', reveal: 'swirl', revealAt: 1.0 } as Layer);
+  }
+  return { type: 'free', bg: 'theme', duration: 3.2, name: 'Mosaïque', layers: L, camera: { rotate: [e(0, -6, 'linear'), e(3.2, -2, 'smooth')], zoom: [e(0, 1.15, 'linear'), e(3.2, 1.05, 'smooth')] }, cues: [{ at: 0.05, sfx: 'whoosh' }, { at: 1.0, sfx: 'pop' }, { at: 2.6, sfx: 'whoosh' }] };
+}
+
+/** Carte qui se transforme en bouton, bouton pressé, puis un cercle de couleur envahit l'écran et le mot final apparaît. */
+function buttonScene(b: Extract<Block, { block: 'button' }>, c: Ctx): Scene {
+  const V = c.vertical;
+  const pillW = Math.min(V ? 860 : 900, b.label.length * 30 + 200);
+  const onAcc = lum(c.accent) > 150 ? '#0b0b0b' : '#ffffff';
+  const icon = b.icon && ICON_SET.includes(b.icon) ? b.icon : undefined;
+  const L: Layer[] = [
+    { kind: 'rect', x: 0.5, y: 0.5, w: [e(0, 160), e(0.45, 520, 'spring'), e(1.0, 520, 'linear'), e(1.45, pillW, 'smooth')], h: [e(0, 160), e(0.45, 640, 'spring'), e(1.0, 640, 'linear'), e(1.45, 140, 'smooth')], radius: [e(0, 80), e(0.45, 48), e(1.0, 48, 'linear'), e(1.45, 70, 'smooth')], color: c.accent, shadow: true, rotate: [e(0, -20), e(0.6, 0, 'spring')], scale: [e(1.75, 1), e(1.85, 0.9, 'in'), e(2.05, 1, 'spring')], to: 2.6 } as Layer,
+    ...(icon ? [{ kind: 'icon', name: icon, x: 0.5, y: 0.5, size: [e(0.3, 0), e(0.6, 110, 'spring'), e(1.0, 110, 'linear'), e(1.2, 0, 'in')], color: onAcc, to: 1.25 } as Layer] : []),
+    { kind: 'text', x: 0.5, y: 0.5, text: b.label, size: 56, weight: 700, color: onAcc, reveal: 'swirl', revealAt: 1.35, to: 2.6 } as Layer,
+    { kind: 'ellipse', x: 0.5, y: 0.5, w: [e(2.1, 0), e(2.7, 4600, 'expo')], color: c.accent, from: 2.1 } as Layer
+  ];
+  if (b.final) L.push({ kind: 'text', x: 0.5, y: 0.5, text: b.final, size: V ? 110 : 100, weight: 800, maxWidth: 0.88, color: onAcc, reveal: 'swirl', revealAt: 2.55, from: 2.5 } as Layer);
+  return { type: 'free', bg: 'theme', duration: b.final ? 4 : 3, name: 'Bouton', layers: L, cues: [{ at: 0.1, sfx: 'pop' }, { at: 1.85, sfx: 'click' }, { at: 2.15, sfx: 'whoosh' }] };
+}
+
 /** Fabrique la pub complète à partir des blocs et du style choisis par l'IA. */
-export function composeProject(blocks: Block[], style: ComposeStyle, o: { brand: string; hasLogo: boolean; format: MotionProject['format']; fallbackTheme?: MotionProject['theme']; photos: number; videos?: number }): MotionProject {
+export function composeProject(blocks: Block[], style: ComposeStyle, o: { brand: string; hasLogo: boolean; format: MotionProject['format']; fallbackTheme?: MotionProject['theme']; photos: number; videos?: number; seed?: number }): MotionProject {
   const backdrop = style.backdrop && style.backdrop !== 'custom' ? style.backdrop : 'glow';
   const light = LIGHT_BACKDROPS.has(backdrop);
   const accent = style.accent ?? style.colors?.[2] ?? o.fallbackTheme?.primary ?? '#7c5cff';
   const colors = style.colors?.length ? style.colors : [mix(accent, '#000000', 0.93), mix(accent, '#000000', 0.6), accent, mix(accent, '#ffffff', 0.45)];
   const text = light ? '#141414' : '#ffffff';
-  const c: Ctx = { accent, text, sub: light ? '#4a4a4a' : '#c9cfd6', brand: o.brand, hasLogo: o.hasLogo, vertical: o.format === '9:16' };
+  const c: Ctx = { accent, text, sub: light ? '#4a4a4a' : '#c9cfd6', brand: o.brand, hasLogo: o.hasLogo, vertical: o.format === '9:16', seed: o.seed ?? Math.floor(Math.random() * 1000), light };
   // Images qui pointent vers une photo absente : on les remplace par une photo existante (ou une recherche web).
   const fixImg = (s: string) => (s.startsWith('video:') && Number(s.slice(6)) >= (o.videos ?? 0) ? (o.photos ? 'photo:0' : `search:${o.brand || 'lifestyle'}`) : s.startsWith('photo:') && Number(s.slice(6)) >= o.photos ? (o.photos ? `photo:${Number(s.slice(6)) % o.photos}` : `search:${o.brand || 'abstract gradient'}`) : s);
   const fixed = blocks.map((b) => JSON.parse(JSON.stringify(b, (k, v) => (k === 'img' || k === 'src' || k === 'before' || k === 'after' ? fixImg(String(v)) : k === 'imgs' && Array.isArray(v) ? v.map((x: unknown) => fixImg(String(x))) : v))) as Block);
@@ -437,7 +641,7 @@ export function composeProject(blocks: Block[], style: ComposeStyle, o: { brand:
     format: o.format,
     brand: o.brand.slice(0, 40),
     theme: { background: colors[0], primary: accent, accent: colors[3] ?? accent, text, style: 'clean', motif: 'none', anim: 'blur', backdrop: { kind: backdrop, colors, speed: 1.3, intensity: 1.05 } },
-    transition: style.transition ?? 'blur',
+    transition: style.transition ?? pickN(['blur', 'whip', 'light', 'circle', 'zoom'] as const, c.seed ?? 0),
     sound: { music: style.music ?? 'electro', bpm: style.bpm ?? 118, volume: 0.75 },
     scenes
   };
@@ -474,7 +678,10 @@ export const BLOCKS_DOC = `BLOCS DISPONIBLES (chacun devient une scène motion d
 - { "block": "stat", "value": 1250, "prefix": "+", "suffix": " clients", "label": "…" } — chiffre qui compte avec un anneau qui se dessine (UNIQUEMENT un chiffre réel fourni).
 - { "block": "explain", "img": "photo:N", "title": "…", "notes": [{ "x": 0-1, "y": 0-1, "text": "…", "sub": "…" }] } — photo expliquée : annotations animées sur les points clés (coordonnées dans la photo), puis zoom sur le détail principal.
 - { "block": "compare", "before": "photo:N", "after": "photo:M", "labelBefore": "Avant", "labelAfter": "Après", "title": "…" } — avant / après avec volet lumineux.
-- { "block": "photo", "img": "photo:N", "caption": "…" } — photo plein écran qui se dévoile (iris, stores…) avec légende en verre.
+- { "block": "photo", "img": "photo:N", "caption": "…", "style": "card" | "polaroid" | "strips" | "circle" | "zoom" | "tilt" | "stack" | "full", "imgs": [autres images pour le décor] } — photo mise en scène : card = carte qui tournoie avec boutons d'action (j'aime, épingle, partage) qui gravitent ; polaroid = tirages papier qui tombent ; strips = photo découpée en bandes qui glissent ; circle = cercle qui s'ouvre avec anneaux ; zoom = mur de vignettes puis plongée de caméra dans la photo ; tilt = bascule 3D devant son reflet flou ; stack = pile de cartes en éventail ; full = plein écran qui se dévoile. VARIE le style à chaque photo (jamais deux fois le même dans une pub).
+- { "block": "search", "query": "ce que tape le client", "imgs": ["photo:N" | "search:…"] } — barre de recherche qui s'écrit en très gros plan, puis la caméra recule et les résultats apparaissent en mosaïque.
+- { "block": "masonry", "imgs": [3 à 12 images], "title": "…" } — colonnes d'images qui défilent en sens alterné avec accélérations et flou de vitesse, titre en pastille par-dessus.
+- { "block": "button", "label": "Réserver", "final": "mot final (souvent la marque)", "icon": "heart|star|share|pin|cart|bag|calendar|phone|location|gift|sparkle|play|check|…" } — une carte se transforme en bouton, il est pressé, un cercle de couleur envahit l'écran et le mot final apparaît en tourbillon.
 - { "block": "map", "place": "nom du lieu (ville, quartier, adresse)", "label": "petite phrase (optionnel, ex. « Ouvert à deux pas »)" } — VRAIE carte animée du lieu (rues qui se dessinent, épingle qui tombe, onde) : à utiliser dès que le client parle d'une carte, d'une ville, d'un quartier, d'une adresse ou de « où nous trouver ». Ne mets jamais une photo de carte à la place.
 - { "block": "cta", "title": "…", "button": "…", "link": "…" } — signature finale : logo, phrase, bouton cliqué, lien.
 BLOCS SIGNATURE (le style des pubs izicut, très premium — utilise-les souvent) :
@@ -485,12 +692,13 @@ BLOCS SIGNATURE (le style des pubs izicut, très premium — utilise-les souvent
 Déroulé type d'une pub premium : kinetic "stack" (accroche) → problem → phone → chat ou list → clock / stat → cta.
 - "kinetic" avec "style": "karaoke" — sous-titres mot à mot façon TikTok (le mot prononcé grossit et s'allume) : idéal pour une phrase forte ou un message parlé.
 - { "block": "free", "duration": 2-5, "name": "…", "layers": [ … ], "camera": { "zoom": [{"t":0,"v":1},{"t":3,"v":1.1}] } } — SCÈNE SUR MESURE quand le client veut quelque chose qu'aucun bloc ne fait (objet précis, schéma, chronologie, comparatif, effet particulier…). Calques possibles (x, y de 0 à 1 ; tailles en pixels sur 1080 de large) :
-  {"kind":"text","text":"…","x":0.5,"y":0.5,"size":80,"weight":800,"color":"#fff","reveal":"rise|blur|scale|mask|type|wave|split|karaoke","revealBy":"word|char|line","revealAt":0.2}
+  {"kind":"text","text":"…","x":0.5,"y":0.5,"size":80,"weight":800,"color":"#fff","reveal":"rise|blur|scale|mask|type|wave|split|karaoke|swirl","revealBy":"word|char|line","revealAt":0.2,"outAt":2.5} · {"kind":"icon","name":"heart|star|share|pin|edit|search|check|plus|play|cart|bag|phone|mail|location|calendar|clock|user|camera|bell|home|gift|sparkle|like|message|send|music|bolt|lock|arrow|euro|download|eye","x":0.5,"y":0.5,"size":40,"color":"#fff","bg":"#…"}
   {"kind":"rect","x":0.5,"y":0.5,"w":800,"h":400,"radius":40,"color":"#…","glass":true} · {"kind":"ellipse","x":0.5,"y":0.5,"w":200,"color":"#…","glow":{"color":"#…","size":40}}
   {"kind":"image","src":"photo:0|search:…|logo","x":0.5,"y":0.5,"w":600,"h":600,"radius":30} · {"kind":"particles","mode":"burst|float|converge|sparkle|orbit","x":0.5,"y":0.5,"count":40,"color":"#…"}
   Animation : n'importe quel nombre peut être une suite d'images clés [{"t":0,"v":0},{"t":0.6,"v":1,"e":"smooth"}] ("e" = "smooth" | "spring" | "inOut" | "in"), et "from"/"to" (secondes) pour l'apparition et la disparition. Emojis : un calque texte avec l'emoji.
 ZONES DE SÉCURITÉ (TikTok / Reels) : garde les textes importants entre y = 0.14 et y = 0.76 et loin du bord droit (x < 0.85).
-STYLE : { "backdrop": un fond parmi ${BACKDROPS.filter((b) => b !== 'custom').join(', ')}, "colors": [4 couleurs #RRGGBB du plus sombre au plus clair, aux couleurs de la marque], "accent": "#RRGGBB" (couleur vive des boutons / badges), "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170, "transition": "blur" | "whip" (glissé rapide façon After Effects) | "light" (reflet lumineux, premium) | "zoom" | "glitch" | "flash" }`;
+STYLE : { "backdrop": un fond parmi ${BACKDROPS.filter((b) => b !== 'custom').join(', ')}, "colors": [4 couleurs #RRGGBB du plus sombre au plus clair, aux couleurs de la marque], "accent": "#RRGGBB" (couleur vive des boutons / badges), "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170, "transition": "blur" | "whip" (glissé rapide façon After Effects) | "light" (reflet lumineux, premium) | "circle" (cercle de couleur qui envahit l'écran) | "zoom" | "glitch" | "flash" }
+ORIGINALITÉ : chaque pub doit être différente des autres — change l'ordre, les blocs, les styles de photo, les styles de texte et la transition d'une pub à l'autre. Mélange les blocs signature, les mises en scène photo et au moins une scène "free" sur mesure avec des icônes ({"kind":"icon","name":"heart","x":0.5,"y":0.5,"size":40,"color":"#fff","bg":"#…"}) ou des textes "reveal":"swirl" (lettres en tourbillon, avec "outAt" pour une sortie animée).`;
 
 export { SFX };
 
@@ -498,7 +706,7 @@ export { SFX };
 export function blockScene(block: Block, project: MotionProject, index: number, o: { hasLogo: boolean; photos: number; videos?: number }): Scene {
   const th = project.theme;
   const light = lum(th.background) > 160 && (!th.backdrop || LIGHT_BACKDROPS.has(th.backdrop.kind));
-  const c: Ctx = { accent: th.primary, text: light ? '#141414' : '#ffffff', sub: light ? '#4a4a4a' : '#c9cfd6', brand: project.brand ?? '', hasLogo: o.hasLogo, vertical: project.format === '9:16' };
+  const c: Ctx = { accent: th.primary, text: light ? '#141414' : '#ffffff', sub: light ? '#4a4a4a' : '#c9cfd6', brand: project.brand ?? '', hasLogo: o.hasLogo, vertical: project.format === '9:16', seed: Math.floor(Math.random() * 1000), light };
   const fixImg = (s: string) => (s.startsWith('video:') && Number(s.slice(6)) >= (o.videos ?? 0) ? (o.photos ? 'photo:0' : `search:${project.brand || 'lifestyle'}`) : s.startsWith('photo:') && Number(s.slice(6)) >= o.photos ? (o.photos ? `photo:${Number(s.slice(6)) % o.photos}` : `search:${project.brand ?? 'abstract'}`) : s);
   const fixed = JSON.parse(JSON.stringify(block, (k, v) => (k === 'img' || k === 'before' || k === 'after' ? fixImg(String(v)) : k === 'imgs' && Array.isArray(v) ? v.map((x: unknown) => fixImg(String(x))) : v))) as Block;
   return sceneFor(fixed, index, c);

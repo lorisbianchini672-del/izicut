@@ -40,7 +40,7 @@ const SHAPES: Record<Chord[1], number[]> = { M: [0, 4, 7], m: [0, 3, 7], M7: [0,
 const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 
 /** Effet sonore joué par défaut à chaque coupe, selon la transition. */
-const DEFAULT_CUT: Record<NonNullable<MotionProject['transition']>, Sfx> = { flash: 'whoosh', slide: 'swipe', zoom: 'whoosh', wipe: 'swipe', glitch: 'glitch', blur: 'whoosh', whip: 'swipe', light: 'chime' };
+const DEFAULT_CUT: Record<NonNullable<MotionProject['transition']>, Sfx> = { flash: 'whoosh', slide: 'swipe', zoom: 'whoosh', wipe: 'swipe', glitch: 'glitch', blur: 'whoosh', whip: 'swipe', light: 'chime', circle: 'whoosh' };
 
 const MAGIC_SFX: Record<MagicKind, Sfx> = { notification: 'chime', sticker: 'pop', badge: 'pop', button: 'pop', emoji: 'pop', review: 'chime', qr: 'click' };
 

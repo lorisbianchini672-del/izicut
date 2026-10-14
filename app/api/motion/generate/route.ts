@@ -68,7 +68,7 @@ const FORMAT = `{
     "anim": "rise" | "slam" | "mask" | "split" | "type" | "curve" | "blur" (animation de texte par défaut),
     "backdrop": { "kind": …, "colors": [...], … } (FOND ANIMÉ HAUT DE GAMME de la pub, voir plus bas — choisis-le avec soin, c'est la première impression)
   },
-  "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch" | "blur" | "whip" | "light",
+  "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch" | "blur" | "whip" | "light" | "circle",
   "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop" | "none", "bpm": 60-170, "volume": 0-1 },
   "scenes": [ 1 à 12 scènes. Chaque scène peut avoir :
       "anim" = animation du texte de la scène : "rise" | "slam" | "mask" | "split" | "type" | "curve" | "blur"
@@ -212,7 +212,7 @@ ${RULES}`;
 const LITE = `${ATTITUDE}
 
 Tu es motion designer chez izicut. Crée la pub demandée en 4 à 6 scènes, TOUTES de type "free" (création libre), 4 à 9 calques chacune, 12 à 16 s au total. JSON COMPACT. Tout en français.
-Réponds UNIQUEMENT par : { "message": "explication de ton idée et du déroulé (3 à 5 phrases)", "plan": ["Scène N — …"], "project": { "format": "9:16" | "16:9" | "1:1", "brand": "...", "theme": { "background": "#RRGGBB", "primary": "#RRGGBB", "accent": "#RRGGBB", "text": "#RRGGBB", "style": "neon" | "clean" | "bold" }, "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch" | "blur" | "whip" | "light", "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170 }, "scenes": [ { "type": "free", "duration": 2-4, "bg": "#RRGGBB", dégradé ou fond animé { "kind": … }, "camera": {...}, "layers": [...], "cues": [...] } ] } }
+Réponds UNIQUEMENT par : { "message": "explication de ton idée et du déroulé (3 à 5 phrases)", "plan": ["Scène N — …"], "project": { "format": "9:16" | "16:9" | "1:1", "brand": "...", "theme": { "background": "#RRGGBB", "primary": "#RRGGBB", "accent": "#RRGGBB", "text": "#RRGGBB", "style": "neon" | "clean" | "bold" }, "transition": "flash" | "slide" | "zoom" | "wipe" | "glitch" | "blur" | "whip" | "light" | "circle", "sound": { "music": "pop" | "electro" | "chill" | "epic" | "acoustic" | "hiphop", "bpm": 60-170 }, "scenes": [ { "type": "free", "duration": 2-4, "bg": "#RRGGBB", dégradé ou fond animé { "kind": … }, "camera": {...}, "layers": [...], "cues": [...] } ] } }
 
 ${FREE_DOC}`;
 

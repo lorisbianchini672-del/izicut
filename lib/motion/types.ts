@@ -6,6 +6,7 @@
 import { z } from 'zod';
 
 import { BACKDROPS } from './gl-bg';
+import { ICON_NAMES } from './icons';
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const duration = z.number().min(1.5).max(8);
@@ -19,7 +20,7 @@ export type Sfx = (typeof SFX)[number];
 export const MOTIFS = ['flow', 'particles', 'bubbles', 'grain', 'waves', 'confetti', 'sparkles', 'lines', 'none'] as const;
 export type Motif = (typeof MOTIFS)[number];
 /** Transitions entre scènes. */
-export const TRANSITIONS = ['flash', 'slide', 'zoom', 'wipe', 'glitch', 'blur', 'whip', 'light'] as const;
+export const TRANSITIONS = ['flash', 'slide', 'zoom', 'wipe', 'glitch', 'blur', 'whip', 'light', 'circle'] as const;
 export type Transition = (typeof TRANSITIONS)[number];
 /** Animations de texte (typographie cinétique). */
 export const TEXT_ANIMS = ['rise', 'slam', 'mask', 'split', 'type', 'curve', 'blur'] as const;
@@ -76,7 +77,7 @@ const keyed = <T extends z.ZodTypeAny>(v: T) => z.union([v, z.array(z.object({ t
 const anum = keyed(num);
 const acol = keyed(hex);
 const paint = z.union([hex, z.object({ from: hex, to: hex, angle: z.number().min(-360).max(360).optional(), radial: z.boolean().optional() })]);
-export const LAYER_KINDS = ['text', 'rect', 'ellipse', 'path', 'image', 'callout', 'gallery', 'list', 'particles', 'glow', 'flow', 'group'] as const;
+export const LAYER_KINDS = ['icon', 'text', 'rect', 'ellipse', 'path', 'image', 'callout', 'gallery', 'list', 'particles', 'glow', 'flow', 'group'] as const;
 const layerBase = {
   /** Position du centre en fraction de l'écran (0 = gauche / haut, 1 = droite / bas). */
   x: anum.optional(), y: anum.optional(),
@@ -111,7 +112,9 @@ const TextLayer = z.object({
   serif: z.boolean().optional(),
   stroke: z.object({ color: hex, width: z.number().min(0.5).max(20) }).optional(),
   /** Révélation lettre par lettre ou mot par mot. */
-  reveal: z.enum(['none', 'type', 'rise', 'blur', 'curve', 'split', 'mask', 'scale', 'wave', 'karaoke']).optional(),
+  reveal: z.enum(['none', 'type', 'rise', 'blur', 'curve', 'split', 'mask', 'scale', 'wave', 'karaoke', 'swirl']).optional(),
+  /** Sortie animée (même effet que l'entrée, à l'envers) à partir de cet instant (s). */
+  outAt: z.number().min(0).max(15).optional(),
   revealBy: z.enum(['char', 'word', 'line']).optional(),
   revealAt: z.number().min(0).max(15).optional(),
   revealDur: z.number().min(0.1).max(8).optional(),
@@ -136,7 +139,9 @@ const PathLayer = z.object({
 const ImageLayer = z.object({
   kind: z.literal('image'), ...layerBase, src: z.string().regex(/^(logo|photo:\d{1,2}|video:[0-2]|search:.{2,60})$/), w: anum,
   /** Calque vidéo (src « video:N ») : seconde de départ dans le clip importé. */
-  vfrom: z.number().min(0).max(3600).optional(), h: anum.optional(), fit: z.enum(['cover', 'contain']).optional(), radius: z.number().min(0).max(1000).optional(),
+  vfrom: z.number().min(0).max(3600).optional(),
+  /** Bande verticale [début, fin] (fractions de largeur) d'une image cadrée plein écran : pour découper une photo en bandes animées. */
+  slice: z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]).optional(), h: anum.optional(), fit: z.enum(['cover', 'contain']).optional(), radius: z.number().min(0).max(1000).optional(),
   /** Zoom DANS l'image (1 = cadrage normal, 2.5 = gros plan) vers le point (fx, fy) de l'image (0-1) : pour montrer un détail. */
   zoom: anum.optional(), fx: anum.optional(), fy: anum.optional(),
   /** Apparition de l'image : volet, iris, stores, partage en deux, montée. */
@@ -173,10 +178,12 @@ const CalloutLayer = z.object({
   at: z.number().min(0).max(15).optional()
 });
 const ParticlesLayer = z.object({ kind: z.literal('particles'), ...layerBase, mode: z.enum(['float', 'burst', 'rain', 'orbit', 'sparkle', 'converge']), count: z.number().int().min(1).max(160), color: hex, color2: hex.optional(), size: z.number().min(1).max(80).optional(), spread: z.number().min(0.01).max(1.5).optional(), speed: z.number().min(0).max(5).optional(), at: z.number().min(0).max(15).optional() });
+/** Icône d'interface (cœur, épingle, partage, panier…), avec pastille ronde optionnelle. */
+const IconLayer = z.object({ kind: z.literal('icon'), ...layerBase, name: z.enum(ICON_NAMES), size: anum.optional(), color: acol.optional(), bg: acol.optional(), width: z.number().min(0.5).max(6).optional() });
 const GlowLayer = z.object({ kind: z.literal('glow'), ...layerBase, color: acol, size: anum });
 const FlowLayer = z.object({ kind: z.literal('flow'), ...layerBase, colors: z.array(hex).min(1).max(4), intensity: z.number().min(0).max(2).optional() });
-type LayerIn = z.infer<typeof GalleryLayer> | z.infer<typeof ListLayer> | z.infer<typeof CalloutLayer> | z.infer<typeof TextLayer> | z.infer<typeof RectLayer> | z.infer<typeof EllipseLayer> | z.infer<typeof PathLayer> | z.infer<typeof ImageLayer> | z.infer<typeof ParticlesLayer> | z.infer<typeof GlowLayer> | z.infer<typeof FlowLayer> | ({ kind: 'group'; children: LayerIn[] } & Partial<Record<keyof typeof layerBase, unknown>>);
-export const LeafLayer = z.discriminatedUnion('kind', [TextLayer, RectLayer, EllipseLayer, PathLayer, ImageLayer, CalloutLayer, GalleryLayer, ListLayer, ParticlesLayer, GlowLayer, FlowLayer]);
+type LayerIn = z.infer<typeof IconLayer> | z.infer<typeof GalleryLayer> | z.infer<typeof ListLayer> | z.infer<typeof CalloutLayer> | z.infer<typeof TextLayer> | z.infer<typeof RectLayer> | z.infer<typeof EllipseLayer> | z.infer<typeof PathLayer> | z.infer<typeof ImageLayer> | z.infer<typeof ParticlesLayer> | z.infer<typeof GlowLayer> | z.infer<typeof FlowLayer> | ({ kind: 'group'; children: LayerIn[] } & Partial<Record<keyof typeof layerBase, unknown>>);
+export const LeafLayer = z.discriminatedUnion('kind', [IconLayer, TextLayer, RectLayer, EllipseLayer, PathLayer, ImageLayer, CalloutLayer, GalleryLayer, ListLayer, ParticlesLayer, GlowLayer, FlowLayer]);
 export const GroupLayer = z.object({ kind: z.literal('group'), ...layerBase, children: z.array(LeafLayer).min(1).max(24) });
 export const LayerSchema = z.union([LeafLayer, GroupLayer]);
 export type Layer = z.infer<typeof LayerSchema>;
@@ -334,7 +341,7 @@ export const FORMAT_SIZE: Record<MotionProject['format'], { width: number; heigh
 export const MOTIF_LABELS: Record<Motif, string> = {
   flow: 'Flux lumineux (cinéma)', particles: 'Particules', bubbles: 'Bulles', grain: 'Grain / farine', waves: 'Vagues', confetti: 'Confettis', sparkles: 'Paillettes', lines: 'Vitesse', none: 'Aucune'
 };
-export const TRANSITION_LABELS: Record<Transition, string> = { flash: 'Flash', slide: 'Glissé', zoom: 'Zoom', wipe: 'Volet', glitch: 'Glitch', blur: 'Flou de mouvement', whip: 'Glissé rapide', light: 'Reflet lumineux' };
+export const TRANSITION_LABELS: Record<Transition, string> = { flash: 'Flash', slide: 'Glissé', zoom: 'Zoom', wipe: 'Volet', glitch: 'Glitch', blur: 'Flou de mouvement', whip: 'Glissé rapide', light: 'Reflet lumineux', circle: 'Cercle de couleur' };
 export const MUSIC_LABELS: Record<Music, string> = { pop: 'Pop', electro: 'Électro', chill: 'Chill / lo-fi', epic: 'Épique', acoustic: 'Acoustique', hiphop: 'Hip-hop', none: 'Sans musique' };
 export const SFX_LABELS: Record<Sfx, string> = {
   whoosh: 'Whoosh', pop: 'Pop', click: 'Clic', impact: 'Impact', riser: 'Montée', chime: 'Carillon', fizz: 'Pétillant', bubble: 'Bulles', swipe: 'Swipe', glitch: 'Glitch'

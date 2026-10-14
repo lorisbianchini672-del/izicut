@@ -5,6 +5,7 @@
  */
 import { chipsClickAt, promptTiming } from './cues';
 import { drawBackdrop, type Backdrop } from './gl-bg';
+import { FILLED_ICONS, ICONS } from './icons';
 import { makeQr } from './qr';
 import { EASES, FORMAT_SIZE, TRANSITION, type Keyed, type Layer, type LeafLayerT, type Magic, type MotionProject, type Scene, type TextAnim } from './types';
 
@@ -2215,6 +2216,13 @@ function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: numb
     const g = by === 'char' ? u.idx : by === 'word' ? wordOrder.indexOf(u.word) : u.line;
     const t0 = mode === 'karaoke' && L.times?.[g] !== undefined ? L.times[g] : at + g * step;
     let p = mode === 'none' ? 1 : progress(lt, t0, mode === 'type' ? 0.001 : unitDur);
+    // Sortie animée : le même effet rejoué à l'envers, lettre après lettre, vers l'autre côté.
+    let dir = 1;
+    if (L.outAt !== undefined && lt > L.outAt) {
+      const po = progress(lt, L.outAt + g * Math.min(step, 0.05), Math.min(unitDur, 0.45));
+      if (po >= 1) continue;
+      if (po > 0) { p = Math.min(p, 1 - po); dir = -1; }
+    }
     if (p <= 0) continue;
     const e = easeOutCubic(p);
     ctx.save();
@@ -2224,6 +2232,18 @@ function drawFreeText(c: Ctx, L: Extract<LeafLayerT, { kind: 'text' }>, lt: numb
       case 'blur': bl = (1 - e) * size * 0.3; sc = 1.25 - 0.25 * e; alpha = clamp(p * 1.5); break;
       case 'scale': sc = easeOutBack(p); alpha = clamp(p * 2); break;
       case 'split': { const r1 = rand(u.idx * 31 + 3), r2 = rand(u.idx * 17 + 5); const k = 1 - easeOutBack(p); tx += k * (r1 - 0.5) * size * 3; ty += k * (r2 - 0.5) * size * 3; rot = k * (r1 - 0.5) * 2; alpha = clamp(p * 2); break; }
+      case 'swirl': {
+        // Lettres qui arrivent en tourbillon sur un arc, floutées et teintées, puis se posent (et repartent de l'autre côté).
+        const k = 1 - EASE_FN.smooth(p);
+        tx += dir * k * size * 2.4;
+        ty += -Math.sin(k * Math.PI) * size * 1.1 * dir + k * size * 0.3;
+        rot = -dir * k * 1.2;
+        sc = 1 - k * 0.35;
+        bl = k * size * 0.22;
+        alpha = clamp(p * 2.2);
+        if (k > 0.25) kActive = 0.6;
+        break;
+      }
       case 'curve': { const k = 1 - e; tx += k * size * 1.6; ty += k * k * size * 4.2 + k * size * 0.6; rot = k * 1.1; alpha = clamp(p * 3); break; }
       case 'wave': ty += (1 - easeOutBack(p)) * size * 0.5 ; alpha = clamp(p * 1.6); break;
       case 'mask': {
@@ -2615,7 +2635,15 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
       }
       ctx.save();
       if (L.radius) { roundRect(ctx, -w / 2, -h / 2, w, h, L.radius); ctx.clip(); }
-      if (img) {
+      if (img && L.slice) {
+        // Bande d'une image cadrée plein écran : les bandes voisines se raccordent parfaitement.
+        const [a, b2] = L.slice;
+        const z = Math.max(1, kv(L.zoom, lt, 1));
+        const k = Math.max(W / img.nw, c.H / img.nh) * z;
+        const iw = img.nw * k, ih = img.nh * k;
+        ctx.beginPath(); ctx.rect(-w / 2, -h / 2, w, h); ctx.clip();
+        ctx.drawImage(img.el, -((a + b2) / 2) * W + (W - iw) / 2, -ih / 2, iw, ih);
+      } else if (img) {
         const fit = L.fit ?? (L.src === 'logo' ? 'contain' : 'cover');
         const z = Math.max(1, kv(L.zoom, lt, 1));
         const k = (fit === 'cover' ? Math.max(w / img.nw, h / img.nh) : Math.min(w / img.nw, h / img.nh)) * z;
@@ -2729,6 +2757,26 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
     case 'gallery': drawGallery(c, L, lt); return;
     case 'list': drawList(c, L, lt); return;
     case 'particles': drawParticles(c, L, lt); return;
+    case 'icon': {
+      const sz = Math.max(4, kv(L.size, lt, 64));
+      const col = kv(L.color as Keyed<string> | undefined, lt, c.theme.text);
+      if (L.bg !== undefined) {
+        ctx.beginPath();
+        ctx.arc(0, 0, sz * 0.95, 0, Math.PI * 2);
+        ctx.fillStyle = kv(L.bg as Keyed<string>, lt, '#ffffff');
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+      }
+      const p = path2d(ICONS[L.name]);
+      if (!p) return;
+      ctx.save();
+      ctx.scale(sz / 24, sz / 24);
+      ctx.translate(-12, -12);
+      if (FILLED_ICONS.has(L.name)) { ctx.fillStyle = col; ctx.fill(p); }
+      else { ctx.strokeStyle = col; ctx.lineWidth = L.width ?? 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(p); }
+      ctx.restore();
+      return;
+    }
     case 'glow': {
       const r = Math.max(1, kv(L.size, lt, 400));
       const col = kv(L.color as Keyed<string>, lt, c.theme.primary);
@@ -2877,7 +2925,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
   const enter = index === 0 ? 1 : easeOutCubic(lt / 0.5);
   const exit = isLast ? 0 : easeInCubic((lt - (d - TRANSITION)) / TRANSITION);
   ctx.save();
-  ctx.globalAlpha = tr === 'slide' || tr === 'wipe' ? 1 : clamp(enter) * (1 - exit);
+  ctx.globalAlpha = tr === 'slide' || tr === 'wipe' || tr === 'circle' ? 1 : clamp(enter) * (1 - exit);
   ctx.translate(W / 2, H / 2);
   if (tr === 'zoom') {
     const z = (1 + exit * 0.9) * (index === 0 ? 1 : 0.6 + 0.4 * clamp(enter));
@@ -2986,6 +3034,26 @@ export function drawFrame(ctx: CanvasRenderingContext2D, project: MotionProject,
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
+  if (tr === 'circle') {
+    // Cercle aux couleurs de la marque qui grandit depuis le centre et couvre la scène, puis la suivante s'ouvre en cercle.
+    const out = isLast ? 0 : clamp((lt - (d - 0.42)) / 0.42);
+    const inn = index === 0 ? 1 : clamp(lt / 0.42);
+    const R = Math.hypot(W, H) / 2 + 4;
+    ctx.save();
+    if (out > 0) {
+      ctx.beginPath(); ctx.arc(W / 2, H / 2, R * EASE_FN.expo(out) * 1.02, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, R);
+      g.addColorStop(0, project.theme.primary); g.addColorStop(1, mixHex(project.theme.primary, '#000000', 0.45));
+      ctx.fillStyle = g; ctx.fill();
+    }
+    if (inn < 1) {
+      ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(W / 2, H / 2, R * EASE_FN.expo(inn), 0, Math.PI * 2, true);
+      const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, R);
+      g.addColorStop(0, project.theme.primary); g.addColorStop(1, mixHex(project.theme.primary, '#000000', 0.45));
+      ctx.fillStyle = g; ctx.fill('evenodd');
+    }
+    ctx.restore();
+  }
   if (tr === 'wipe') {
     // Volet de couleur qui balaie l'écran : il couvre la fin d'une scène et découvre la suivante.
     const out = isLast ? 0 : clamp((lt - (d - 0.35)) / 0.35);
@@ -3086,6 +3154,8 @@ export function layerBoxes(ctx: CanvasRenderingContext2D, project: MotionProject
     } else if (L.kind === 'path') {
       w = kv(L.w, lt, 400);
       h = w;
+    } else if (L.kind === 'icon') {
+      w = h = kv(L.size, lt, 64) * 2;
     } else if (L.kind === 'group') {
       w = W * 0.7;
       h = H * 0.45;
