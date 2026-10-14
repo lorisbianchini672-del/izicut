@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PLANS, DISPLAY_PLAN_KEYS, formatPrice } from '@/lib/plans';
 import Link from 'next/link';
+import { trackAd } from '@/lib/ads';
 
 export function PricingSection() {
   const [isAnnual, setIsAnnual] = useState(false);
@@ -181,6 +182,7 @@ function CheckoutButton({
 
   async function handleCheckout() {
     if (planKey === 'free') return;
+    trackAd('InitiateCheckout', { content_name: String(planKey) });
     setError(null);
     setPending(planKey);
     try {

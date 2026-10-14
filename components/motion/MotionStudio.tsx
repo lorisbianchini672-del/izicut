@@ -86,6 +86,7 @@ import {
   type Scene,
   type SceneType
 } from '@/lib/motion/types';
+import { trackAd } from '@/lib/ads';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
@@ -935,6 +936,7 @@ export function MotionStudio() {
   };
 
   const exportVideo = async () => {
+    trackAd('Lead', { content_name: 'export' });
     if (exportingRef.current) return;
     const proj = projectRef.current;
     const total = totalDuration(proj);

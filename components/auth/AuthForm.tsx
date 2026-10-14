@@ -12,6 +12,7 @@ import { useKaraoke } from '@/components/home/caption-preview';
 import { EASE, Magnetic, SplitWords } from '@/components/home/motion';
 import { PhoneFrame } from '@/components/home/phone-frame';
 import { cn } from '@/lib/utils';
+import { trackAd } from '@/lib/ads';
 
 type Mode = 'password' | 'signup' | 'magic';
 
@@ -152,6 +153,7 @@ export function AuthForm({ nextPath = '/dashboard', initialError = null, initial
           setError(translateError(signUpError.message));
           return;
         }
+        if (data.user && (data.user.identities?.length ?? 0) > 0) trackAd('CompleteRegistration');
         // Email déjà inscrit : par sécurité Supabase répond « OK » avec un
         // utilisateur fictif sans identité. On l'explique au lieu d'attendre
         // un email de confirmation qui n'arrivera jamais.

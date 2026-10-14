@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { trackAd } from '@/lib/ads';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchDashboardProjects,
@@ -73,6 +74,15 @@ export default function DashboardPage() {
   // Client navigateur : la RLS limite chaque lecture aux lignes de
   // l'utilisateur connecté. Aucune clé de service n'entre dans l'interface.
   const supabase = useMemo(() => createClient(), []);
+
+  // Abonnement payé (retour de Stripe) : on le signale une seule fois aux pixels publicitaires.
+  useEffect(() => {
+    const u = new URL(window.location.href);
+    if (u.searchParams.get('checkout') !== 'success') return;
+    trackAd('Purchase', { currency: 'EUR' });
+    u.searchParams.delete('checkout');
+    window.history.replaceState(null, '', u.toString());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

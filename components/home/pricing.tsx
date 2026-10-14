@@ -8,6 +8,7 @@ import { DISPLAY_PLAN_KEYS, PLANS, formatPrice } from '@/lib/plans';
 import { SectionHeading } from './section-heading';
 import { useSpotlight } from './use-spotlight';
 import { Stagger, StaggerItem } from './motion';
+import { trackAd } from '@/lib/ads';
 
 export function Pricing() {
   return (
@@ -87,6 +88,7 @@ function PlanCta({ planKey, featured }: { planKey: 'free' | 'pro' | 'agency'; fe
   }
 
   async function checkout() {
+    trackAd('InitiateCheckout', { content_name: String(planKey) });
     setError(null);
     setPending(true);
     try {

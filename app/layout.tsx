@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
+import { AdPixels } from '@/components/AdPixels';
 import { AmbientBackground } from '@/components/ambient/AmbientBackground';
 import { SiteNav } from '@/components/home/site-nav';
 import { LIGHT_SCRIPT, ThemeByRoute } from '@/components/ThemeByRoute';
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AmbientBackground />
         <SiteNav />
         {children}
+        <AdPixels />
       </body>
     </html>
   );
