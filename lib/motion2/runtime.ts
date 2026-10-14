@@ -4,6 +4,8 @@
  * timeline écrite par l'IA. Le même document sert à l'aperçu (iframe isolée)
  * et à l'export (navigateur sans écran qui photographie chaque image).
  */
+import { KIT_JS } from './kit';
+import { expandBlocks } from './templates';
 import { COMP_SIZE, type Comp } from './types';
 
 const FONTS = 'https://fonts.googleapis.com/css2?family=Geist:wght@300..900&family=Inter:wght@300..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Space+Grotesk:wght@300..700&family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Instrument+Serif:ital@0;1&family=Archivo+Black&family=DM+Serif+Display:ital@0;1&display=block';
@@ -89,10 +91,13 @@ export function fillAssets(text: string, assets: Record<string, string>, forCss 
 
 export function buildCompDocument(comp: Comp, o: { assets: Record<string, string>; gsap: { src?: string; inline?: string }; mode: 'preview' | 'render' }): string {
   const { w, h } = COMP_SIZE[comp.format];
-  const html = fillAssets(comp.html, o.assets);
-  const css = fillAssets(comp.css, o.assets, true);
+  const bpm = comp.sound?.bpm ?? 120;
+  const palette = comp.palette ?? { primary: '#f28be0', secondary: '#8fa6ff', bg: '#0a0a0a', text: '#ffffff' };
+  const tpl = expandBlocks(comp.blocks, { W: w, H: h, vertical: comp.format === '9:16', palette, bpm });
+  const html = fillAssets(comp.html + tpl.html, o.assets);
+  const css = fillAssets(comp.css + tpl.css, o.assets, true);
   const gsapTag = o.gsap.inline ? `<script>${o.gsap.inline}</script>` : `<script src="${escAttr(o.gsap.src ?? '')}"></script>`;
-  const dur = Number(comp.duration) || 15;
+  const dur = Math.max(Number(comp.duration) || 15, tpl.end);
   const control = o.mode === 'preview'
     ? String.raw`
   var playing = true, t0 = performance.now(), offset = 0;
@@ -115,7 +120,9 @@ export function buildCompDocument(comp: Comp, o: { assets: Record<string, string
 <style>${BASE_CSS(w, h)}</style><style>${css.replace(/<\/style/gi, '')}</style></head>
 <body><div id="stage">${html}</div>
 ${gsapTag}
+<script>window.__izBpm = ${bpm};</script>
 <script>${IZ_LIB}</script>
+<script>${KIT_JS}</script>
 <script>
 (function () {
   var W = ${w}, H = ${h}, DUR = ${dur};
@@ -126,7 +133,7 @@ ${gsapTag}
   window.__izTl = tl;
   try {
     (function (tl, IZ, gsap, W, H, DUR) {
-${comp.js.replace(/<\/script/gi, '')}
+${(comp.js + tpl.js).replace(/<\/script/gi, '')}
     })(tl, window.IZ, gsap, W, H, DUR);
   } catch (e) { report(e && e.message ? e.message : e); }
   if (tl.duration() < DUR) tl.to({}, { duration: DUR - tl.duration() });

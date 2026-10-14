@@ -9,7 +9,8 @@ import { FREE_MOTION_CREATIONS, isAdminEmail } from '@/lib/motion/plan';
 import { AiPrefsSchema, prefsPrompt } from '@/lib/motion/prefs';
 import { proEditPrompt, proSystemPrompt, richness } from '@/lib/motion2/prompt';
 import { resolveSearchAssets, verifyComp } from '@/lib/motion2/server';
-import { CompSchema, checkComp, type Comp } from '@/lib/motion2/types';
+import { expandBlocks } from '@/lib/motion2/templates';
+import { COMP_SIZE, CompSchema, checkComp, hasContent, type Comp } from '@/lib/motion2/types';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -90,12 +91,24 @@ export async function POST(request: Request) {
         continue;
       }
       const message = typeof raw?.message === 'string' ? raw.message.slice(0, 1200) : '';
+      const plan = Array.isArray(raw?.plan) ? (raw.plan as unknown[]).filter((x): x is string => typeof x === 'string').map((x) => x.slice(0, 240)).slice(0, 12) : undefined;
       if (current && (raw?.comp === null || raw?.comp === undefined)) return NextResponse.json({ comp: current, message: message || 'D’accord.', answer: true });
       const res = CompSchema.safeParse({ ...(raw?.comp as object), format, v: 1 });
       if (!res.success) { feedback = `ATTENTION : ta réponse précédente n'était pas valide (${res.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}). Renvoie le JSON complet et valide.`; continue; }
       // Repères d'images normalisés (« {{search: mots}} » → « {{search:mots}} »).
       const norm = (t: string) => t.replace(/\{\{\s*(search|photo)\s*:\s*/g, '{{$1:').replace(/\{\{\s*logo\s*\}\}/g, '{{logo}}');
       let comp: Comp = { ...res.data, html: norm(res.data.html), css: norm(res.data.css) };
+      if (!hasContent(comp)) { feedback = 'ATTENTION : la pub est vide (ni scènes sur mesure, ni modèles). Renvoie le JSON complet.'; continue; }
+      // Couleurs : celles du client si elles existent.
+      if (!comp.palette) {
+        const site = (brand?.site?.colors ?? []).filter((x) => /^#[0-9a-f]{6}$/i.test(x));
+        comp = { ...comp, palette: { primary: prefs?.colors?.[0] ?? site[0] ?? '#ff4d6d', secondary: prefs?.colors?.[1] ?? site[1] ?? '#7c5cff', bg: '#0b0b10', text: '#ffffff' } };
+      }
+      // Durée réelle = fin de la dernière scène (modèles compris).
+      const { w: CW, h: CH } = COMP_SIZE[comp.format];
+      const ex = expandBlocks(comp.blocks, { W: CW, H: CH, vertical: comp.format === '9:16', palette: comp.palette!, bpm: comp.sound?.bpm ?? 120 });
+      if (ex.errors.length && attempt < 2) { feedback = `ATTENTION : certains modèles sont invalides (${ex.errors.join(' ; ')}). Corrige leurs variables et renvoie le JSON complet.`; continue; }
+      comp = { ...comp, duration: Math.min(60, Math.max(comp.duration, ex.end)) };
       const bad = checkComp(comp);
       if (bad) { feedback = `ATTENTION : ${bad}. Corrige et renvoie le JSON complet.`; continue; }
       const thin = !current && attempt < 2 ? richness(comp) : null;
@@ -110,7 +123,7 @@ export async function POST(request: Request) {
           quota = { ...quota, used: used + 1 };
         } catch { /* compteur indisponible : on ne bloque pas */ }
       }
-      return NextResponse.json({ comp, message, quota });
+      return NextResponse.json({ comp, message, plan, quota, engine: aiTrace.provider, attempts: attempt + 1 });
     }
     return NextResponse.json({ error: 'La création n’a pas abouti, réessayez dans un instant.', code: 'retry', reason: (feedback || lastErr).slice(0, 400), trace: aiTrace.failures }, { status: 502 });
   } catch (err) {

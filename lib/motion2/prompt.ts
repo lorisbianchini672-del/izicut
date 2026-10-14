@@ -1,4 +1,5 @@
 /** Brief du directeur artistique IA du moteur pro (compositions HTML / CSS / GSAP). */
+import { TEMPLATES_DOC } from './templates';
 import { COMP_SIZE } from './types';
 
 /** Bibliothèque de techniques (fragments courts, à combiner librement — jamais à recopier tels quels). */
@@ -31,7 +32,7 @@ export function proSystemPrompt(format: '9:16' | '16:9' | '1:1'): string {
 TOILE : ${w} × ${h} px (format ${format}), positionnement en pixels. Durée : 12 à 18 s.
 
 RÉPONSE (JSON strict, rien d'autre) :
-{"message":"3 à 5 phrases simples pour le client (français, sans jargon) : l'idée, l'esthétique, le déroulé","plan":["Scène 1 (0-2,2 s) — ce qu'on voit et la technique utilisée", "…"],"comp":{"format":"${format}","duration":15,"title":"…","brand":"nom de marque UNIQUEMENT si le client en donne un, sinon chaîne vide","css":"…","html":"…","js":"…","sound":{"music":"pop|electro|chill|epic|acoustic|hiphop","bpm":60-170,"cues":[{"at":0.1,"sfx":"whoosh|pop|click|impact|riser|chime|swipe|glitch|bubble|fizz"}]}}}
+{"message":"3 à 5 phrases simples pour le client (français, sans jargon) : l'idée, l'esthétique, le déroulé","plan":["Scène 1 (0-2,2 s) — ce qu'on voit et la technique utilisée", "…"],"comp":{"format":"${format}","duration":15,"title":"…","brand":"nom de marque UNIQUEMENT si le client en donne un, sinon chaîne vide","palette":{"primary":"#RRGGBB","secondary":"#RRGGBB","bg":"#RRGGBB","text":"#RRGGBB"},"blocks":[{"use":"kinetic","at":0,"vars":{…}}, …],"css":"…","html":"…","js":"…","sound":{"music":"pop|electro|chill|epic|acoustic|hiphop","bpm":60-170,"cues":[{"at":0.1,"sfx":"whoosh|pop|click|impact|riser|chime|swipe|glitch|bubble|fizz"}]}}}
 
 RÈGLES TECHNIQUES :
 - "html" : une <section class="scene" id="s1"> par scène (classe .scene = plein cadre), contenu dans un <div class="cam full"> (pour la caméra). Classes : .abs .center .full .cover. Icônes en SVG en ligne. Interdit : <script>, <iframe>, <link>, attributs on…=.
@@ -40,7 +41,8 @@ RÈGLES TECHNIQUES :
 - "js" : variables disponibles tl (timeline GSAP en pause : ajoute-y tout, avec la position en secondes en 3e argument), gsap, IZ, W, H, DUR. Jamais tl.play(). IZ.scene(tl,'#s1',début,fin) affiche/cache une scène. IZ.split(sél,'chars'|'words') → lettres/mots. IZ.type(tl,sél,instant,lettresParSec) écriture clavier. IZ.count(tl,sél,de,à,instant,durée,{prefix,suffix}). IZ.draw(tl,'path',instant,durée). Interdit : fetch, réseau, stockage, window.parent, eval.
 
 DIRECTION ARTISTIQUE :
-- 6 à 8 scènes, et AU MOINS 7 TECHNIQUES DIFFÉRENTES de la bibliothèque ci-dessous (ou mieux, les tiennes). Varie les mises en page : plein écran, grille, carte centrale, écran partagé, typographie seule, interface d'appli…
+- 6 à 8 scènes au total : 3 à 5 MODÈLES PRÊTS ("blocks", qualité garantie) + 2 à 4 scènes SUR MESURE ("html"/"js") pour ce qui est propre à ce client. Les scènes ne se chevauchent pas (chaque modèle occupe [at, at+dur]). Cale les débuts sur le tempo : at = multiple de 60/bpm.
+- Dans les scènes sur mesure, AU MOINS 5 TECHNIQUES DIFFÉRENTES de la bibliothèque ci-dessous (ou mieux, les tiennes). Varie les mises en page : plein écran, grille, carte centrale, écran partagé, typographie seule, interface d'appli…
 - Ça bouge TOUT LE TEMPS (caméra vivante, éléments qui flottent) ; jamais d'image figée plus de 0,5 s ; chaque scène a une entrée ET une sortie animées.
 - Transitions LIÉES entre scènes (cercle qui envahit, zoom dans une image, whip pan flouté, iris, volets) avec un léger chevauchement.
 - Typographie cinétique pro : gros titres (110-180 px), mots clés en couleur / dégradé / surlignés, lettres ou mots animés un par un.
@@ -50,6 +52,10 @@ DIRECTION ARTISTIQUE :
 - Textes en FRANÇAIS, courts (2 à 7 mots par ligne). En 9:16 : textes importants entre y=260 et y=1500, loin du bord droit.
 - INTERDIT D'INVENTER : nom de marque, adresse, quartier, horaires, prix, chiffres, avis, promo que le client n'a pas donnés. Sans nom de marque, parle de l'activité (« Ta salle de sport ») et termine sur l'appel à l'action. Si le client cite une marque, la pub parle VRAIMENT d'elle.
 - "cues" : 8 à 14 bruitages calés sur les moments forts.
+
+${TEMPLATES_DOC}
+
+OUTILS DE PHYSIQUE (pour tes scènes sur mesure) : eases 'spring', 'spring.soft', 'spring.bouncy', 'spring.snappy' (ressorts physiques) ; IZ.springText(tl, sél, instant, {by:'chars'|'words', from:'bottom'|'left'|'right'|'scale'|'drop', out: instantDeSortie}) lettres élastiques + flou de mouvement ; IZ.mockup(tl, sél, instant, {zoom:1.1}) interface qui arrive en 3D avec ombre dynamique ; IZ.morph(tl, sél, instant, [{w,h,r,bg,d}…]) morphing de forme ; IZ.press(tl, sél, instant, {color}) bouton pressé avec onde ; IZ.beat(n) instant du n-ième temps.
 
 BIBLIOTHÈQUE DE TECHNIQUES (fragments à adapter et combiner, ne recopie jamais un exemple tel quel) :${TECHNIQUES}`;
 }
@@ -63,9 +69,10 @@ Réponds UNIQUEMENT en JSON : {"message":"2 à 4 phrases simples : ce que tu as 
 }
 
 /** Contrôle qualité : une vraie pub motion design a de la matière (scènes, animations, durée). */
-export function richness(c: { html: string; js: string; duration: number }): string | null {
-  const scenes = (c.html.match(/class=["'][^"']*\bscene\b/g) ?? []).length;
-  const tweens = (c.js.match(/\.(from|to|fromTo|set)\(|IZ\.(type|count|draw|split)\(/g) ?? []).length;
+export function richness(c: { html: string; js: string; duration: number; blocks?: unknown[] }): string | null {
+  const nb = c.blocks?.length ?? 0;
+  const scenes = (c.html.match(/class=["'][^"']*\bscene\b/g) ?? []).length + nb;
+  const tweens = (c.js.match(/\.(from|to|fromTo|set)\(|IZ\.(type|count|draw|split|springText|mockup|morph|press)\(/g) ?? []).length + nb * 10;
   if (scenes < 5) return `seulement ${scenes} scènes : il en faut 6 à 8`;
   if (tweens < 30) return `seulement ${tweens} animations : c'est trop pauvre, il en faut au moins 40 (entrées, sorties, caméra, détails qui bougent)`;
   if (c.duration < 10) return 'la pub est trop courte (12 à 18 s attendues)';

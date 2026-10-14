@@ -883,7 +883,9 @@ export function MotionStudio() {
       return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
-      setMessages((m) => [...m, { role: 'ai', text: /Pro|gratuites|Connectez/.test(msg) ? msg : fresh ? 'La création n’a pas abouti cette fois (IA très demandée). Relancez dans un instant.' : 'Je n’ai pas réussi cette modification. Reformulez ou réessayez : votre vidéo est conservée.' }]);
+      const said = /Pro|gratuites|Connectez/.test(msg) ? msg : fresh ? 'La création n’a pas abouti cette fois (IA très demandée). Relancez dans un instant.' : 'Je n’ai pas réussi cette modification. Reformulez ou réessayez : votre vidéo est conservée.';
+      setMessages((m) => [...m, { role: 'ai', text: said }]);
+      if (/Pro|gratuites|Connectez/.test(msg)) setNotice(msg);
       return false;
     } finally {
       window.clearInterval(timer);
@@ -895,9 +897,17 @@ export function MotionStudio() {
   const askAi = async (text: string, opts: { fresh?: boolean; voice?: boolean; brand?: BrandProfile; photos?: Photo[] } = {}): Promise<boolean> => {
     // Nouveau moteur : toute création et toute retouche d'une composition passent par le directeur artistique pro.
     if (text.trim() && !aiBusy && loggedIn && (opts.fresh || compRef.current || stage === 'start')) {
-      const ok = await askPro(text.trim(), Boolean(opts.fresh) || !compRef.current, opts.brand, opts.photos);
-      return ok;
+      const fresh = Boolean(opts.fresh) || !compRef.current;
+      const ok = await askPro(text.trim(), fresh, opts.brand, opts.photos);
+      if (ok || !fresh) return ok;
+      // Le moteur pro n'a pas abouti (IA saturée, réseau…) : on monte quand même une vidéo animée avec le moteur rapide.
+      setNotice('Le studio pro est très demandé : voici une première version animée. Relancez « Nouvelle vidéo » dans un instant pour la version pro.');
+      return askAiClassic(text, { ...opts, fresh: true });
     }
+    return askAiClassic(text, opts);
+  };
+
+  const askAiClassic = async (text: string, opts: { fresh?: boolean; voice?: boolean; brand?: BrandProfile; photos?: Photo[] } = {}): Promise<boolean> => {
     const photos = opts.photos ?? photosRef.current;
     const brand = opts.brand ?? brandRef.current;
     const value = text.trim();

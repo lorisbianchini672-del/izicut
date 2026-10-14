@@ -6,6 +6,7 @@
 import { z } from 'zod';
 
 import { MUSIC, SFX } from '../motion/types';
+import { BlockSchema, PaletteSchema } from './templates';
 
 export const COMP_FORMATS = ['9:16', '16:9', '1:1'] as const;
 export const COMP_SIZE: Record<(typeof COMP_FORMATS)[number], { w: number; h: number }> = {
@@ -22,8 +23,12 @@ export const CompSchema = z.object({
   title: z.string().max(80).optional(),
   brand: z.string().max(60).optional(),
   css: z.string().max(60_000),
-  html: z.string().min(20).max(120_000),
-  js: z.string().min(20).max(60_000),
+  html: z.string().max(120_000).default(''),
+  js: z.string().max(60_000).default(''),
+  /** Couleurs de la pub (utilisées par les modèles). */
+  palette: PaletteSchema.optional(),
+  /** Scènes issues des modèles prêts (typographie élastique, interfaces 3D, morphing…). */
+  blocks: z.array(BlockSchema).max(12).optional(),
   sound: z.object({
     music: z.enum(MUSIC),
     bpm: z.number().min(60).max(180),
@@ -33,6 +38,8 @@ export const CompSchema = z.object({
   assets: z.record(z.string().max(80), z.string().max(600)).optional()
 });
 export type Comp = z.infer<typeof CompSchema>;
+/** Une composition doit avoir des scènes : écrites sur mesure et/ou issues des modèles. */
+export const hasContent = (c: Pick<Comp, 'html' | 'js' | 'blocks'>) => (c.html.length > 20 && c.js.length > 20) || Boolean(c.blocks?.length);
 
 /** Code interdit dans une composition (elle tourne dans un cadre isolé, mais on reste strict). */
 const FORBIDDEN_JS = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|importScripts|sendBeacon|localStorage|sessionStorage|indexedDB|eval)\b|document\.cookie|window\.(parent|top|opener)|\bparent\.(postMessage|location|document)|\btop\.|new\s+Function|\bimport\s*\(|<\s*script|javascript:/;
@@ -47,8 +54,9 @@ export function checkComp(c: Comp): string | null {
 }
 
 /** Repères d'images dans la composition : {{photo:0}}, {{logo}}, {{search:fresh bread}}. */
-export function compAssetKeys(c: Pick<Comp, 'html' | 'css'>): string[] {
+export function compAssetKeys(c: Pick<Comp, 'html' | 'css'> & { blocks?: unknown }): string[] {
   const keys = new Set<string>();
-  for (const m of `${c.html}\n${c.css}`.matchAll(/\{\{\s*(logo|photo:\d{1,2}|search:[^}]{2,60})\s*\}\}/g)) keys.add(m[1].trim());
+  const fromBlocks = JSON.stringify((c as { blocks?: unknown }).blocks ?? []).replace(/"((?:logo|photo:\d{1,2}|search:[^"{}]{2,60}))"/g, '{{$1}}');
+  for (const m of `${c.html}\n${c.css}\n${fromBlocks}`.matchAll(/\{\{\s*(logo|photo:\d{1,2}|search:[^}]{2,60})\s*\}\}/g)) keys.add(m[1].trim());
   return [...keys];
 }
