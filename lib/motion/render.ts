@@ -2592,7 +2592,18 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
         }
         ctx.drawImage(img, ox, oy, iw, ih);
       } else if (L.src !== 'logo') {
-        ctx.fillStyle = rgba(c.theme.primary, 0.25);
+        // Image pas (encore) disponible : carte dégradée aux couleurs de la pub avec un reflet qui passe, jamais un bloc vide.
+        const g = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
+        g.addColorStop(0, rgba(c.theme.primary, 0.85));
+        g.addColorStop(1, rgba(c.theme.accent, 0.75));
+        ctx.fillStyle = g;
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+        const sx = -w + ((lt * 0.6) % 1.6) * w * 1.6;
+        const sh = ctx.createLinearGradient(sx - w * 0.3, 0, sx + w * 0.3, 0);
+        sh.addColorStop(0, 'rgba(255,255,255,0)');
+        sh.addColorStop(0.5, 'rgba(255,255,255,0.22)');
+        sh.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = sh;
         ctx.fillRect(-w / 2, -h / 2, w, h);
       }
       ctx.restore();

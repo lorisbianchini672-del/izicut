@@ -11,6 +11,7 @@ import { z } from 'zod';
 
 import { BACKDROPS } from './gl-bg';
 import { repairFree } from './repair';
+import { fallbackMap } from './osm';
 import { MUSIC, SFX, SceneSchema, TRANSITIONS, type Layer, type MotionProject, type Scene } from './types';
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
@@ -31,6 +32,7 @@ export const BlockSchema = z.discriminatedUnion('block', [
   z.object({ block: z.literal('photo'), img, caption: z.string().trim().max(70).optional() }),
   // Scène 100 % sur mesure quand aucun bloc ne convient (calques libres, validés avant d'être gardés).
   z.object({ block: z.literal('free'), duration: z.number().min(1.2).max(8), name: z.string().max(40).optional(), layers: z.array(z.record(z.string(), z.unknown())).min(1).max(16), camera: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ block: z.literal('map'), place: txt(60), label: z.string().trim().max(60).optional(), geo: z.object({ name: z.string().max(80), roads: z.array(z.string().max(3000)).max(14), major: z.array(z.string().max(3000)).max(6), water: z.array(z.string().max(3000)).max(3) }).optional() }),
   z.object({ block: z.literal('cta'), title: txt(60), button: z.string().trim().max(28).optional(), link: z.string().trim().max(60).optional() })
 ]);
 export type Block = z.infer<typeof BlockSchema>;
@@ -284,6 +286,26 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
       };
     case 'free':
       return { type: 'free', bg: 'theme', duration: b.duration, name: b.name ?? 'Sur mesure', layers: b.layers as unknown as Layer[], ...(b.camera ? { camera: b.camera as Scene extends { camera?: infer C } ? C : never } : {}) } as Scene;
+    case 'map': {
+      // Vraie carte du lieu : rivières, puis rues, puis grands axes qui se dessinent ; l'épingle tombe, l'onde se propage.
+      const geo = b.geo ?? fallbackMap(b.place);
+      const w = c.vertical ? 1500 : 2100;
+      const cy = c.vertical ? 0.43 : 0.5;
+      const L: Layer[] = [];
+      geo.water.forEach((d) => L.push({ kind: 'path', x: 0.5, y: cy, w, d, color: '#2f63ff', width: 14, cap: 'round', opacity: 0.85, progress: [e(0.05, 0, 'linear'), e(1.1, 1, 'smooth')] } as Layer));
+      geo.roads.forEach((d, k) => L.push({ kind: 'path', x: 0.5, y: cy, w, d, color: '#2e3140', width: 2.5, cap: 'round', progress: [e(0.1 + k * 0.04, 0, 'linear'), e(1.0 + k * 0.04, 1, 'smooth')] } as Layer));
+      geo.major.forEach((d, k) => L.push({ kind: 'path', x: 0.5, y: cy, w, d, color: '#6b6f86', width: 5, cap: 'round', progress: [e(0.3 + k * 0.06, 0, 'linear'), e(1.2 + k * 0.06, 1, 'smooth')] } as Layer));
+      const pinY = cy - 0.02;
+      L.push({ kind: 'ellipse', x: 0.5, y: pinY + 0.035, w: [e(1.25, 0), e(2.2, 340, 'out')], stroke: { color: c.accent, width: 4 }, opacity: [e(1.25, 0.9, 'linear'), e(2.2, 0, 'out')] } as Layer);
+      L.push({ kind: 'ellipse', x: 0.5, y: pinY + 0.035, w: [e(1.7, 0), e(2.7, 340, 'out')], stroke: { color: c.accent, width: 3 }, opacity: [e(1.7, 0.7, 'linear'), e(2.7, 0, 'out')] } as Layer);
+      L.push({ kind: 'path', x: 0.5, y: [e(1.0, pinY - 0.18), e(1.45, pinY, 'spring')], w: 120, d: 'M500 80 C 330 80 250 210 250 330 C 250 520 500 760 500 760 C 500 760 750 520 750 330 C 750 210 670 80 500 80 Z', fill: c.accent, glow: { color: c.accent, size: 40 }, opacity: [e(1.0, 0, 'linear'), e(1.15, 1, 'linear')] } as Layer);
+      L.push({ kind: 'ellipse', x: 0.5, y: [e(1.0, pinY - 0.185), e(1.45, pinY - 0.005, 'spring')], w: 34, color: '#ffffff', opacity: [e(1.0, 0, 'linear'), e(1.15, 1, 'linear')] } as Layer);
+      L.push({ kind: 'rect', x: 0.5, y: c.vertical ? 0.79 : 0.84, w: c.vertical ? 820 : 900, h: b.label ? 190 : 140, radius: 44, glass: true, color: '#0d0e14', opacity: [e(1.5, 0, 'linear'), e(1.9, 0.92, 'smooth')], scale: [e(1.5, 0.9), e(2.0, 1, 'spring')] } as Layer);
+      L.push({ kind: 'text', x: 0.5, y: (c.vertical ? 0.79 : 0.84) - (b.label ? 0.018 : 0), text: geo.name || b.place, size: 66, weight: 800, maxWidth: 0.8, color: '#ffffff', reveal: 'rise', revealBy: 'word', revealAt: 1.7 } as Layer);
+      if (b.label) L.push({ kind: 'text', x: 0.5, y: (c.vertical ? 0.79 : 0.84) + 0.03, text: b.label, size: 34, weight: 500, maxWidth: 0.78, color: '#c9cfd6', reveal: 'rise', revealBy: 'word', revealAt: 2.0 } as Layer);
+      L.push({ kind: 'text', x: 0.97, y: 0.985, align: 'right', text: '© OpenStreetMap', size: 18, weight: 400, color: '#7a7f92' } as Layer);
+      return { ...base, bg: '#0b0c11' as never, duration: 3.6, name: 'Carte', camera: { zoom: [e(0, 1.3, 'linear'), e(2.2, 1, 'smooth'), e(3.6, 1.04, 'linear')], rotate: [e(0, -4, 'linear'), e(2.2, 0, 'smooth')] }, layers: L.slice(0, 40), cues: [{ at: 0.05, sfx: 'riser' }, { at: 1.4, sfx: 'pop' }, { at: 1.8, sfx: 'chime' }] };
+    }
     case 'cta':
       return {
         ...base, duration: 3, name: 'Signature',
@@ -355,6 +377,7 @@ export const BLOCKS_DOC = `BLOCS DISPONIBLES (chacun devient une scène motion d
 - { "block": "explain", "img": "photo:N", "title": "…", "notes": [{ "x": 0-1, "y": 0-1, "text": "…", "sub": "…" }] } — photo expliquée : annotations animées sur les points clés (coordonnées dans la photo), puis zoom sur le détail principal.
 - { "block": "compare", "before": "photo:N", "after": "photo:M", "labelBefore": "Avant", "labelAfter": "Après", "title": "…" } — avant / après avec volet lumineux.
 - { "block": "photo", "img": "photo:N", "caption": "…" } — photo plein écran qui se dévoile (iris, stores…) avec légende en verre.
+- { "block": "map", "place": "nom du lieu (ville, quartier, adresse)", "label": "petite phrase (optionnel, ex. « Ouvert à deux pas »)" } — VRAIE carte animée du lieu (rues qui se dessinent, épingle qui tombe, onde) : à utiliser dès que le client parle d'une carte, d'une ville, d'un quartier, d'une adresse ou de « où nous trouver ». Ne mets jamais une photo de carte à la place.
 - { "block": "cta", "title": "…", "button": "…", "link": "…" } — signature finale : logo, phrase, bouton cliqué, lien.
 - "kinetic" avec "style": "karaoke" — sous-titres mot à mot façon TikTok (le mot prononcé grossit et s'allume) : idéal pour une phrase forte ou un message parlé.
 - { "block": "free", "duration": 2-5, "name": "…", "layers": [ … ], "camera": { "zoom": [{"t":0,"v":1},{"t":3,"v":1.1}] } } — SCÈNE SUR MESURE quand le client veut quelque chose qu'aucun bloc ne fait (objet précis, schéma, chronologie, comparatif, effet particulier…). Calques possibles (x, y de 0 à 1 ; tailles en pixels sur 1080 de large) :

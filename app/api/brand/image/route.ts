@@ -11,7 +11,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
  */
 export const runtime = 'nodejs';
 
-const MAX = 6 * 1024 * 1024;
+const MAX = 12 * 1024 * 1024;
 
 export async function GET(request: Request) {
   const supabase = await createServerSupabaseClient();
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   try {
     let res: Response | null = null;
     for (let hop = 0; hop < 4 && target; hop++) {
-      res = await fetch(target, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; IziCutBot/1.0)', Accept: 'image/*' }, signal: AbortSignal.timeout(8000) });
+      res = await fetch(target, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36 izicut/1.0 (+https://izicut.vercel.app)', Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' }, signal: AbortSignal.timeout(12000) });
       const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
       if (!loc) break;
       target = await safeUrl(new URL(loc, target).toString());

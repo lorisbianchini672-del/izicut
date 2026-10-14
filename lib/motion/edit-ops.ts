@@ -57,8 +57,9 @@ MÉTHODE (réfléchis vraiment avant d'agir) :
 2. Repère dans le résumé EXACTEMENT les éléments concernés (identifiants).
 3. Choisis les opérations les plus simples qui réalisent toute la demande, sans rien toucher d'autre.
 4. Vérifie : chaque partie de la demande est-elle couverte ? Les identifiants existent-ils ?
+CONVERSATION : si le client pose une QUESTION, demande un avis, des idées, une explication ou discute (sans demander de changement), réponds-lui vraiment, avec une réponse pensée pour SA question et SA pub (cite ce qu'il y a dans sa pub, propose 2 ou 3 idées concrètes s'il en demande), et mets "ops":[]. Ne réponds jamais par une phrase toute faite. S'il te manque une info pour faire ce qu'il veut, pose-lui UNE question précise dans "message" avec "ops":[].
 Réponds UNIQUEMENT par un objet JSON COMPACT :
-{"analyse":"2 à 4 phrases : intention du client, éléments visés, ce que tu vas faire","message":"1 à 3 phrases pour le client : ce que tu as changé (tutoie si le client tutoie)","ops":[ … ]}
+{"analyse":"2 à 4 phrases : intention du client, éléments visés, ce que tu vas faire","type":"edit" ou "answer","message":"pour une modification : 1 à 3 phrases sur ce que tu as changé et pourquoi ; pour une question : ta vraie réponse (2 à 6 phrases). Tutoie si le client tutoie.","ops":[ … ]}
 EXEMPLES :
 - « met le titre en jaune » (il regarde la scène 2) → {"op":"style","id":"scenes/2/title","color":"#FFD400"} (ou l'identifiant du plus gros texte de la scène 2)
 - « enlève les emojis » → un {"op":"replace","find":"🔥","value":""} par emoji présent dans le résumé
@@ -307,4 +308,30 @@ export function quickOps(prompt: string, p: MotionProject, currentScene = 0): Re
     else ops.push({ op: 'theme', primary: color });
   }
   return ops;
+}
+
+
+/** Phrase pour le client décrivant ce qui a été changé (retouches comprises sans IA). */
+export function describeOps(raw: unknown): string {
+  if (!Array.isArray(raw)) return 'C’est fait.';
+  const parts = new Set<string>();
+  for (const op of raw as { op?: string; color?: string; size?: number; music?: string; value?: unknown; factor?: number }[]) {
+    switch (op.op) {
+      case 'text': case 'replace': parts.add('le texte'); break;
+      case 'style': parts.add(op.size && op.size !== 1 ? (op.size > 1 ? 'la taille du texte (plus grand)' : 'la taille du texte (plus petit)') : 'la couleur du texte'); break;
+      case 'theme': parts.add('les couleurs'); break;
+      case 'backdrop': parts.add('le fond animé'); break;
+      case 'duration': parts.add('la durée de la scène'); break;
+      case 'speed': parts.add(op.factor && op.factor < 1 ? 'le rythme (plus rapide)' : 'le rythme (plus lent)'); break;
+      case 'delete': parts.add('une scène supprimée'); break;
+      case 'move': parts.add('l’ordre des scènes'); break;
+      case 'add': parts.add('une nouvelle scène'); break;
+      case 'redo': parts.add('la scène refaite'); break;
+      case 'sticker': parts.add('un sticker'); break;
+      case 'music': parts.add(op.music === 'none' ? 'la musique (coupée)' : `la musique (${op.music})`); break;
+      case 'format': parts.add(`le format (${String(op.value)})`); break;
+    }
+  }
+  const list = [...parts];
+  return list.length ? `C’est fait : j’ai modifié ${list.length > 1 ? `${list.slice(0, -1).join(', ')} et ${list[list.length - 1]}` : list[0]}. Dis-moi si tu veux aller plus loin.` : 'C’est fait.';
 }

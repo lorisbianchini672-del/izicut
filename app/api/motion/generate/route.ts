@@ -12,7 +12,8 @@ import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, Magi
 import { FREE_DOC } from '@/lib/motion/prompt';
 import { BLOCKS_DOC, StyleSchema, composeProject, parseBlocks, type Block } from '@/lib/motion/compose';
 import { AiPrefsSchema, prefsPrompt } from '@/lib/motion/prefs';
-import { EDIT_OPS_DOC, applyOps, quickOps, summarize } from '@/lib/motion/edit-ops';
+import { fetchMap } from '@/lib/motion/osm';
+import { EDIT_OPS_DOC, applyOps, describeOps, quickOps, summarize } from '@/lib/motion/edit-ops';
 import { MAX_DOCS, MAX_DOC_CHARS, cleanText, docsPrompt } from '@/lib/motion/docs';
 import { coerce, repairFree } from '@/lib/motion/repair';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -554,8 +555,15 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
           timeoutMs: 60_000,
           deadline: t1 + 200_000
         })) as Record<string, unknown>;
+        if (Array.isArray(raw?.ops)) for (const op of raw.ops as { block?: { block?: string; place?: unknown; geo?: unknown } }[]) if (op?.block?.block === 'map' && typeof op.block.place === 'string' && !op.block.geo) op.block.geo = (await fetchMap(op.block.place)) ?? undefined;
         const res = applyOps(project, raw?.ops, { hasLogo: Boolean(parsed.data.hasLogo), photos: photos?.length ?? 0 });
         if (res.recreate) { recreate = true; break; }
+        // Question / discussion : vraie réponse de l'IA, sans toucher à la pub.
+        const said = typeof raw?.message === 'string' ? raw.message.trim() : '';
+        const noOps = !Array.isArray(raw?.ops) || (raw.ops as unknown[]).length === 0;
+        if (res.applied === 0 && said && (raw?.type === 'answer' || noOps)) {
+          return NextResponse.json({ project, message: said.slice(0, 1200), quota: { tier, used, limit: free ? FREE_MOTION_CREATIONS : null } });
+        }
         if (res.applied > 0) {
           const out = free ? clampToFree(res.project) : res.project;
           const message = typeof raw.message === 'string' ? raw.message.slice(0, 600) : 'C’est fait.';
@@ -573,7 +581,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
     if (!recreate) {
       const quick = applyOps(project, quickOps(prompt, project, parsed.data.currentScene ?? 0), { hasLogo: Boolean(parsed.data.hasLogo), photos: photos?.length ?? 0 });
       if (quick.applied > 0) {
-        return NextResponse.json({ project: free ? clampToFree(quick.project) : quick.project, message: 'C’est fait ✓', quota: { tier, used, limit: free ? FREE_MOTION_CREATIONS : null } });
+        return NextResponse.json({ project: free ? clampToFree(quick.project) : quick.project, message: describeOps(quickOps(prompt, project, parsed.data.currentScene ?? 0)), quota: { tier, used, limit: free ? FREE_MOTION_CREATIONS : null } });
       }
     }
     if (!recreate) {
@@ -627,6 +635,8 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
           lastError = 'il faut un champ "blocks" avec au moins 3 blocs valides';
           continue;
         }
+        // Cartes : vraies données OpenStreetMap du lieu demandé.
+        for (const bl of blocks) if (bl.block === 'map' && !bl.geo) bl.geo = (await fetchMap(bl.place)) ?? undefined;
         const fmt = pick(['9:16', '16:9', '1:1'] as const, r.format) ?? parsed.data.format ?? '9:16';
         // Marque : uniquement celle que le client a donnée (jamais de nom inventé par l'IA).
         const aiBrand = typeof r.brand === 'string' ? r.brand.trim() : '';
