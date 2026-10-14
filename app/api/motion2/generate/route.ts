@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       let comp: Comp = { ...res.data, html: norm(res.data.html), css: norm(res.data.css) };
       const bad = checkComp(comp);
       if (bad) { feedback = `ATTENTION : ${bad}. Corrige et renvoie le JSON complet.`; continue; }
-      const thin = !current && attempt === 0 ? richness(comp) : null;
+      const thin = !current && attempt < 2 ? richness(comp) : null;
       if (thin) { feedback = `ATTENTION : ta pub est trop simple (${thin}). Refais-la beaucoup plus riche et spectaculaire, avec au moins 7 techniques différentes de la bibliothèque, des transitions liées et une caméra vivante. Renvoie le JSON complet.`; continue; }
       comp = { ...comp, assets: { ...(current?.assets ?? {}), ...(await resolveSearchAssets(comp)) } };
       const errors = await verifyComp(comp, origin);
