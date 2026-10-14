@@ -1037,7 +1037,7 @@ export function MotionStudio() {
     if (compRef.current) {
       exportingRef.current = true;
       setExporting(0);
-      setNotice('Enregistrement de la vidéo en haute définition… gardez cette page ouverte (environ 1 minute).');
+      setNotice('Enregistrement de la vidéo en haute définition… gardez cette page ouverte (2 à 3 minutes).');
       try {
         const blob = await exportComp(compRef.current, proAssets, (r) => setExporting(Math.min(99, Math.round(r * 100))));
         if (blob) { downloadBlob(blob, 'mp4'); setNotice('Vidéo prête ✓ Si le téléchargement n’a pas démarré, touchez « Enregistrer ».'); }
