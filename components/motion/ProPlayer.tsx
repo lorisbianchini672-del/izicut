@@ -42,6 +42,8 @@ export function ProPlayer({ comp, assets, playing, seekTo, onTime, onError, onRe
     return () => window.removeEventListener('message', onMsg);
   }, [onTime, onError, onReady, playing, comp.duration]);
 
+  // Document chargé après le montage (le cadre doit déjà être isolé quand le contenu arrive, sinon certains navigateurs ne lancent pas les scripts).
+  useEffect(() => { if (ref.current && ref.current.srcdoc !== doc) ref.current.srcdoc = doc; }, [doc]);
   useEffect(() => { ref.current?.contentWindow?.postMessage({ iz: playing ? 'play' : 'pause' }, '*'); }, [playing]);
   useEffect(() => { if (seekTo) ref.current?.contentWindow?.postMessage({ iz: 'seek', t: seekTo.t }, '*'); }, [seekTo]);
 
@@ -49,7 +51,6 @@ export function ProPlayer({ comp, assets, playing, seekTo, onTime, onError, onRe
     <iframe
       ref={ref}
       title="Aperçu de la vidéo"
-      srcDoc={doc}
       sandbox="allow-scripts"
       className={className}
       style={{ aspectRatio: `${w} / ${h}`, border: 0, display: 'block', width: '100%', background: '#000' }}
