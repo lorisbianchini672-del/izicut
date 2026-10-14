@@ -9,7 +9,7 @@ import { FREE_MOTION_CREATIONS, isAdminEmail } from '@/lib/motion/plan';
 import { AiPrefsSchema, prefsPrompt } from '@/lib/motion/prefs';
 import { proEditPrompt, proSystemPrompt, richness } from '@/lib/motion2/prompt';
 import { resolveSearchAssets, verifyComp } from '@/lib/motion2/server';
-import { expandBlocks } from '@/lib/motion2/templates';
+import { expandBlocks, sequenceBlocks } from '@/lib/motion2/templates';
 import { COMP_SIZE, CompSchema, checkComp, hasContent, type Comp } from '@/lib/motion2/types';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -105,6 +105,7 @@ export async function POST(request: Request) {
         comp = { ...comp, palette: { primary: prefs?.colors?.[0] ?? site[0] ?? '#ff4d6d', secondary: prefs?.colors?.[1] ?? site[1] ?? '#7c5cff', bg: '#0b0b10', text: '#ffffff' } };
       }
       // Durée réelle = fin de la dernière scène (modèles compris).
+      if (comp.blocks?.length) comp = { ...comp, blocks: sequenceBlocks(comp.blocks, comp.sound?.bpm ?? 120) };
       const { w: CW, h: CH } = COMP_SIZE[comp.format];
       const ex = expandBlocks(comp.blocks, { W: CW, H: CH, vertical: comp.format === '9:16', palette: comp.palette!, bpm: comp.sound?.bpm ?? 120 });
       if (ex.errors.length && attempt < 2) { feedback = `ATTENTION : certains modèles sont invalides (${ex.errors.join(' ; ')}). Corrige leurs variables et renvoie le JSON complet.`; continue; }

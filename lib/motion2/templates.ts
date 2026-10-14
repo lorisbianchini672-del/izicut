@@ -234,6 +234,18 @@ const BUILD: { [K in TemplateId]: (v: z.infer<(typeof TEMPLATE_VARS)[K]>, c: Tem
   }
 };
 
+/** Remet les modèles bout à bout s'ils se chevauchent (léger fondu enchaîné de 0,15 s). */
+export function sequenceBlocks<T extends { use: TemplateId; at: number; dur?: number }>(blocks: T[], bpm: number): T[] {
+  const sorted = [...blocks].sort((a, b) => a.at - b.at);
+  let end = 0;
+  return sorted.map((b) => {
+    const dur = b.dur ?? Math.max(2, TEMPLATE_BEATS[b.use] * 60 / bpm);
+    const at = Math.round(Math.max(b.at, end > 0 ? end - 0.15 : 0) * 100) / 100;
+    end = at + dur;
+    return { ...b, at, dur };
+  });
+}
+
 /** Transforme les modèles utilisés par une composition en HTML / CSS / JS (les variables invalides sont ignorées). */
 export function expandBlocks(blocks: unknown, o: { W: number; H: number; vertical: boolean; palette: Palette; bpm: number }): TemplateOut & { errors: string[]; end: number } {
   const out = { html: '', css: '', js: '', errors: [] as string[], end: 0 };
