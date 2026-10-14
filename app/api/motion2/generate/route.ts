@@ -7,7 +7,7 @@ import { BrandBriefSchema, CompanySchema, SiteSchema } from '@/lib/brand/types';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { FREE_MOTION_CREATIONS, isAdminEmail } from '@/lib/motion/plan';
 import { AiPrefsSchema, prefsPrompt } from '@/lib/motion/prefs';
-import { proEditPrompt, proSystemPrompt } from '@/lib/motion2/prompt';
+import { proEditPrompt, proSystemPrompt, richness } from '@/lib/motion2/prompt';
 import { resolveSearchAssets, verifyComp } from '@/lib/motion2/server';
 import { CompSchema, checkComp, type Comp } from '@/lib/motion2/types';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -91,9 +91,13 @@ export async function POST(request: Request) {
       if (current && (raw?.comp === null || raw?.comp === undefined)) return NextResponse.json({ comp: current, message: message || 'D’accord.', answer: true });
       const res = CompSchema.safeParse({ ...(raw?.comp as object), format, v: 1 });
       if (!res.success) { feedback = `ATTENTION : ta réponse précédente n'était pas valide (${res.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}). Renvoie le JSON complet et valide.`; continue; }
-      let comp: Comp = res.data;
+      // Repères d'images normalisés (« {{search: mots}} » → « {{search:mots}} »).
+      const norm = (t: string) => t.replace(/\{\{\s*(search|photo)\s*:\s*/g, '{{$1:').replace(/\{\{\s*logo\s*\}\}/g, '{{logo}}');
+      let comp: Comp = { ...res.data, html: norm(res.data.html), css: norm(res.data.css) };
       const bad = checkComp(comp);
       if (bad) { feedback = `ATTENTION : ${bad}. Corrige et renvoie le JSON complet.`; continue; }
+      const thin = !current && attempt === 0 ? richness(comp) : null;
+      if (thin) { feedback = `ATTENTION : ta pub est trop simple (${thin}). Refais-la beaucoup plus riche et spectaculaire, avec au moins 7 techniques différentes de la bibliothèque, des transitions liées et une caméra vivante. Renvoie le JSON complet.`; continue; }
       comp = { ...comp, assets: { ...(current?.assets ?? {}), ...(await resolveSearchAssets(comp)) } };
       const errors = await verifyComp(comp, origin);
       if (errors?.length && attempt < 2) { feedback = `ATTENTION : en jouant ta composition, le navigateur a rencontré ces erreurs JavaScript : ${errors.join(' | ')}. Corrige le code (garde la même idée) et renvoie le JSON complet.`; continue; }

@@ -879,7 +879,7 @@ export function MotionStudio() {
       if (json.quota) setQuota(json.quota as MotionQuota);
       if (!res.ok || !json.comp) throw new Error(typeof json.error === 'string' ? json.error : 'L’IA n’a pas pu répondre.');
       if (!json.answer) { setComp(json.comp as Comp); setProSeek({ t: 0, n: Date.now() }); setPlaying(true); }
-      setMessages((m) => [...m, { role: 'ai', text: typeof json.message === 'string' && json.message ? json.message : 'C’est fait.' }]);
+      setMessages((m) => [...m, { role: 'ai', text: typeof json.message === 'string' && json.message ? json.message : 'C’est fait.', plan: Array.isArray(json.plan) ? (json.plan as string[]) : undefined }]);
       return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';

@@ -20,7 +20,10 @@ export async function resolveSearchAssets(comp: Comp): Promise<Record<string, st
   const used = new Set(Object.values(out));
   await Promise.all(keys.map(async (k) => {
     if (out[k]) return;
-    const hits = await searchImages(k.slice(7), orientation).catch(() => []);
+    const q = k.slice(7).trim();
+    let hits = await searchImages(q, orientation).catch(() => []);
+    // Rien trouvé : on simplifie la recherche (2 premiers mots, puis le dernier).
+    if (!hits.length) { const words = q.split(/\s+/); if (words.length > 2) hits = await searchImages(words.slice(0, 2).join(' '), orientation).catch(() => []); if (!hits.length && words.length > 1) hits = await searchImages(words[words.length - 1], orientation).catch(() => []); }
     const pick = hits.find((h) => !used.has(h.url)) ?? hits[0];
     if (pick) { out[k] = pick.url; used.add(pick.url); }
   }));
