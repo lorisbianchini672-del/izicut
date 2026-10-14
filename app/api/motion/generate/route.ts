@@ -679,6 +679,8 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
         const named = detectBrandName(prompt);
         const brandName = (aiBrand && known.includes(aiBrand.toLowerCase()) ? aiBrand : named ?? brand?.company?.name ?? '').slice(0, 40);
         let safeBlocks = aiBrand && !brandName ? scrubBrand(blocks, aiBrand) : blocks;
+        // Marque citée mais absente des textes : on ajoute sa révélation animée juste après l'accroche.
+        if (brandName && !JSON.stringify(safeBlocks).toLowerCase().includes(brandName.toLowerCase())) safeBlocks = [safeBlocks[0], { block: 'reveal', brand: brandName } as Block, ...safeBlocks.slice(1)].filter(Boolean) as Block[];
         // Préférences du client appliquées à coup sûr (pas seulement « demandées » à l'IA).
         const st = inspiredStyle(safeStyle(r.style), docs);
         if (prefs?.colors?.length) st.accent = prefs.colors[0];
