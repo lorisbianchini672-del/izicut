@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * GET /api/media/search?q=… — Photo LIBRE DE DROITS pour une pub.
@@ -44,6 +45,8 @@ export async function GET(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous.' }, { status: 401 });
+  const limited = rateLimit(request, 'media-search', 60, 60000, user.id);
+  if (limited) return limited;
   const params = new URL(request.url).searchParams;
   const q = (params.get('q') ?? '').replace(/[^\p{L}\p{N} '’-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
   const orientation = ['portrait', 'landscape', 'square'].includes(params.get('o') ?? '') ? (params.get('o') as string) : 'portrait';

@@ -30,8 +30,31 @@ const nextConfig: NextConfig = {
     '/api/motion2/**': ['./node_modules/@sparticuz/chromium/bin/**']
   },
 
+  /** Ne pas annoncer la techno du serveur aux robots. */
+  poweredByHeader: false,
+
   async headers() {
+    /**
+     * En-têtes de sécurité sur tout le site :
+     * - HSTS : HTTPS obligatoire (anti-interception) ;
+     * - nosniff : pas d'exécution d'un fichier déguisé ;
+     * - frame-ancestors / X-Frame-Options : le site ne peut pas être piégé
+     *   dans le cadre d'un autre site (anti-clickjacking) ;
+     * - object-src / base-uri : ferme deux portes classiques d'injection ;
+     * - form-action : les formulaires ne partent que vers nous et Stripe ;
+     * - Permissions-Policy : caméra, géolocalisation… désactivées.
+     */
+    const security = [
+      { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'Permissions-Policy', value: 'camera=(), geolocation=(), payment=(self "https://checkout.stripe.com"), usb=(), microphone=(self)' },
+      { key: 'X-DNS-Prefetch-Control', value: 'on' },
+      { key: 'Content-Security-Policy', value: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self' https://checkout.stripe.com https://billing.stripe.com; upgrade-insecure-requests" }
+    ];
     return [
+      { source: '/:path*', headers: security },
       {
         // Aucune réponse d'API ne doit être mise en cache par un
         // intermédiaire : elles contiennent des données de compte.

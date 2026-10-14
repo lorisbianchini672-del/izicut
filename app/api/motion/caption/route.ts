@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AiNotConfiguredError, chatJson } from '@/lib/ai/chat';
 import { MotionProjectSchema } from '@/lib/motion/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * POST /api/motion/caption — Le texte qui accompagne la pub sur les réseaux :
@@ -24,6 +25,8 @@ export async function POST(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous pour utiliser l’IA.' }, { status: 401 });
+  const limited = rateLimit(request, 'caption', 15, 60000, user.id);
+  if (limited) return limited;
   const parsed = BodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Demande invalide' }, { status: 400 });
   const { project, concept, notes, link, platform } = parsed.data;

@@ -5,6 +5,7 @@ import { synthesize } from '@/lib/ai/tts';
 import { resolvePlanTier } from '@/lib/entitlements';
 import { isAdminEmail } from '@/lib/motion/plan';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * POST /api/motion/voice — Voix-off de la pub (offres payantes).
@@ -23,6 +24,8 @@ export async function POST(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous.' }, { status: 401 });
+  const limited = rateLimit(request, 'voice', 10, 60000, user.id);
+  if (limited) return limited;
   const { data: profile } = await supabase.from('profiles').select('plan, subscription_status').eq('id', user.id).maybeSingle();
   const tier = isAdminEmail(user.email) ? 'agency' : resolvePlanTier(profile?.plan, profile?.subscription_status);
   if (tier === 'free') return NextResponse.json({ error: 'La voix-off intégrée à la vidéo fait partie de l’offre Pro.', code: 'pro' }, { status: 402 });

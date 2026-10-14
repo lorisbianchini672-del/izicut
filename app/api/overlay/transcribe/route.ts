@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * POST /api/overlay/transcribe — transcription mot à mot d'un extrait audio
@@ -14,6 +15,8 @@ export async function POST(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous pour activer les sous-titres automatiques.' }, { status: 401 });
+  const limited = rateLimit(request, 'transcribe', 10, 60000, user.id);
+  if (limited) return limited;
   const key = process.env.GROQ_API_KEY;
   if (!key) return NextResponse.json({ error: 'Transcription non configurée.' }, { status: 503 });
   let form: FormData;

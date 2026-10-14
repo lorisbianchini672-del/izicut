@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { chatJson } from '@/lib/ai/chat';
 import { safeUrl } from '@/lib/net/safe-url';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * GET /api/brand/find-site?name=…&city=… — Retrouve le site web d'une
@@ -71,6 +72,8 @@ export async function GET(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous.' }, { status: 401 });
+  const limited = rateLimit(request, 'brand-find', 20, 60000, user.id);
+  if (limited) return limited;
   const sp = new URL(request.url).searchParams;
   const name = (sp.get('name') ?? '').slice(0, 120);
   const city = (sp.get('city') ?? '').slice(0, 80) || undefined;

@@ -6,6 +6,7 @@ import { buildCompDocument } from '@/lib/motion2/runtime';
 import { gsapInline } from '@/lib/motion2/server';
 import { COMP_SIZE, CompSchema, checkComp } from '@/lib/motion2/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * POST /api/motion2/frames — enregistre une tranche d'images d'une
@@ -30,6 +31,8 @@ export async function POST(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous pour télécharger.' }, { status: 401 });
+  const limited = rateLimit(request, 'motion2-frames', 400, 600000, user.id);
+  if (limited) return limited;
   const parsed = BodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Demande invalide.' }, { status: 400 });
   const { comp, from, count, fps } = parsed.data;

@@ -10,6 +10,7 @@ import {
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { wordsInRange } from '@/worker/timestamps';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * ============================================================
@@ -74,6 +75,8 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
+    const limited = rateLimit(request, 'clip-render', 10, 60000, user.id);
+    if (limited) return limited;
 
     let body: unknown;
     try {

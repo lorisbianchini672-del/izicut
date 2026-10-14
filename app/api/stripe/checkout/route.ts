@@ -17,6 +17,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getStripe, planPriceId, appBaseUrl } from '@/lib/stripe';
 import { PLANS, type PlanKey } from '@/lib/plans';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -31,6 +32,8 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
+    const limited = rateLimit(request, 'checkout', 10, 60000, user.id);
+    if (limited) return limited;
 
     // 2. Plan demandé (validation minimale)
     const body = (await request.json().catch(() => ({}))) as { plan?: string };

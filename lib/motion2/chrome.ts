@@ -3,7 +3,11 @@
  * (Chromium léger sur Vercel, Chrome local en développement via CHROME_PATH).
  * Le navigateur est gardé entre deux requêtes d'une même instance.
  */
+import { isIP } from 'node:net';
+
 import type { Browser, Page } from 'puppeteer-core';
+
+import { privateIp } from '../net/safe-url';
 
 let browserP: Promise<Browser> | null = null;
 
@@ -23,6 +27,19 @@ export async function getBrowser(): Promise<Browser> {
   return browserP;
 }
 
+/** Refuse les adresses internes (IP privées, localhost, noms sans domaine) pour les images. */
+function publicHost(raw: string): boolean {
+  try {
+    const h = new URL(raw).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    if (!h.includes('.') && !h.includes(':')) return false;
+    if (h === 'localhost' || /\.(local|internal|localhost|lan|home|corp)$/.test(h)) return false;
+    if (isIP(h)) return !privateIp(h);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Ressources autorisées pour une composition : polices Google, images (https / data), rien d'autre. */
 export async function lockDown(page: Page) {
   await page.setRequestInterception(true);
@@ -31,7 +48,7 @@ export async function lockDown(page: Page) {
     const type = req.resourceType();
     const ok = url.startsWith('data:') || url.startsWith('about:')
       || (/^https:\/\/fonts\.(googleapis|gstatic)\.com\//.test(url) && (type === 'stylesheet' || type === 'font'))
-      || (/^https:\/\//.test(url) && type === 'image');
+      || (/^https:\/\//.test(url) && type === 'image' && publicHost(url));
     if (ok) void req.continue().catch(() => undefined);
     else void req.abort().catch(() => undefined);
   });

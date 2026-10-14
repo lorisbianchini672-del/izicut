@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { safeUrl } from '@/lib/net/safe-url';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * GET /api/brand/image?url=… — Récupère une image du site du client (logo,
@@ -17,6 +18,8 @@ export async function GET(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous.' }, { status: 401 });
+  const limited = rateLimit(request, 'brand-image', 60, 60000, user.id);
+  if (limited) return limited;
   const raw = new URL(request.url).searchParams.get('url') ?? '';
   let target = raw ? await safeUrl(raw) : null;
   if (!target) return NextResponse.json({ error: 'Adresse invalide.' }, { status: 400 });

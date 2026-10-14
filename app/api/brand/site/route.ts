@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { fetchHtml, visibleText } from '@/lib/net/fetch-page';
 import { safeUrl } from '@/lib/net/safe-url';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * GET /api/brand/site?url=… — « ADN visuel » du site du client : titre,
@@ -41,6 +42,8 @@ export async function GET(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous pour analyser votre site.' }, { status: 401 });
+  const limited = rateLimit(request, 'brand-site', 20, 60000, user.id);
+  if (limited) return limited;
   const raw = new URL(request.url).searchParams.get('url')?.trim() ?? '';
   let url = raw ? await safeUrl(raw) : null;
   // « monsite.fr » introuvable : on essaie « www.monsite.fr ».

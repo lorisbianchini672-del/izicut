@@ -18,6 +18,7 @@ import { EDIT_OPS_DOC, applyOps, describeOps, quickOps, summarize } from '@/lib/
 import { MAX_DOCS, MAX_DOC_CHARS, cleanText, docsPrompt } from '@/lib/motion/docs';
 import { coerce, repairFree } from '@/lib/motion/repair';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * POST /api/motion/generate — L'IA du Studio Motion.
@@ -468,6 +469,8 @@ export async function POST(request: Request) {
   if (!user) {
     return NextResponse.json({ error: 'Connectez-vous pour utiliser l’IA du Studio.' }, { status: 401 });
   }
+  const limited = rateLimit(request, 'motion-gen', 12, 60000, user.id);
+  if (limited) return limited;
   let body: unknown;
   try {
     body = await request.json();

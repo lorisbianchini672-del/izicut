@@ -13,6 +13,7 @@ import { expandBlocks, sequenceBlocks } from '@/lib/motion2/templates';
 import { COMP_SIZE, CompSchema, checkComp, hasContent, type Comp } from '@/lib/motion2/types';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * POST /api/motion2/generate — moteur pro : le directeur artistique IA écrit
@@ -39,6 +40,8 @@ export async function POST(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous (gratuit) pour créer avec l’IA.' }, { status: 401 });
+  const limited = rateLimit(request, 'motion2-gen', 8, 60000, user.id);
+  if (limited) return limited;
   const parsed = BodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Demande invalide.' }, { status: 400 });
   const { prompt, comp: current, photos, brand, prefs } = parsed.data;

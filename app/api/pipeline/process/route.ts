@@ -7,6 +7,7 @@ import { createProjectWithJob } from '@/lib/jobs';
 import { estimateCostSeconds } from '@/lib/pipeline-cost';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import type { SourceType } from '@/types';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * ============================================================
@@ -77,6 +78,8 @@ export async function POST(request: NextRequest) {
     if (authError || !user) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
+    const limited = rateLimit(request, 'pipeline', 10, 60000, user.id);
+    if (limited) return limited;
 
     // 2. Corps de requête : refus par défaut de tout champ inattendu.
     let body: unknown;

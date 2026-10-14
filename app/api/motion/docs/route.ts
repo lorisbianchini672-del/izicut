@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { describeImages } from '@/lib/ai/chat';
 import { cleanText, MAX_DOC_CHARS } from '@/lib/motion/docs';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * POST /api/motion/docs — lit un document d'inspiration (PDF, Word, texte) et
@@ -17,6 +18,8 @@ export async function POST(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous pour ajouter des documents.' }, { status: 401 });
+  const limited = rateLimit(request, 'docs', 15, 60000, user.id);
+  if (limited) return limited;
   // Vidéo d'inspiration : planche de 6 images (déjà réduite dans le navigateur) → description du STYLE uniquement.
   if ((request.headers.get('content-type') ?? '').includes('application/json')) {
     const body = (await request.json().catch(() => ({}))) as { sheet?: unknown };

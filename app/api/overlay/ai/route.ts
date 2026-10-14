@@ -6,6 +6,7 @@ import { FREE_DOC } from '@/lib/motion/prompt';
 import { repairFree } from '@/lib/motion/repair';
 import { LayerSchema, LayersSchema, type Layer } from '@/lib/overlay/types';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * POST /api/overlay/ai — l'IA du Studio d'effets.
@@ -150,6 +151,8 @@ export async function POST(request: Request) {
     data: { user }
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous pour utiliser l’IA.' }, { status: 401 });
+  const limited = rateLimit(request, 'overlay-ai', 20, 60000, user.id);
+  if (limited) return limited;
 
   let body: unknown;
   try {

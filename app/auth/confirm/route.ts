@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
   // N'accepte qu'un chemin interne : `//evil.com` est rejeté.
   const rawNext = searchParams.get('next') ?? '/dashboard';
-  const safeNext = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard';
+  const safeNext = /^\/(?![\/\\])[^\\\s]*$/.test(rawNext) ? rawNext : '/dashboard';
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     return NextResponse.redirect(`${origin}/login?error=supabase_non_configure`);

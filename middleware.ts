@@ -15,6 +15,8 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
+import { rateLimit } from '@/lib/security/rate-limit';
+
 /** Routes exigeant une session ; les autres sont simplement traversées. */
 const PROTECTED_PREFIXES = ['/dashboard', '/project', '/editor', '/upload', '/montage'];
 
@@ -44,6 +46,13 @@ function redirectToLogin(request: NextRequest, pathname: string) {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Anti-martèlement : plafond global par adresse IP sur toutes les API
+  // (le webhook Stripe en est exclu : il est authentifié par signature).
+  if (pathname.startsWith('/api/') && !pathname.startsWith('/api/stripe/webhook')) {
+    const limited = rateLimit(request, 'api', 300, 60_000);
+    if (limited) return limited;
+  }
 
   let response = NextResponse.next({ request });
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { AiNotConfiguredError, chatJson } from '@/lib/ai/chat';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * POST /api/overlay/talk — l'IA lit ce que dit la personne et choisit le
@@ -27,6 +28,8 @@ export async function POST(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Connectez-vous pour utiliser l’IA.' }, { status: 401 });
+  const limited = rateLimit(request, 'overlay-talk', 20, 60000, user.id);
+  if (limited) return limited;
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Demande invalide' }, { status: 400 });
   const { duration, lines, wish } = parsed.data;

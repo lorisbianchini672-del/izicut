@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { chatJson } from '@/lib/ai/chat';
 import { nafLabel } from '@/lib/brand/naf';
 import type { Company } from '@/lib/brand/types';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 /**
  * GET /api/brand/search?q=… — Recherche d'une entreprise ou association
@@ -89,6 +90,8 @@ function initials(name: string): string {
 }
 
 export async function GET(request: Request) {
+  const limited = rateLimit(request, 'brand-search', 30, 60000);
+  if (limited) return limited;
   const q = new URL(request.url).searchParams.get('q')?.trim() ?? '';
   if (q.length < 2) return NextResponse.json({ results: [] });
   try {
