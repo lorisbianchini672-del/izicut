@@ -314,9 +314,9 @@ function FinalCta() {
 
 const PAGES: [string, string][] = [['Accueil', '/'], ['Studio', '/studio'], ['Tarifs', '/#pricing'], ['Guide 9:16', '/guide-9-16'], ['Blog', '/blog'], ['Conditions', '/cgu'], ['Confidentialité', '/confidentialite'], ['Mentions légales', '/mentions-legales']];
 
-function Footer() {
+export function SiteFooter() {
   return (
-    <footer className="border-t border-white/[0.08] bg-[#0a0a0a]">
+    <footer className="izi-dark-scope border-t border-white/[0.08] bg-[#0a0a0a] font-[family-name:var(--font-geist)] text-white">
       <div className="mx-auto grid max-w-6xl gap-10 px-5 py-16 sm:px-6 md:grid-cols-[1.4fr_1fr]">
         <div>
           <Link href="/" className="inline-flex items-center gap-2 text-white" aria-label="izicut, accueil"><LogoMark className="h-7 w-7" /><Wordmark className="text-xl" /></Link>
@@ -341,7 +341,7 @@ export function Landing() {
       <Pricing />
       <Faq />
       <FinalCta />
-      <Footer />
+      <SiteFooter />
     </main>
   );
 }

@@ -10,6 +10,7 @@ import { sendEmail } from '@/lib/email/send';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ConceptSchema, MAGIC_KINDS, MAX_PHOTOS, MAX_SCENES, MOTIFS, MUSIC, MagicSchema, MotionProjectSchema, BackdropSchema, SFX, SceneSchema, TEXT_ANIMS, TRANSITIONS, type Concept, type MotionProject, type Scene } from '@/lib/motion/types';
 import { FREE_DOC } from '@/lib/motion/prompt';
+import { detectBrandName } from '@/lib/brand/detect';
 import { BLOCKS_DOC, StyleSchema, composeProject, localBlocks, parseBlocks, type Block } from '@/lib/motion/compose';
 import { AiPrefsSchema, prefsPrompt } from '@/lib/motion/prefs';
 import { fetchMap } from '@/lib/motion/osm';
@@ -230,6 +231,7 @@ ${BLOCKS_DOC}
 RÈGLES :
 - Le client peut demander N'IMPORTE QUOI (style, effet, objet, histoire, format, référence à une marque ou une vidéo) : tu le réalises toujours, jamais de refus. Si aucun bloc ne convient pour une idée, crée une scène sur mesure avec le bloc "free".
 - 6 à 9 blocs. Structure : HOOK (reveal ou kinetic choc) → enjeu / bénéfice → preuves visuelles → signature "cta" en dernier.
+- MARQUE CITÉE : si le client parle d'une marque, d'une enseigne ou d'une entreprise précise (ex. « les magasins Carrefour », « Nike », « Chez Lola »), la vidéo est SUR CETTE MARQUE : son nom apparaît dans l'accroche et la signature, "brand" = ce nom, ses couleurs officielles (ou celles du site fourni), son univers réel (ce qu'elle vend, ses rayons, ses services) ; jamais une pub générique sans le nom. Pour une grande marque connue, tu peux citer ce que tout le monde sait d'elle (activité, type de produits), mais aucun chiffre, prix ou promo inventé.
 - Varie les blocs : jamais deux fois le même bloc d'affilée, au moins 4 blocs différents.
 - PHOTOS DU CLIENT = INFORMATIONS : utilise CHAQUE photo au moins une fois. Pour la photo la plus parlante, un bloc "explain" avec 1 à 3 annotations placées sur les points clés indiqués (x = fx, y = fy). Avec 3 photos ou plus : un "carousel" ou un "wall". Deux photos du même sujet avant/après : "compare".
 - Sans photo du client : utilise "search:mots-clés en anglais" (photos libres de droits) dans 1 à 3 blocs, et privilégie kinetic, card, list, stat (stat UNIQUEMENT avec un vrai chiffre donné par le client), cta.
@@ -601,7 +603,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
   /** IA saturée : on monte quand même une vraie pub motion design (blocs animés tirés au sort), jamais un modèle figé ni une erreur. */
   const localArgs = () => ({
     prompt,
-    brand: (brand?.company?.name ?? '').slice(0, 40),
+    brand: (detectBrandName(prompt) ?? brand?.company?.name ?? '').slice(0, 40),
     tagline: brand?.brief?.pitch,
     strengths: brand?.brief?.strengths?.slice(0, 5),
     city: brand?.company?.city ?? undefined,
@@ -610,7 +612,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
     videos: media?.length ?? 0
   });
   const localFallback = async () => {
-    const name = (brand?.company?.name ?? '').slice(0, 40);
+    const name = (detectBrandName(prompt) ?? brand?.company?.name ?? '').slice(0, 40);
     const blocks = localBlocks(localArgs());
     for (const bl of blocks) if (bl.block === 'map' && !bl.geo) bl.geo = (await fetchMap(bl.place).catch(() => null)) ?? undefined;
     const pal = brand?.brief?.palette;
@@ -674,7 +676,8 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
         // Marque : uniquement celle que le client a donnée (jamais de nom inventé par l'IA).
         const aiBrand = typeof r.brand === 'string' ? r.brand.trim() : '';
         const known = [prompt, brand?.company?.name, brand?.site?.title, brand?.notes, project?.brand].filter(Boolean).join(' ').toLowerCase();
-        const brandName = (aiBrand && known.includes(aiBrand.toLowerCase()) ? aiBrand : brand?.company?.name ?? '').slice(0, 40);
+        const named = detectBrandName(prompt);
+        const brandName = (aiBrand && known.includes(aiBrand.toLowerCase()) ? aiBrand : named ?? brand?.company?.name ?? '').slice(0, 40);
         let safeBlocks = aiBrand && !brandName ? scrubBrand(blocks, aiBrand) : blocks;
         // Préférences du client appliquées à coup sûr (pas seulement « demandées » à l'IA).
         const st = inspiredStyle(safeStyle(r.style), docs);

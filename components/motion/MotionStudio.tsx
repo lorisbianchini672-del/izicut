@@ -43,6 +43,7 @@ import { CertificationPanel } from '@/components/motion/CertificationPanel';
 import { QuickBar } from '@/components/motion/QuickBar';
 import { Button } from '@/components/ui/button';
 import type { BrandProfile } from '@/lib/brand/types';
+import { detectBrandName } from '@/lib/brand/detect';
 import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, type MotionQuota } from '@/lib/motion/plan';
 import { displayName } from '@/lib/motion/autoad';
 import { BlockSchema, blockScene } from '@/lib/motion/compose';
@@ -1114,7 +1115,10 @@ export function MotionStudio() {
     const text = prompt.trim() || (who ? `Crée une pub motion design pour ${who}` : '');
     if (!text) { setNotice('Décrivez votre vidéo en une phrase (ex. : pub pour ma boulangerie, -20 % ce week-end).'); return; }
     trackAd('ViewContent', { content_name: 'create' });
-    const ok = await askAi(text, { fresh: true });
+    // Marque citée dans la demande (« les magasins Carrefour ») : on l'analyse d'abord (site, logo, couleurs, visuels).
+    const named = !b.company && !b.site ? detectBrandName(text) : null;
+    if (named) { setBrandInput(named); await analyzeBrand(named); }
+    const ok = await askAi(text, { fresh: true, brand: brandRef.current, photos: photosRef.current });
     if (ok) { setStage('edit'); setPanel('ia'); }
   };
 
