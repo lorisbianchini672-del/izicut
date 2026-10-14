@@ -170,6 +170,9 @@ async function call(p: Provider, model: string, messages: { role: string; conten
   return content;
 }
 
+/** Dernière IA qui a répondu et pannes rencontrées (diagnostic, jamais de clé). */
+export const aiTrace: { provider: string; failures: string[] } = { provider: '', failures: [] };
+
 /** Essaie chaque fournisseur dans l'ordre jusqu'à obtenir une réponse. */
 async function cascade(run: (p: Provider) => Promise<string>, filter: (p: Provider) => boolean = () => true, deadline = Infinity): Promise<string> {
   const list = providers().filter(filter);
@@ -178,9 +181,12 @@ async function cascade(run: (p: Provider) => Promise<string>, filter: (p: Provid
   for (const p of list) {
     if (Date.now() > deadline - 15_000) break;
     try {
-      return await run(p);
+      const out = await run(p);
+      aiTrace.provider = `${p.name}:${p.model}`;
+      return out;
     } catch (err) {
       last = err;
+      aiTrace.failures = [...aiTrace.failures.slice(-6), `${p.name}:${p.model} → ${(err as Error).message.slice(0, 90)}`];
       // Quelle que soit l'erreur (quota, panne, clé invalide…), on passe au suivant.
       console.warn(`[ia] ${p.name} (${p.model}) indisponible : ${(err as Error).message}`);
     }

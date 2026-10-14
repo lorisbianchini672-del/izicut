@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { AiNotConfiguredError, chatJson, describeImages } from '@/lib/ai/chat';
+import { AiNotConfiguredError, aiTrace, chatJson, describeImages } from '@/lib/ai/chat';
 import { detectBrandName } from '@/lib/brand/detect';
 import { BrandBriefSchema, CompanySchema, SiteSchema } from '@/lib/brand/types';
 import { resolvePlanTier } from '@/lib/entitlements';
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
       }
       return NextResponse.json({ comp, message, quota });
     }
-    return NextResponse.json({ error: 'La création n’a pas abouti, réessayez dans un instant.', code: 'retry', reason: (feedback || lastErr).slice(0, 400) }, { status: 502 });
+    return NextResponse.json({ error: 'La création n’a pas abouti, réessayez dans un instant.', code: 'retry', reason: (feedback || lastErr).slice(0, 400), trace: aiTrace.failures }, { status: 502 });
   } catch (err) {
     if (err instanceof AiNotConfiguredError) return NextResponse.json({ error: err.message }, { status: 503 });
     console.error('[motion2] génération :', err);
