@@ -9,8 +9,8 @@ import type { MotionProject } from '../motion/types';
 import { COMP_SIZE, type Comp } from './types';
 
 const FPS = 30;
-const CHUNK = 24;
-const PARALLEL = 4;
+const CHUNK = 12;
+const PARALLEL = 10;
 
 /** Projet « son seul » : la musique et les bruitages de la composition passent par le moteur audio existant. */
 export function soundProject(comp: Comp): MotionProject {
