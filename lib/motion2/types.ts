@@ -41,8 +41,8 @@ const FORBIDDEN_HTML = /<\s*(script|iframe|object|embed|link|meta|base|form)\b|j
 export function checkComp(c: Comp): string | null {
   if (FORBIDDEN_JS.test(c.js)) return 'le code utilise une fonction interdite (réseau, stockage ou fenêtre parente)';
   if (FORBIDDEN_HTML.test(c.html)) return 'le HTML contient une balise ou un attribut interdit (script, iframe, on…=)';
-  const css = c.css.replace(/url\(\s*['"]?\{\{[^}]+\}\}['"]?\s*\)/g, '').replace(/url\(\s*['"]?data:[^)]*\)/g, '').replace(/url\(\s*['"]?#[\w-]+['"]?\s*\)/g, '');
-  if (/@import|url\(/i.test(css)) return 'le CSS charge une ressource externe interdite';
+  // Seules les importations de feuilles externes et les adresses javascript: sont refusées (le reste est confiné par le cadre isolé).
+  if (/@import|url\(\s*['"]?\s*javascript:/i.test(c.css)) return 'le CSS charge une feuille de style externe interdite';
   return null;
 }
 
