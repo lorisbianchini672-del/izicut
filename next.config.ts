@@ -23,7 +23,12 @@ const nextConfig: NextConfig = {
    * car le runtime Edge ne permet ni la vérification de signature
    * cryptographique ni l'accès au corps brut de la requête.
    */
-  serverExternalPackages: ['stripe'],
+  serverExternalPackages: ['stripe', '@sparticuz/chromium', 'puppeteer-core'],
+
+  /** Le Chromium léger du moteur pro (rendu des vidéos) doit être embarqué avec ses routes. */
+  outputFileTracingIncludes: {
+    '/api/motion2/**': ['./node_modules/@sparticuz/chromium/bin/**']
+  },
 
   async headers() {
     return [

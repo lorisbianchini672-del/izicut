@@ -89,6 +89,9 @@ import {
   type SceneType
 } from '@/lib/motion/types';
 import { trackAd } from '@/lib/ads';
+import { ProPlayer } from '@/components/motion/ProPlayer';
+import { exportComp } from '@/lib/motion2/export';
+import type { Comp } from '@/lib/motion2/types';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
@@ -183,6 +186,13 @@ export function MotionStudio() {
   const [project, setProject] = useState<MotionProject>(BLANK_PROJECT);
   /** Écran : « start » = on décrit la vidéo, « edit » = on la modifie et on la télécharge. */
   const [stage, setStage] = useState<'start' | 'edit'>('start');
+  /** Moteur pro : la pub est une vraie composition animée (HTML / CSS / GSAP) écrite par l'IA. */
+  const [comp, setComp] = useState<Comp | null>(null);
+  const compRef = useRef<Comp | null>(null);
+  compRef.current = comp;
+  const [proTime, setProTime] = useState(0);
+  const [proSeek, setProSeek] = useState<{ t: number; n: number } | null>(null);
+  const [proAssets, setProAssets] = useState<Record<string, string>>({});
   const [assets, setAssets] = useState<MotionAssets>({});
   // Documents d'inspiration : gardés en mémoire seulement (jamais enregistrés dans le navigateur ni sur le serveur).
   const [docs, setDocs] = useState<{ name: string; text: string }[]>([]);
@@ -341,6 +351,10 @@ export function MotionStudio() {
   useEffect(() => {
     const saved = loadSaved();
     if (saved?.scenes?.length) { setProject(saved); if (saved.scenes.some((sc) => sc.type === 'free')) setStage('edit'); }
+    try {
+      const c = window.localStorage.getItem('izicut-comp-v1');
+      if (c) { const parsedC = JSON.parse(c) as Comp; if (parsedC?.html && parsedC?.js) { setComp(parsedC); setStage('edit'); } }
+    } catch { /* rien */ }
     setBrand(loadBrand());
     brandLoaded.current = true;
     try {
@@ -800,7 +814,90 @@ export function MotionStudio() {
     rec.start();
   };
 
+  useEffect(() => {
+    try { if (comp) window.localStorage.setItem('izicut-comp-v1', JSON.stringify(comp)); else window.localStorage.removeItem('izicut-comp-v1'); } catch { /* stockage plein : pas grave */ }
+  }, [comp]);
+
+  // Photos et logo du client, en images intégrées (le cadre isolé de l'aperçu et le serveur de rendu ne voient pas les fichiers locaux).
+  useEffect(() => {
+    let alive = true;
+    const toData = (img: HTMLImageElement | null | undefined, max = 1280): string | null => {
+      if (!img || !img.naturalWidth) return null;
+      const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k);
+      c.height = Math.round(img.naturalHeight * k);
+      const x = c.getContext('2d');
+      if (!x) return null;
+      x.drawImage(img, 0, 0, c.width, c.height);
+      try { return c.toDataURL('image/jpeg', 0.84); } catch { return null; }
+    };
+    const out: Record<string, string> = {};
+    photos.forEach((ph, i) => { const d = toData(ph.img); if (d) out[`photo:${i}`] = d; });
+    const logo = assets.logo;
+    if (logo && logo.naturalWidth) {
+      const c = document.createElement('canvas');
+      const k = Math.min(1, 600 / Math.max(logo.naturalWidth, logo.naturalHeight));
+      c.width = Math.round(logo.naturalWidth * k); c.height = Math.round(logo.naturalHeight * k);
+      c.getContext('2d')?.drawImage(logo, 0, 0, c.width, c.height);
+      try { out.logo = c.toDataURL('image/png'); } catch { /* logo distant protégé */ }
+    }
+    if (alive) setProAssets(out);
+    return () => { alive = false; };
+  }, [photos, assets.logo]);
+
+  /** Moteur pro : création ou retouche d'une vraie composition animée. Renvoie false si l'IA n'a pas abouti. */
+  const askPro = async (value: string, fresh: boolean, brandIn?: BrandProfile, photosIn?: Photo[]): Promise<boolean> => {
+    const photosNow = photosIn ?? photosRef.current;
+    const b = brandIn ?? brandRef.current;
+    setAiBusy(true);
+    setPrompt('');
+    const steps = fresh
+      ? ['Je lis votre demande et j’analyse la marque…', 'Je réfléchis au concept et à l’esthétique…', 'Je dessine les scènes et les interfaces…', 'J’anime : caméra, typographie, transitions…', 'Je joue la vidéo pour vérifier chaque image…', 'Contrôle qualité final…']
+      : ['Je relis votre vidéo…', 'J’applique la modification…', 'Je vérifie le rendu…'];
+    let k = 0;
+    setAiStatus(steps[0]);
+    const timer = window.setInterval(() => { k = Math.min(steps.length - 1, k + 1); setAiStatus(steps[k]); }, fresh ? 14000 : 9000);
+    setMessages((m) => [...m, { role: 'user', text: value }]);
+    try {
+      const photoKey = photosNow.map((ph) => ph.url).join('|');
+      const res = await fetch('/api/motion2/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: value,
+          format: projectRef.current.format,
+          ...(fresh || !compRef.current ? {} : { comp: compRef.current }),
+          photos: photosNow.map((ph, i) => ({ index: i, name: ph.name })),
+          ...(photosNow.length ? (photoNotesRef.current?.key === photoKey ? { photoNotes: photoNotesRef.current.notes } : { photoSheets: photoSheets(photosNow) }) : {}),
+          hasLogo: Boolean(assetsRef.current.logo),
+          ...(Object.keys(aiPrefs).length ? { prefs: aiPrefs } : {}),
+          brand: b.company || b.notes.trim() || b.brief || b.site || b.link ? { ...b, site: b.site ?? null, link: b.link || undefined } : undefined
+        })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (json.quota) setQuota(json.quota as MotionQuota);
+      if (!res.ok || !json.comp) throw new Error(typeof json.error === 'string' ? json.error : 'L’IA n’a pas pu répondre.');
+      if (!json.answer) { setComp(json.comp as Comp); setProSeek({ t: 0, n: Date.now() }); setPlaying(true); }
+      setMessages((m) => [...m, { role: 'ai', text: typeof json.message === 'string' && json.message ? json.message : 'C’est fait.' }]);
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      setMessages((m) => [...m, { role: 'ai', text: /Pro|gratuites|Connectez/.test(msg) ? msg : fresh ? 'La création n’a pas abouti cette fois (IA très demandée). Relancez dans un instant.' : 'Je n’ai pas réussi cette modification. Reformulez ou réessayez : votre vidéo est conservée.' }]);
+      return false;
+    } finally {
+      window.clearInterval(timer);
+      setAiStatus(null);
+      setAiBusy(false);
+    }
+  };
+
   const askAi = async (text: string, opts: { fresh?: boolean; voice?: boolean; brand?: BrandProfile; photos?: Photo[] } = {}): Promise<boolean> => {
+    // Nouveau moteur : toute création et toute retouche d'une composition passent par le directeur artistique pro.
+    if (text.trim() && !aiBusy && loggedIn && (opts.fresh || compRef.current || stage === 'start')) {
+      const ok = await askPro(text.trim(), Boolean(opts.fresh) || !compRef.current, opts.brand, opts.photos);
+      return ok;
+    }
     const photos = opts.photos ?? photosRef.current;
     const brand = opts.brand ?? brandRef.current;
     const value = text.trim();
@@ -937,6 +1034,22 @@ export function MotionStudio() {
   const exportVideo = async () => {
     trackAd('Lead', { content_name: 'export' });
     if (exportingRef.current) return;
+    if (compRef.current) {
+      exportingRef.current = true;
+      setExporting(0);
+      setNotice('Enregistrement de la vidéo en haute définition… gardez cette page ouverte (environ 1 minute).');
+      try {
+        const blob = await exportComp(compRef.current, proAssets, (r) => setExporting(Math.min(99, Math.round(r * 100))));
+        if (blob) { downloadBlob(blob, 'mp4'); setNotice('Vidéo prête ✓ Si le téléchargement n’a pas démarré, touchez « Enregistrer ».'); }
+        else setNotice('Ce navigateur ne sait pas créer la vidéo. Utilisez Chrome, Edge ou Safari récent sur ordinateur.');
+      } catch {
+        setNotice('L’enregistrement a échoué (connexion ou serveur occupé). Réessayez.');
+      } finally {
+        exportingRef.current = false;
+        setExporting(null);
+      }
+      return;
+    }
     const proj = projectRef.current;
     const total = totalDuration(proj);
     const S = renderScale;
@@ -1328,12 +1441,12 @@ export function MotionStudio() {
           /* ======================= 2. MODIFIER / 3. TÉLÉCHARGER ======================= */
           <div>
             <div className="mb-5 flex items-center justify-between gap-3">
-              <button type="button" onClick={() => { setSel(null); setStage('start'); }} className="inline-flex cursor-pointer items-center gap-2 text-sm text-white/60 transition hover:text-white">
+              <button type="button" onClick={() => { setSel(null); setStage('start'); setComp(null); setMessages([]); }} className="inline-flex cursor-pointer items-center gap-2 text-sm text-white/60 transition hover:text-white">
                 <RotateCcw className="h-4 w-4" /> Nouvelle vidéo
               </button>
               <div className="hidden min-w-0 text-center sm:block">
-                <p className="truncate text-sm font-medium">{project.brand || brandName || 'Ma vidéo'}</p>
-                <p className="text-xs text-white/45">{project.format === '9:16' ? 'Vertical' : project.format === '16:9' ? 'Horizontal' : 'Carré'} · {project.scenes.length} scènes · {duration.toFixed(0)} s</p>
+                <p className="truncate text-sm font-medium">{comp?.title || comp?.brand || project.brand || brandName || 'Ma vidéo'}</p>
+                <p className="text-xs text-white/45">{(comp?.format ?? project.format) === '9:16' ? 'Vertical' : (comp?.format ?? project.format) === '16:9' ? 'Horizontal' : 'Carré'} · {comp ? `${comp.duration.toFixed(0)} s` : `${project.scenes.length} scènes · ${duration.toFixed(0)} s`}</p>
               </div>
               <button type="button" disabled={exporting !== null} onClick={exportVideo} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full bg-white px-5 text-sm font-semibold text-black transition hover:scale-[1.02] disabled:opacity-60">
                 <Download className="h-4 w-4" /> {exporting !== null ? `Export… ${exporting} %` : 'Télécharger'}
@@ -1358,7 +1471,8 @@ export function MotionStudio() {
                   className="relative w-full max-w-[min(100%,calc(36dvh*var(--r)))] overflow-hidden rounded-2xl bg-black shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9),0_0_0_1px_rgba(255,255,255,.08)] lg:max-w-[min(100%,calc(66vh*var(--r)))]"
                   style={{ aspectRatio: `${size.width} / ${size.height}`, ['--r' as string]: String(size.width / size.height) }}
                 >
-                  <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className={cn('block h-full w-full max-w-full', sel ? 'cursor-move' : 'cursor-pointer')} style={{ touchAction: sel ? 'none' : 'auto' }} onPointerDown={onCanvasDown} onPointerMove={onCanvasMove} onPointerUp={onCanvasUp} onPointerCancel={() => { dragRef.current = null; }} title="Cliquez sur un élément pour le modifier" />
+                  {comp ? <ProPlayer comp={comp} assets={proAssets} playing={playing} seekTo={proSeek} onTime={setProTime} onError={(m) => console.warn('[composition]', m)} className="absolute inset-0 z-10 h-full w-full" /> : null}
+                  <canvas ref={canvasRef} width={Math.round(size.width * previewScale)} height={Math.round(size.height * previewScale)} className={cn('block h-full w-full max-w-full', comp && 'invisible', sel ? 'cursor-move' : 'cursor-pointer')} style={{ touchAction: sel ? 'none' : 'auto' }} onPointerDown={onCanvasDown} onPointerMove={onCanvasMove} onPointerUp={onCanvasUp} onPointerCancel={() => { dragRef.current = null; }} title="Cliquez sur un élément pour le modifier" />
                   {sel ? (() => {
                     const b = boxesNow().boxes.find((x) => x.i === sel.layer);
                     if (!b || locate(project, time).index !== sel.scene) return null;
@@ -1385,7 +1499,7 @@ export function MotionStudio() {
                   <button type="button" onClick={() => setPlaying((p) => !p)} className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-full bg-white text-black" aria-label={playing ? 'Pause' : 'Lecture'}>
                     {playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
                   </button>
-                  <span className="w-20 shrink-0 font-code text-xs text-white/55">{time.toFixed(1)} / {duration.toFixed(0)} s</span>
+                  <span className="w-20 shrink-0 font-code text-xs text-white/55">{comp ? `${proTime.toFixed(1)} / ${comp.duration.toFixed(0)} s` : `${time.toFixed(1)} / ${duration.toFixed(0)} s`}</span>
                   <div className="flex-1" />
                   {project.format === '9:16' ? (
                     <button type="button" onClick={() => setSafeZones((v) => !v)} className={cn('h-9 shrink-0 cursor-pointer rounded-full border px-3 text-[11px] transition', safeZones ? 'border-red-400/60 text-red-300' : 'border-white/10 text-white/55 hover:text-white')} title="Zones cachées par TikTok / Reels">Zones TikTok</button>
@@ -1395,8 +1509,19 @@ export function MotionStudio() {
                   </button>
                 </div>
 
+                {comp ? (
+                  <div className="mt-3 w-full max-w-2xl">
+                    <div
+                      className="relative h-2 w-full cursor-pointer rounded-full bg-white/10"
+                      onPointerDown={(e) => { const r = e.currentTarget.getBoundingClientRect(); setProSeek({ t: ((e.clientX - r.left) / r.width) * comp.duration, n: Date.now() }); }}
+                    >
+                      <span className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-[#8fa6ff] via-[#f28be0] to-[#ff7a62]" style={{ width: `${Math.min(100, (proTime / comp.duration) * 100)}%` }} />
+                    </div>
+                    <p className="mt-3 text-center text-[11px] text-white/40">Demandez n’importe quelle modification à droite : « change le titre », « plus rapide », « ajoute ma photo », « couleurs plus chaudes »…</p>
+                  </div>
+                ) : null}
                 {/* Timeline des scènes */}
-                <div className="mt-3 w-full max-w-2xl">
+                <div className={cn('mt-3 w-full max-w-2xl', comp && 'hidden')}>
                   <div className="relative flex gap-1 overflow-x-auto pb-1">
                     {project.scenes.map((s, i) => (
                       <div key={i} className={cn('group relative shrink-0 rounded-lg border px-2 py-1.5 text-left transition', i === current ? 'border-white bg-white/[0.08]' : 'border-white/10 hover:border-white/30')} style={{ width: `${Math.max(92, (s.duration / duration) * 640)}px` }}>
@@ -1571,7 +1696,35 @@ export function MotionStudio() {
               </div>
                   ) : null}
 
-                  {panel === 'add' ? (
+                  {panel === 'add' && comp ? (
+                    <div className="space-y-5">
+                      <p className="text-sm text-white/60">Ajoutez vos images : l’IA les intègre dans la vidéo avec une vraie mise en scène.</p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {photos.map((ph, i) => (
+                          <button key={ph.url} type="button" disabled={aiBusy} onClick={() => void askPro(`Intègre ma photo {{photo:${i}}} (« ${ph.name} ») dans la vidéo avec une mise en scène spectaculaire et originale, dans une scène où elle a du sens.`, false)} className="group relative aspect-square cursor-pointer overflow-hidden rounded-lg disabled:opacity-50">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={ph.url} alt={ph.name} className="h-full w-full object-cover transition group-hover:scale-105" />
+                            <span className="absolute inset-x-0 bottom-0 bg-black/70 py-0.5 text-center text-[10px] opacity-0 transition group-hover:opacity-100">Intégrer</span>
+                          </button>
+                        ))}
+                        <label className="grid aspect-square cursor-pointer place-items-center rounded-lg border border-dashed border-white/15 text-white/50 hover:border-white/40 hover:text-white" title="Ajouter des photos">
+                          <Images className="h-5 w-5" />
+                          <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+                        </label>
+                      </div>
+                      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 py-2.5 text-sm text-white/70 hover:border-white/40 hover:text-white">
+                        <Building2 className="h-4 w-4" /> {assets.logo ? 'Changer le logo' : 'Ajouter mon logo'}
+                        <input type="file" accept="image/*" className="sr-only" onChange={(e) => { loadImage(e.target.files?.[0], 'logo'); e.target.value = ''; }} />
+                      </label>
+                      {assets.logo ? <button type="button" disabled={aiBusy} onClick={() => void askPro('Intègre mon logo {{logo}} dans la vidéo : révélation animée au début et signature à la fin.', false)} className="w-full cursor-pointer rounded-xl border border-white/15 py-2.5 text-sm hover:border-white/40 disabled:opacity-50">Mettre mon logo dans la vidéo</button> : null}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {['Ajoute une scène avec une barre de recherche qui s’écrit', 'Ajoute une scène avec un bouton qui se transforme', 'Ajoute une notification qui arrive', 'Ajoute un compteur animé', 'Ajoute une carte de France ou de ma ville', 'Ajoute un téléphone avec l’appli'].map((idea) => (
+                          <button key={idea} type="button" disabled={aiBusy} onClick={() => void askPro(idea, false)} className="cursor-pointer rounded-xl border border-white/10 px-3 py-2.5 text-left text-xs text-white/80 transition hover:border-white/30 disabled:opacity-50">{idea.replace(/^Ajoute /, '+ ')}</button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {panel === 'add' && !comp ? (
                     <div className="space-y-6">
                       <div>
                         <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/40">Scènes animées</p>
@@ -1630,7 +1783,36 @@ export function MotionStudio() {
                     </div>
                   ) : null}
 
-                  {panel === 'style' ? (
+                  {panel === 'style' && comp ? (
+                    <div className="space-y-6">
+                      <div>
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/40">Musique</p>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {MUSIC.map((mu) => (
+                            <button key={mu} type="button" onClick={() => { void playerRef.current?.unlock(); setComp((c) => (c ? { ...c, sound: mu === 'none' ? undefined : { music: mu, bpm: c.sound?.bpm ?? 118, cues: c.sound?.cues } } : c)); }} className={cn('cursor-pointer rounded-xl border px-2 py-2 text-xs transition', (comp.sound?.music ?? 'none') === mu ? 'border-white bg-white text-black' : 'border-white/10 text-white/70 hover:border-white/30')}>{MUSIC_LABELS[mu]}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/40">Style en un clic</p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {['Plus dynamique et nerveux', 'Plus élégant et premium', 'Fond clair façon Apple', 'Couleurs plus vives', 'Ambiance néon de nuit', 'Typographie plus grosse et percutante', 'Plus de transitions liées entre les scènes', 'Plus court : 10 secondes'].map((idea) => (
+                            <button key={idea} type="button" disabled={aiBusy} onClick={() => void askPro(idea, false)} className="cursor-pointer rounded-xl border border-white/10 px-3 py-2.5 text-left text-xs text-white/80 transition hover:border-white/30 disabled:opacity-50">{idea}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/40">Format</p>
+                        <div className="grid grid-cols-3 gap-1 rounded-xl bg-white/[0.04] p-1">
+                          {([['9:16', 'Vertical'], ['16:9', 'Horizontal'], ['1:1', 'Carré']] as const).map(([f, l]) => (
+                            <button key={f} type="button" disabled={aiBusy} onClick={() => { if (f === comp.format) return; setProject((p) => ({ ...p, format: f })); void askPro(`Adapte toute la vidéo au format ${f} (toile ${f === '9:16' ? '1080 × 1920' : f === '16:9' ? '1920 × 1080' : '1080 × 1080'} px) en gardant la même idée, et renvoie "format": "${f}".`, false); }} className={cn('cursor-pointer rounded-lg py-2 text-sm transition disabled:opacity-50', comp.format === f ? 'bg-white text-black' : 'text-white/60 hover:text-white')}>{l}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <AiPrefsPanel prefs={aiPrefs} onChange={setAiPrefs} />
+                    </div>
+                  ) : null}
+                  {panel === 'style' && !comp ? (
                     <div className="space-y-5">
                       <QuickBar project={project} onChange={setProject} canUse={(tr) => isPaid || FREE_LIMITS.transitions.includes(tr)} onLocked={proOnly} />
                       <AiPrefsPanel prefs={aiPrefs} onChange={setAiPrefs} />
