@@ -47,7 +47,8 @@ import { FREE_LIMITS, FREE_MOTION_CREATIONS, clampToFree, type MotionQuota } fro
 import { buildCinematicAd, displayName } from '@/lib/motion/autoad';
 import { buildSignatureAd } from '@/lib/motion/signature';
 import { resolvePlanTier } from '@/lib/entitlements';
-import { drawFrame, layerBoxes, locate, type MotionAssets } from '@/lib/motion/render';
+import { nudge } from '@/lib/motion/keys';
+import { drawFrame, layerBoxes, locate, mediaTargets, type MotionAssets } from '@/lib/motion/render';
 import { LayerEditor, type LayerSel } from '@/components/motion/LayerEditor';
 import { AiPrefsPanel, loadPrefs } from '@/components/motion/AiPrefsPanel';
 import type { AiPrefs } from '@/lib/motion/prefs';
@@ -388,13 +389,12 @@ export function MotionStudio() {
   const syncMedia = useCallback((t: number, live: boolean) => {
     const list = mediaRef.current;
     if (!list.length) return;
-    const proj = projectRef.current;
-    const { index, lt } = locate(proj, t);
-    const scene = proj.scenes[index];
+    const targets = mediaTargets(projectRef.current, t, list.length);
     list.forEach((m, i) => {
       const v = m.el;
-      if (scene?.type === 'video' && scene.media === i) {
-        const target = Math.min(Math.max(0, m.duration - 0.05), scene.from + lt);
+      const tg = targets[i];
+      if (tg !== null && tg !== undefined) {
+        const target = Math.min(Math.max(0, m.duration - 0.05), tg);
         if (live) {
           if (v.paused) void v.play().catch(() => undefined);
           if (Math.abs(v.currentTime - target) > 0.35) v.currentTime = target;
@@ -511,7 +511,10 @@ export function MotionStudio() {
       if (!sc || sc.type !== 'free' || !sc.layers[layer]) return p;
       const layers = sc.layers.slice();
       const L = layers[layer];
-      layers[layer] = { ...L, x: shiftK(L.x, dx, 0.5), y: shiftK(L.y, dy, 0.5) } as typeof L;
+      // Calque animé : on modifie l'image clé à l'instant courant (comme After Effects), sinon on déplace tout.
+      const st = p.scenes.slice(0, scene).reduce((n, x) => n + x.duration, 0);
+      const lt = Math.max(0, timeRef.current - st);
+      layers[layer] = { ...L, x: Array.isArray(L.x) ? nudge(L.x, lt, dx, 0.5) : shiftK(L.x, dx, 0.5), y: Array.isArray(L.y) ? nudge(L.y, lt, dy, 0.5) : shiftK(L.y, dy, 0.5) } as typeof L;
       const scenes = p.scenes.slice();
       scenes[scene] = { ...sc, layers };
       return { ...p, scenes };
@@ -888,14 +891,13 @@ export function MotionStudio() {
   const seekMediaExact = async (t: number) => {
     const list = mediaRef.current;
     if (!list.length) return;
-    const proj = projectRef.current;
-    const { index, lt } = locate(proj, t);
-    const scene = proj.scenes[index];
+    const targets = mediaTargets(projectRef.current, t, list.length);
     await Promise.all(list.map((m, i) => {
       const v = m.el;
       if (!v.paused) v.pause();
-      if (!(scene?.type === 'video' && scene.media === i)) return undefined;
-      const target = Math.min(Math.max(0, m.duration - 0.05), scene.from + lt);
+      const tg = targets[i];
+      if (tg === null || tg === undefined) return undefined;
+      const target = Math.min(Math.max(0, m.duration - 0.05), tg);
       if (Math.abs(v.currentTime - target) < 0.004) return undefined;
       return new Promise<void>((resolve) => {
         const done = () => resolve();
@@ -1192,7 +1194,7 @@ export function MotionStudio() {
             </div>
           </div>
           <div className="hidden w-full justify-center lg:flex">
-            <LayerEditor project={project} sel={sel} onSelect={setSel} onChange={setProject} onSeek={seek} sceneStart={project.scenes.slice(0, sel?.scene ?? 0).reduce((n, x) => n + x.duration, 0)} accent={project.theme.primary} />
+            <LayerEditor time={time} videos={media.length} photos={photos.length} project={project} sel={sel} onSelect={setSel} onChange={setProject} onSeek={seek} sceneStart={project.scenes.slice(0, sel?.scene ?? 0).reduce((n, x) => n + x.duration, 0)} accent={project.theme.primary} />
           </div>
           {!sel ? <p className="mt-2 text-center text-[11px] text-fg-subtle">Astuce : touchez ou cliquez sur un texte dans la vidéo pour le modifier, l’animer ou le déplacer.</p> : null}
           <div className="hidden w-full justify-center lg:flex">
@@ -1238,7 +1240,7 @@ export function MotionStudio() {
           <div ref={panelScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
             {sel ? (
               <div className="lg:hidden [&>div]:mt-0 [&>div]:mb-4">
-                <LayerEditor project={project} sel={sel} onSelect={setSel} onChange={setProject} onSeek={seek} sceneStart={project.scenes.slice(0, sel.scene).reduce((n, x) => n + x.duration, 0)} accent={project.theme.primary} />
+                <LayerEditor time={time} videos={media.length} photos={photos.length} project={project} sel={sel} onSelect={setSel} onChange={setProject} onSeek={seek} sceneStart={project.scenes.slice(0, sel.scene).reduce((n, x) => n + x.duration, 0)} accent={project.theme.primary} />
               </div>
             ) : null}
             {tab === 'ia' ? (

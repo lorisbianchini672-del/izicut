@@ -15,7 +15,7 @@ import { fallbackMap } from './osm';
 import { MUSIC, SFX, SceneSchema, TRANSITIONS, type Layer, type MotionProject, type Scene } from './types';
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
-const img = z.string().regex(/^(logo|photo:\d{1,2}|search:.{2,60})$/);
+const img = z.string().regex(/^(logo|photo:\d{1,2}|video:[0-2]|search:.{2,60})$/);
 const txt = (n: number) => z.string().trim().min(1).max(n);
 
 export const BlockSchema = z.discriminatedUnion('block', [
@@ -33,7 +33,12 @@ export const BlockSchema = z.discriminatedUnion('block', [
   // Scène 100 % sur mesure quand aucun bloc ne convient (calques libres, validés avant d'être gardés).
   z.object({ block: z.literal('free'), duration: z.number().min(1.2).max(8), name: z.string().max(40).optional(), layers: z.array(z.record(z.string(), z.unknown())).min(1).max(16), camera: z.record(z.string(), z.unknown()).optional() }),
   z.object({ block: z.literal('map'), place: txt(60), label: z.string().trim().max(60).optional(), geo: z.object({ name: z.string().max(80), roads: z.array(z.string().max(3000)).max(14), major: z.array(z.string().max(3000)).max(6), water: z.array(z.string().max(3000)).max(3) }).optional() }),
-  z.object({ block: z.literal('cta'), title: txt(60), button: z.string().trim().max(28).optional(), link: z.string().trim().max(60).optional() })
+  z.object({ block: z.literal('cta'), title: txt(60), button: z.string().trim().max(28).optional(), link: z.string().trim().max(60).optional() }),
+  // Blocs « signature izicut » (le style de nos propres pubs) :
+  z.object({ block: z.literal('phone'), img: img.optional(), kicker: z.string().trim().max(40).optional(), hook: z.string().trim().max(40).optional(), caption: z.string().trim().max(70).optional(), from: z.number().min(0).max(3600).optional() }),
+  z.object({ block: z.literal('chat'), ask: txt(70), reply: txt(60), kicker: z.string().trim().max(40).optional() }),
+  z.object({ block: z.literal('problem'), kicker: z.string().trim().max(40).optional(), title: txt(60), items: z.array(z.object({ icon: z.string().trim().max(4).optional(), text: txt(40), sub: z.string().trim().max(50).optional() })).min(1).max(3) }),
+  z.object({ block: z.literal('clock'), big: txt(12), sub: z.string().trim().max(50).optional(), kicker: z.string().trim().max(40).optional() })
 ]);
 export type Block = z.infer<typeof BlockSchema>;
 
@@ -63,6 +68,10 @@ function mix(a: string, b: string, k: number): string {
 }
 
 type Ctx = { accent: string; text: string; sub: string; brand: string; hasLogo: boolean; vertical: boolean };
+/** Hauteur de l'écran en px (petit côté = 1080). */
+const Hpx = (c: Ctx) => (c.vertical ? 1920 : 1080);
+/** Petit titre au-dessus d'une scène (« Le problème », « Ta vidéo »…). */
+const kickerL = (text: string, y: number, c: Ctx, at = 0.05): Layer => ({ kind: 'text', x: 0.5, y, text: text.toUpperCase(), size: 30, weight: 600, tracking: 0.18, color: c.sub, reveal: 'rise', revealAt: at } as Layer);
 
 /** Texte qui entre en glissant avec flou de mouvement (et ressort pareil). */
 function pushText(text: string, y: number, size: number, at: number, out: number | null, c: Ctx, weight = 800): Layer {
@@ -306,6 +315,95 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
       L.push({ kind: 'text', x: 0.97, y: 0.985, align: 'right', text: '© OpenStreetMap', size: 18, weight: 400, color: '#7a7f92' } as Layer);
       return { ...base, bg: '#0b0c11' as never, duration: 3.6, name: 'Carte', camera: { zoom: [e(0, 1.3, 'linear'), e(2.2, 1, 'smooth'), e(3.6, 1.04, 'linear')], rotate: [e(0, -4, 'linear'), e(2.2, 0, 'smooth')] }, layers: L.slice(0, 40), cues: [{ at: 0.05, sfx: 'riser' }, { at: 1.4, sfx: 'pop' }, { at: 1.8, sfx: 'chime' }] };
     }
+    case 'phone': {
+      // Téléphone qui pivote en 3D, avec votre vidéo / photo dedans, accroche en pastille, sous-titres karaoké et barre de lecture.
+      const k = c.vertical ? 1 : 0.7;
+      const H = Hpx(c);
+      const cy = c.vertical ? 0.54 : 0.555;
+      const pw = 540 * k, ph = 960 * k;
+      const top = 0.5 - ph / 2 / H; // les enfants d'un groupe sont placés par rapport à son centre (0.5)
+      const media = b.img ?? `search:${c.brand || 'lifestyle'}`;
+      const L: Layer[] = [
+        { kind: 'glow', x: 0.5, y: cy + 0.04, color: c.accent, size: [e(0, 0), e(0.9, 760, 'out')], opacity: 0.55, blend: 'add' } as Layer
+      ];
+      if (b.kicker) L.push(kickerL(b.kicker, c.vertical ? 0.13 : 0.07, c));
+      L.push({ kind: 'group', x: 0.5, y: [e(0, cy + 0.06), e(0.9, cy, 'expo'), e(4, cy - 0.008, 'smooth')], ry: [e(0, 26), e(1, 0, 'expo')], rotate: [e(0, -6), e(1, 0, 'spring')], scale: [e(0, 0.82), e(0.9, 1, 'expo'), e(4, 1.03, 'linear')], opacity: [e(0, 0, 'linear'), e(0.35, 1, 'out')], motionBlur: true, children: [
+        { kind: 'rect', x: 0.5, y: 0.5, w: pw + 26, h: ph + 26, radius: 78 * k, color: '#101014', stroke: { color: '#34343c', width: 3 }, shadow: true },
+        { kind: 'image', src: media, x: 0.5, y: 0.5, w: pw, h: ph, radius: 60 * k, fit: 'cover', reveal: 'iris', revealAt: 0.35, revealDur: 0.8, zoom: [e(0, 1.12, 'linear'), e(4, 1, 'smooth')], ...(media.startsWith('video:') ? { vfrom: b.from ?? 0 } : {}) },
+        { kind: 'rect', x: 0.5, y: top + (ph - 40 * k) / H, w: pw - 80 * k, h: 6, radius: 3, color: '#3a3a40' },
+        { kind: 'rect', x: [e(0.4, 0.5 - (pw - 80 * k) / 2 / (c.vertical ? 1080 : 1920), 'linear'), e(4, 0.5, 'linear')], y: top + (ph - 40 * k) / H, w: [e(0.4, 0, 'linear'), e(4, pw - 80 * k, 'linear')], h: 6, radius: 3, color: '#ffffff' },
+        ...(b.hook ? [
+          { kind: 'rect' as const, x: 0.5, y: top + (b.hook.length > 22 ? 170 : 150) * k / H, w: [e(0.7, 0), e(1.05, Math.min(pw - 30, b.hook.length * 19 * k + 70), 'spring')], h: (b.hook.length > 22 ? 120 : 76) * k, radius: 18, color: '#ffffff' },
+          { kind: 'text' as const, x: 0.5, y: top + (b.hook.length > 22 ? 170 : 150) * k / H, text: b.hook, size: 34 * k, weight: 800, maxWidth: (pw - 60) / (c.vertical ? 1080 : 1920), color: '#0a0a0a', reveal: 'rise' as const, revealBy: 'word' as const, revealAt: 0.85 }
+        ] : []),
+        ...(b.caption ? [{ kind: 'text' as const, x: 0.5, y: top + (ph - 210 * k) / H, text: b.caption, size: 46 * k, weight: 800, maxWidth: (pw - 60) / (c.vertical ? 1080 : 1920), color: '#ffffff', stroke: { color: '#000000', width: 2 }, reveal: 'karaoke' as const, revealAt: 1.2 }] : [])
+      ] } as Layer);
+      L.push({ kind: 'particles', x: 0.5, y: cy, mode: 'sparkle', count: 18, color: '#ffffff', color2: c.accent, size: 8, spread: 0.5 } as Layer);
+      return { ...base, duration: 4, name: 'Téléphone', layers: L, camera: { zoom: [e(0, 1.06, 'linear'), e(1, 1, 'expo'), e(4, 1.03, 'linear')] }, cues: [{ at: 0.05, sfx: 'whoosh' }, { at: 0.85, sfx: 'pop' }] };
+    }
+    case 'chat': {
+      // Le client écrit sa demande, l'IA répond et valide (bulle en verre + coche dégradée).
+      const H = Hpx(c);
+      const W = c.vertical ? 1080 : 1920;
+      const y1 = c.vertical ? 0.36 : 0.36, y2 = c.vertical ? 0.53 : 0.6;
+      const bw = Math.min(W * 0.8, b.ask.length * 21 + 110);
+      const rw = Math.min(W * 0.8, b.reply.length * 21 + 190);
+      const L: Layer[] = [{ kind: 'glow', x: 0.5, y: 0.5, color: c.accent, size: 620, opacity: 0.35, blend: 'add' } as Layer];
+      if (b.kicker) L.push(kickerL(b.kicker, c.vertical ? 0.22 : 0.14, c));
+      const L0 = c.vertical ? 0.08 : 0.26, R0 = c.vertical ? 0.92 : 0.74;
+      const bx = R0 - bw / 2 / W;
+      L.push({ kind: 'rect', x: bx, y: y1, w: bw, h: 120, radius: 44, color: '#ffffff', scale: [e(0.1, 0.6), e(0.5, 1, 'spring')], opacity: [e(0.1, 0, 'linear'), e(0.3, 1, 'out')] } as Layer);
+      L.push({ kind: 'text', x: bx, y: y1, text: b.ask, size: 38, weight: 600, maxWidth: (bw - 60) / W, color: '#0a0a0a', reveal: 'type', revealAt: 0.4, revealDur: 1 } as Layer);
+      const dx = L0 + 60 / W;
+      [0, 1, 2].forEach((d) => L.push({ kind: 'ellipse', x: dx + d * (30 / W), y: [e(1.5, y2), e(1.65 + d * 0.08, y2 - 12 / H, 'smooth'), e(1.85 + d * 0.08, y2, 'smooth')], w: 16, color: c.sub, from: 1.45, to: 2.05 } as Layer));
+      const rx = L0 + rw / 2 / W;
+      L.push({ kind: 'rect', x: rx, y: y2, w: rw, h: 120, radius: 44, glass: true, color: '#16161c', stroke: { color: '#3a3a44', width: 2 }, from: 2.05, scale: [e(2.05, 0.7), e(2.4, 1, 'spring')] } as Layer);
+      L.push({ kind: 'ellipse', x: L0 + 70 / W, y: y2, w: [e(2.2, 0), e(2.45, 64, 'back')], fill: { from: '#7f9cff', to: c.accent, angle: 135 }, from: 2.15 } as Layer);
+      L.push({ kind: 'path', x: L0 + 70 / W, y: y2, w: 36, d: 'M 230 520 L 420 710 L 780 300', color: '#ffffff', width: 18, progress: [e(2.4, 0, 'linear'), e(2.7, 1, 'out')], from: 2.35 } as Layer);
+      L.push({ kind: 'text', x: L0 + 125 / W, y: y2, align: 'left', text: b.reply, size: 38, weight: 600, maxWidth: (rw - 160) / W, color: '#ffffff', reveal: 'rise', revealBy: 'word', revealAt: 2.3 } as Layer);
+      return { ...base, duration: 3.8, name: 'Conversation', layers: L, camera: { zoom: [e(0, 1, 'linear'), e(3.8, 1.06, 'linear')] }, cues: [{ at: 0.1, sfx: 'pop' }, { at: 0.45, sfx: 'click' }, { at: 2.05, sfx: 'bubble' }, { at: 2.45, sfx: 'chime' }] };
+    }
+    case 'problem': {
+      // Petit titre, grande phrase, puis 1 à 3 cartes en verre qui arrivent en glissant avec flou de mouvement.
+      const H = Hpx(c);
+      const L: Layer[] = [];
+      const t0 = c.vertical ? 0.17 : 0.12;
+      if (b.kicker) L.push(kickerL(b.kicker, t0, c));
+      L.push({ kind: 'text', x: 0.5, y: t0 + (c.vertical ? 0.07 : 0.11), text: b.title, size: c.vertical ? 88 : 76, weight: 800, maxWidth: 0.86, color: c.text, reveal: 'rise', revealBy: 'word', revealAt: 0.2 } as Layer);
+      const n = b.items.length;
+      const ch = 170, gap = 30;
+      const start = (c.vertical ? 0.53 : 0.6) - ((n - 1) * (ch + gap)) / 2 / H;
+      const cw = c.vertical ? 880 : 1000;
+      const W = c.vertical ? 1080 : 1920;
+      b.items.forEach((it, k) => {
+        const y = start + (k * (ch + gap)) / H;
+        const at = 0.7 + k * 0.28;
+        L.push({ kind: 'group', x: [e(at, 1.6), e(at + 0.55, 0.5, 'expo')], y, motionBlur: true, opacity: [e(at, 0, 'linear'), e(at + 0.2, 1, 'out')], children: [
+          { kind: 'rect', x: 0.5, y: 0.5, w: cw, h: ch, radius: 40, glass: true, color: '#121218', stroke: { color: '#2e2e36', width: 2 } },
+          { kind: 'ellipse', x: 0.5 - cw / 2 / W + 90 / W, y: 0.5, w: 96, fill: { from: mix(c.accent, '#000000', 0.55), to: c.accent, angle: 135 } },
+          { kind: 'text', x: 0.5 - cw / 2 / W + 90 / W, y: 0.5, text: it.icon ?? String(k + 1), size: it.icon ? 48 : 40, weight: 800, color: '#ffffff' },
+          { kind: 'text', x: 0.5 - cw / 2 / W + 170 / W, y: it.sub ? 0.5 - 22 / H : 0.5, align: 'left', text: it.text, size: 44, weight: 700, maxWidth: (cw - 220) / W, color: '#ffffff' },
+          ...(it.sub ? [{ kind: 'text' as const, x: 0.5 - cw / 2 / W + 170 / W, y: 0.5 + 30 / H, align: 'left' as const, text: it.sub, size: 30, weight: 500, maxWidth: (cw - 220) / W, color: '#a1a1aa' }] : [])
+        ] } as Layer);
+      });
+      const dur = Math.min(4.6, 2 + n * 0.55);
+      return { ...base, duration: dur, name: 'Problème', layers: L, camera: { zoom: [e(0, 1.03, 'linear'), e(dur, 1, 'smooth')] }, cues: [{ at: 0.2, sfx: 'whoosh' }, ...b.items.map((_, k) => ({ at: 0.75 + k * 0.28, sfx: 'swipe' as const }))] };
+    }
+    case 'clock': {
+      // Gros chiffre en dégradé au centre d'un anneau qui se dessine (« 2 MIN », « 24 h », « 0 € »).
+      const cy = c.vertical ? 0.47 : 0.5;
+      const ring = c.vertical ? 720 : 620;
+      const L: Layer[] = [
+        { kind: 'glow', x: 0.5, y: cy, color: c.accent, size: [e(0, 300), e(1.2, 700, 'out')], opacity: 0.45, blend: 'add' } as Layer,
+        { kind: 'ellipse', x: 0.5, y: cy, w: ring, stroke: { color: '#2a2a32', width: 6 } } as Layer,
+        { kind: 'ellipse', x: 0.5, y: cy, w: ring, stroke: { color: c.accent, width: 12 }, rotate: -90, progress: [e(0.1, 0, 'linear'), e(1.6, 1, 'inOut')], glow: { color: c.accent, size: 26 } } as Layer,
+        { kind: 'text', x: 0.5, y: cy - 0.01, text: b.big, size: Math.min(220, Math.round((ring * 1.45) / Math.max(3, b.big.length))), weight: 800, tracking: -0.04, fill: { from: '#8fa6ff', to: c.accent, angle: 90 }, reveal: 'blur', revealBy: 'char', revealAt: 0.35 } as Layer
+      ];
+      if (b.sub) L.push({ kind: 'text', x: 0.5, y: cy + (c.vertical ? 0.07 : 0.11), text: b.sub, size: 40, weight: 500, maxWidth: 0.7, color: c.sub, reveal: 'rise', revealBy: 'word', revealAt: 0.9 } as Layer);
+      if (b.kicker) L.push({ kind: 'text', x: 0.5, y: c.vertical ? 0.2 : 0.1, text: b.kicker, size: 70, weight: 800, maxWidth: 0.86, color: c.text, reveal: 'rise', revealBy: 'word', revealAt: 0.05 } as Layer);
+      L.push({ kind: 'particles', x: 0.5, y: cy, mode: 'orbit', count: 22, color: '#ffffff', color2: c.accent, size: 6, spread: 0.36, speed: 0.6 } as Layer);
+      return { ...base, duration: 3, name: 'Chrono', layers: L, camera: { zoom: [e(0, 1.12, 'linear'), e(1.4, 1, 'expo'), e(3, 1.02, 'linear')] }, cues: [{ at: 0.1, sfx: 'riser' }, { at: 1.6, sfx: 'impact' }] };
+    }
     case 'cta':
       return {
         ...base, duration: 3, name: 'Signature',
@@ -324,7 +422,7 @@ function sceneFor(b: Block, i: number, c: Ctx): Scene {
 }
 
 /** Fabrique la pub complète à partir des blocs et du style choisis par l'IA. */
-export function composeProject(blocks: Block[], style: ComposeStyle, o: { brand: string; hasLogo: boolean; format: MotionProject['format']; fallbackTheme?: MotionProject['theme']; photos: number }): MotionProject {
+export function composeProject(blocks: Block[], style: ComposeStyle, o: { brand: string; hasLogo: boolean; format: MotionProject['format']; fallbackTheme?: MotionProject['theme']; photos: number; videos?: number }): MotionProject {
   const backdrop = style.backdrop && style.backdrop !== 'custom' ? style.backdrop : 'glow';
   const light = LIGHT_BACKDROPS.has(backdrop);
   const accent = style.accent ?? style.colors?.[2] ?? o.fallbackTheme?.primary ?? '#7c5cff';
@@ -332,7 +430,7 @@ export function composeProject(blocks: Block[], style: ComposeStyle, o: { brand:
   const text = light ? '#141414' : '#ffffff';
   const c: Ctx = { accent, text, sub: light ? '#4a4a4a' : '#c9cfd6', brand: o.brand, hasLogo: o.hasLogo, vertical: o.format === '9:16' };
   // Images qui pointent vers une photo absente : on les remplace par une photo existante (ou une recherche web).
-  const fixImg = (s: string) => (s.startsWith('photo:') && Number(s.slice(6)) >= o.photos ? (o.photos ? `photo:${Number(s.slice(6)) % o.photos}` : `search:${o.brand || 'abstract gradient'}`) : s);
+  const fixImg = (s: string) => (s.startsWith('video:') && Number(s.slice(6)) >= (o.videos ?? 0) ? (o.photos ? 'photo:0' : `search:${o.brand || 'lifestyle'}`) : s.startsWith('photo:') && Number(s.slice(6)) >= o.photos ? (o.photos ? `photo:${Number(s.slice(6)) % o.photos}` : `search:${o.brand || 'abstract gradient'}`) : s);
   const fixed = blocks.map((b) => JSON.parse(JSON.stringify(b, (k, v) => (k === 'img' || k === 'src' || k === 'before' || k === 'after' ? fixImg(String(v)) : k === 'imgs' && Array.isArray(v) ? v.map((x: unknown) => fixImg(String(x))) : v))) as Block);
   const scenes = fixed.slice(0, 12).map((b, i) => sceneFor(b, i, c));
   return {
@@ -365,7 +463,7 @@ export function parseBlocks(raw: unknown): Block[] {
   return out;
 }
 
-export const BLOCKS_DOC = `BLOCS DISPONIBLES (chacun devient une scène motion design haut de gamme, déjà animée et sonorisée) — "img" = "photo:N" (photo du client), "logo" ou "search:mots-clés en anglais" (photo libre de droits) :
+export const BLOCKS_DOC = `BLOCS DISPONIBLES (chacun devient une scène motion design haut de gamme, déjà animée et sonorisée) — "img" = "photo:N" (photo du client), "video:N" (vidéo du client, blocs phone / photo), "logo" ou "search:mots-clés en anglais" (photo libre de droits) :
 - { "block": "reveal", "brand": "nom", "line": "phrase qui pousse le nom hors champ (optionnel)" } — révélation de la marque (particules qui convergent, logo, nom flou → net).
 - { "block": "kinetic", "lines": ["1 à 3 phrases courtes"], "style": "push" | "blur" | "slam" | "mask" | "curve" | "highlight" | "stack" | "echo" | "type" | "wave" } — typographie cinétique : push = chaque phrase pousse la précédente avec flou de mouvement ; highlight = un surligneur coloré balaie la dernière ligne (mettre le bénéfice clé en dernière ligne) ; stack = lignes géantes en majuscules qui claquent de gauche et de droite (2-3 mots par ligne, idéal pour un hook) ; echo = un SEUL mot clé géant répété en contour qui défile (lines[0] = 1 mot, lines[1] = petite phrase optionnelle) ; type = machine à écrire avec curseur ; wave = lettres en vague. VARIE les styles d'une scène à l'autre.
 - { "block": "carousel", "title": "…", "items": [{ "img": "photo:0", "label": "…", "sub": "…" }, …] } — carrousel de cartes numérotées 01, 02…
@@ -379,6 +477,12 @@ export const BLOCKS_DOC = `BLOCS DISPONIBLES (chacun devient une scène motion d
 - { "block": "photo", "img": "photo:N", "caption": "…" } — photo plein écran qui se dévoile (iris, stores…) avec légende en verre.
 - { "block": "map", "place": "nom du lieu (ville, quartier, adresse)", "label": "petite phrase (optionnel, ex. « Ouvert à deux pas »)" } — VRAIE carte animée du lieu (rues qui se dessinent, épingle qui tombe, onde) : à utiliser dès que le client parle d'une carte, d'une ville, d'un quartier, d'une adresse ou de « où nous trouver ». Ne mets jamais une photo de carte à la place.
 - { "block": "cta", "title": "…", "button": "…", "link": "…" } — signature finale : logo, phrase, bouton cliqué, lien.
+BLOCS SIGNATURE (le style des pubs izicut, très premium — utilise-les souvent) :
+- { "block": "phone", "img": "video:N" | "photo:N" | "search:…", "from": seconde de départ si vidéo, "kicker": "petit titre au-dessus", "hook": "accroche en pastille blanche", "caption": "sous-titre karaoké" } — téléphone qui pivote en 3D avec la VIDÉO ou la photo du client dedans, accroche, sous-titres mot à mot et barre de lecture. SI LE CLIENT A IMPORTÉ UNE VIDÉO, montre-la dans au moins un bloc "phone" ("img": "video:0").
+- { "block": "problem", "kicker": "Le problème", "title": "phrase forte", "items": [{ "icon": "emoji", "text": "…", "sub": "…" }] } — grand titre puis 1 à 3 cartes en verre qui glissent (douleurs du client, étapes, avantages).
+- { "block": "chat", "kicker": "…", "ask": "demande écrite par un client", "reply": "réponse validée" } — bulle de message qui s'écrit, réponse qui arrive avec une coche dégradée (réservation, commande, question/réponse).
+- { "block": "clock", "big": "2 MIN" | "24 h" | "-30 %", "sub": "…", "kicker": "question choc au-dessus" } — gros chiffre en dégradé dans un anneau qui se dessine (UNIQUEMENT un chiffre réel donné par le client, ou une durée évidente).
+Déroulé type d'une pub premium : kinetic "stack" (accroche) → problem → phone → chat ou list → clock / stat → cta.
 - "kinetic" avec "style": "karaoke" — sous-titres mot à mot façon TikTok (le mot prononcé grossit et s'allume) : idéal pour une phrase forte ou un message parlé.
 - { "block": "free", "duration": 2-5, "name": "…", "layers": [ … ], "camera": { "zoom": [{"t":0,"v":1},{"t":3,"v":1.1}] } } — SCÈNE SUR MESURE quand le client veut quelque chose qu'aucun bloc ne fait (objet précis, schéma, chronologie, comparatif, effet particulier…). Calques possibles (x, y de 0 à 1 ; tailles en pixels sur 1080 de large) :
   {"kind":"text","text":"…","x":0.5,"y":0.5,"size":80,"weight":800,"color":"#fff","reveal":"rise|blur|scale|mask|type|wave|split|karaoke","revealBy":"word|char|line","revealAt":0.2}
@@ -391,11 +495,11 @@ STYLE : { "backdrop": un fond parmi ${BACKDROPS.filter((b) => b !== 'custom').jo
 export { SFX };
 
 /** Une scène premium isolée (ajout ou remplacement d'une scène lors d'une retouche), aux couleurs de la pub. */
-export function blockScene(block: Block, project: MotionProject, index: number, o: { hasLogo: boolean; photos: number }): Scene {
+export function blockScene(block: Block, project: MotionProject, index: number, o: { hasLogo: boolean; photos: number; videos?: number }): Scene {
   const th = project.theme;
   const light = lum(th.background) > 160 && (!th.backdrop || LIGHT_BACKDROPS.has(th.backdrop.kind));
   const c: Ctx = { accent: th.primary, text: light ? '#141414' : '#ffffff', sub: light ? '#4a4a4a' : '#c9cfd6', brand: project.brand ?? '', hasLogo: o.hasLogo, vertical: project.format === '9:16' };
-  const fixImg = (s: string) => (s.startsWith('photo:') && Number(s.slice(6)) >= o.photos ? (o.photos ? `photo:${Number(s.slice(6)) % o.photos}` : `search:${project.brand ?? 'abstract'}`) : s);
+  const fixImg = (s: string) => (s.startsWith('video:') && Number(s.slice(6)) >= (o.videos ?? 0) ? (o.photos ? 'photo:0' : `search:${project.brand || 'lifestyle'}`) : s.startsWith('photo:') && Number(s.slice(6)) >= o.photos ? (o.photos ? `photo:${Number(s.slice(6)) % o.photos}` : `search:${project.brand ?? 'abstract'}`) : s);
   const fixed = JSON.parse(JSON.stringify(block, (k, v) => (k === 'img' || k === 'before' || k === 'after' ? fixImg(String(v)) : k === 'imgs' && Array.isArray(v) ? v.map((x: unknown) => fixImg(String(x))) : v))) as Block;
   return sceneFor(fixed, index, c);
 }

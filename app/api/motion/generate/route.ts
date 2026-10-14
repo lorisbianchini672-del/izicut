@@ -556,7 +556,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
           deadline: t1 + 200_000
         })) as Record<string, unknown>;
         if (Array.isArray(raw?.ops)) for (const op of raw.ops as { block?: { block?: string; place?: unknown; geo?: unknown } }[]) if (op?.block?.block === 'map' && typeof op.block.place === 'string' && !op.block.geo) op.block.geo = (await fetchMap(op.block.place)) ?? undefined;
-        const res = applyOps(project, raw?.ops, { hasLogo: Boolean(parsed.data.hasLogo), photos: photos?.length ?? 0 });
+        const res = applyOps(project, raw?.ops, { hasLogo: Boolean(parsed.data.hasLogo), photos: photos?.length ?? 0, videos: media?.length ?? 0 });
         if (res.recreate) { recreate = true; break; }
         // Question / discussion : vraie réponse de l'IA, sans toucher à la pub.
         const said = typeof raw?.message === 'string' ? raw.message.trim() : '';
@@ -579,7 +579,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
     }
     // Toutes les IA sont saturées : les retouches courantes sont comprises sans IA.
     if (!recreate) {
-      const quick = applyOps(project, quickOps(prompt, project, parsed.data.currentScene ?? 0), { hasLogo: Boolean(parsed.data.hasLogo), photos: photos?.length ?? 0 });
+      const quick = applyOps(project, quickOps(prompt, project, parsed.data.currentScene ?? 0), { hasLogo: Boolean(parsed.data.hasLogo), photos: photos?.length ?? 0, videos: media?.length ?? 0 });
       if (quick.applied > 0) {
         return NextResponse.json({ project: free ? clampToFree(quick.project) : quick.project, message: describeOps(quickOps(prompt, project, parsed.data.currentScene ?? 0)), quota: { tier, used, limit: free ? FREE_MOTION_CREATIONS : null } });
       }
@@ -656,7 +656,7 @@ fx et fy sont la position DANS la photo (0 = gauche / haut, 1 = droite / bas), 2
           let k = 0;
           safeBlocks = safeBlocks.map((bl) => (bl.block === 'kinetic' && (!bl.style || !allowed.includes(bl.style as never)) ? ({ ...bl, style: allowed[k++ % allowed.length] } as Block) : bl));
         }
-        composed = composeProject(safeBlocks, st, { brand: brandName, hasLogo: Boolean(parsed.data.hasLogo), format: fmt, photos: photos?.length ?? 0 });
+        composed = composeProject(safeBlocks, st, { brand: brandName, hasLogo: Boolean(parsed.data.hasLogo), format: fmt, photos: photos?.length ?? 0, videos: media?.length ?? 0 });
         raw = { message: r.message, plan: r.plan, question: r.question, project: composed };
       }
       const wrapped = Boolean(raw && typeof raw === 'object' && 'project' in (raw as Record<string, unknown>));

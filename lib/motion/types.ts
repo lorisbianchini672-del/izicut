@@ -134,7 +134,9 @@ const PathLayer = z.object({
   cap: z.enum(['round', 'butt', 'square']).optional()
 });
 const ImageLayer = z.object({
-  kind: z.literal('image'), ...layerBase, src: z.string().regex(/^(logo|photo:\d{1,2}|search:.{2,60})$/), w: anum, h: anum.optional(), fit: z.enum(['cover', 'contain']).optional(), radius: z.number().min(0).max(1000).optional(),
+  kind: z.literal('image'), ...layerBase, src: z.string().regex(/^(logo|photo:\d{1,2}|video:[0-2]|search:.{2,60})$/), w: anum,
+  /** Calque vidéo (src « video:N ») : seconde de départ dans le clip importé. */
+  vfrom: z.number().min(0).max(3600).optional(), h: anum.optional(), fit: z.enum(['cover', 'contain']).optional(), radius: z.number().min(0).max(1000).optional(),
   /** Zoom DANS l'image (1 = cadrage normal, 2.5 = gros plan) vers le point (fx, fy) de l'image (0-1) : pour montrer un détail. */
   zoom: anum.optional(), fx: anum.optional(), fy: anum.optional(),
   /** Apparition de l'image : volet, iris, stores, partage en deux, montée. */

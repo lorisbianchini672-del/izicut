@@ -241,7 +241,7 @@ function applyOne(p: MotionProject, op: Record<string, unknown>, o: { hasLogo: b
 }
 
 /** Applique toutes les opérations valides (une opération qui casserait la pub est ignorée, pas tout le reste). */
-export function applyOps(p: MotionProject, raw: unknown, o: { hasLogo: boolean; photos: number }): { project: MotionProject; applied: number; recreate: boolean } {
+export function applyOps(p: MotionProject, raw: unknown, o: { hasLogo: boolean; photos: number; videos?: number }): { project: MotionProject; applied: number; recreate: boolean } {
   let cur = p;
   let applied = 0;
   const state = { ...o, scaled: false };

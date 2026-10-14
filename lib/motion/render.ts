@@ -2035,6 +2035,9 @@ function kv(k: Keyed<number> | Keyed<string> | undefined, t: number, def: number
   return last.v;
 }
 
+/** Valeur d'une propriété animée à l'instant t (pour l'éditeur d'images clés). */
+export function keyedAt(k: Keyed<number> | undefined, t: number, def: number): number { return kv(k, t, def); }
+
 type Paint = string | { from: string; to: string; angle?: number; radial?: boolean };
 function paintStyle(ctx: CanvasRenderingContext2D, p: Paint, w: number, h: number): string | CanvasGradient {
   if (typeof p === 'string') return p;
@@ -2110,6 +2113,43 @@ function path2d(d: string): Path2D | null {
     if (path2dCache.size > 200) path2dCache.delete(path2dCache.keys().next().value as string);
   }
   return path2dCache.get(d) ?? null;
+}
+
+/** Image OU vidéo importée (src « video:N ») prête à dessiner, avec ses dimensions natives. */
+function mediaOf(c: Ctx, src: string): { el: CanvasImageSource; nw: number; nh: number } | null {
+  if (src.startsWith('video:')) {
+    const v = c.assets.videos?.[Number(src.slice(6))];
+    return v && v.readyState >= 2 && v.videoWidth ? { el: v, nw: v.videoWidth, nh: v.videoHeight } : null;
+  }
+  const img = imageOf(c, src);
+  return img ? { el: img, nw: img.naturalWidth, nh: img.naturalHeight } : null;
+}
+
+/**
+ * Où doit en être chaque vidéo importée à l'instant t : scène « vidéo » ou
+ * calque vidéo d'une scène libre (départ vfrom + temps depuis l'apparition).
+ * Renvoie un tableau index → seconde cible (ou null si la vidéo n'est pas à l'écran).
+ */
+export function mediaTargets(project: MotionProject, t: number, count: number): (number | null)[] {
+  const out: (number | null)[] = Array.from({ length: count }, () => null);
+  let acc = 0;
+  let scene = project.scenes[project.scenes.length - 1];
+  let lt = 0;
+  for (const s of project.scenes) { if (t < acc + s.duration) { scene = s; lt = t - acc; break; } acc += s.duration; lt = t - acc; }
+  if (!scene) return out;
+  if (scene.type === 'video') { if (scene.media < count) out[scene.media] = scene.from + Math.max(0, lt); return out; }
+  if (scene.type === 'free') {
+    const walk = (ls: Layer[]) => ls.forEach((L) => {
+      if (L.kind === 'group') { walk(L.children as Layer[]); return; }
+      if (L.kind === 'image' && L.src.startsWith('video:')) {
+        const i = Number(L.src.slice(6));
+        const st = L.from ?? 0;
+        if (i < count && lt >= st - 0.2 && (L.to === undefined || lt <= L.to)) out[i] = (L.vfrom ?? 0) + Math.max(0, lt - st);
+      }
+    });
+    walk(scene.layers);
+  }
+  return out;
 }
 
 function imageOf(c: Ctx, src: string): HTMLImageElement | null {
@@ -2554,9 +2594,9 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
       return;
     }
     case 'image': {
-      const img = imageOf(c, L.src);
+      const img = mediaOf(c, L.src);
       const w = kv(L.w, lt, 600);
-      const ratio = img ? img.naturalHeight / img.naturalWidth : 1;
+      const ratio = img ? img.nh / img.nw : L.src.startsWith('video:') ? 16 / 9 : 1;
       const h = L.h !== undefined ? kv(L.h, lt, w) : w * ratio;
       // Apparition (volet, iris, stores, partage, montée).
       const rv = L.reveal ?? 'none';
@@ -2578,8 +2618,8 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
       if (img) {
         const fit = L.fit ?? (L.src === 'logo' ? 'contain' : 'cover');
         const z = Math.max(1, kv(L.zoom, lt, 1));
-        const k = (fit === 'cover' ? Math.max(w / img.naturalWidth, h / img.naturalHeight) : Math.min(w / img.naturalWidth, h / img.naturalHeight)) * z;
-        const iw = img.naturalWidth * k, ih = img.naturalHeight * k;
+        const k = (fit === 'cover' ? Math.max(w / img.nw, h / img.nh) : Math.min(w / img.nw, h / img.nh)) * z;
+        const iw = img.nw * k, ih = img.nh * k;
         // Point de l'image à mettre au centre du cadre (gros plan sur un détail), sans jamais sortir de l'image.
         const fxp = clamp(kv(L.fx, lt, 0.5)), fyp = clamp(kv(L.fy, lt, 0.5));
         let ox = -iw / 2 + (0.5 - fxp) * iw, oy = -ih / 2 + (0.5 - fyp) * ih;
@@ -2590,7 +2630,7 @@ function drawFreeLeaf(c: Ctx, L: LeafLayerT, lt: number) {
           if (ih < h) oy = -ih / 2;
           ctx.beginPath(); ctx.rect(-w / 2, -h / 2, w, h); ctx.clip();
         }
-        ctx.drawImage(img, ox, oy, iw, ih);
+        ctx.drawImage(img.el, ox, oy, iw, ih);
       } else if (L.src !== 'logo') {
         // Image pas (encore) disponible : carte dégradée aux couleurs de la pub avec un reflet qui passe, jamais un bloc vide.
         const g = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);

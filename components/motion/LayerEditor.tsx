@@ -1,6 +1,8 @@
 'use client';
 
-import { ArrowDown, ArrowUp, Copy, Plus, Trash2, Type } from 'lucide-react';
+import { ArrowDown, ArrowUp, Copy, Film, ImageIcon, Plus, Trash2, Type } from 'lucide-react';
+
+import { KeyframeTimeline } from './KeyframeTimeline';
 
 import type { Keyed, Layer, MotionProject } from '@/lib/motion/types';
 import { cn } from '@/lib/utils';
@@ -30,6 +32,8 @@ const first = (k: Keyed<string> | undefined, def: string) => (k === undefined ? 
 
 function labelOf(L: Layer): string {
   if (L.kind === 'text') return L.text.replace(/\*/g, '').slice(0, 26);
+  if (L.kind === 'image' && L.src.startsWith('video:')) return `Vidéo ${Number(L.src.slice(6)) + 1}`;
+  if (L.kind === 'image' && L.src.startsWith('photo:')) return `Photo ${Number(L.src.slice(6)) + 1}`;
   return ({ rect: 'Forme', ellipse: 'Cercle', path: 'Tracé', image: 'Image', callout: 'Annotation', gallery: 'Galerie', list: 'Liste', particles: 'Particules', glow: 'Lumière', flow: 'Fond lumineux', group: 'Groupe' } as Record<string, string>)[L.kind] ?? L.kind;
 }
 
@@ -51,8 +55,13 @@ function applyMove(L: Layer, move: string, dur: number): Layer {
   }
 }
 
-export function LayerEditor({ project, sel, onSelect, onChange, onSeek, sceneStart, accent }: {
+export function LayerEditor({ project, sel, onSelect, onChange, onSeek, sceneStart, accent, time = 0, videos = 0, photos = 0 }: {
   project: MotionProject;
+  /** Temps global de lecture (s), pour la timeline d'images clés. */
+  time?: number;
+  /** Nombre de vidéos / photos importées utilisables comme calques. */
+  videos?: number;
+  photos?: number;
   sel: LayerSel | null;
   onSelect: (s: LayerSel | null) => void;
   onChange: (fn: (p: MotionProject) => MotionProject) => void;
@@ -112,6 +121,16 @@ export function LayerEditor({ project, sel, onSelect, onChange, onSeek, sceneSta
           <button type="button" onClick={() => addLayer({ kind: 'text', text: 'Nouveau texte', x: 0.5, y: 0.5, size: 80, weight: 800, color: '#ffffff', reveal: 'rise', revealBy: 'word', revealAt: 0.1 } as Layer)} className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-xs text-fg-muted hover:text-fg">
             <Plus className="h-3.5 w-3.5" /> Texte
           </button>
+          {videos > 0 ? (
+            <button type="button" title="Ajouter votre vidéo comme calque" onClick={() => addLayer({ kind: 'image', src: `video:${Math.min(videos - 1, free.layers.filter((l) => l.kind === 'image' && l.src.startsWith('video:')).length)}`, x: 0.5, y: 0.5, w: 760, radius: 36, shadow: true, reveal: 'iris', revealAt: 0.05, from: 0 } as Layer)} className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-xs text-fg-muted hover:text-fg">
+              <Film className="h-3.5 w-3.5" /> Vidéo
+            </button>
+          ) : null}
+          {photos > 0 ? (
+            <button type="button" title="Ajouter une de vos photos comme calque" onClick={() => addLayer({ kind: 'image', src: `photo:${free.layers.filter((l) => l.kind === 'image' && l.src.startsWith('photo:')).length % photos}`, x: 0.5, y: 0.5, w: 700, radius: 32, shadow: true, reveal: 'rise', revealAt: 0.05 } as Layer)} className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-xs text-fg-muted hover:text-fg">
+              <ImageIcon className="h-3.5 w-3.5" /> Photo
+            </button>
+          ) : null}
           <button type="button" onClick={() => onSelect(null)} className="cursor-pointer rounded-full border border-white/10 px-2.5 py-1 text-xs text-fg-muted hover:text-fg">Fermer</button>
         </div>
       </div>
@@ -169,6 +188,22 @@ export function LayerEditor({ project, sel, onSelect, onChange, onSeek, sceneSta
             </>
           ) : null}
 
+          {L.kind === 'image' ? (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs text-fg-muted">Largeur · {Math.round(base(L.w, 600))}
+                <input id="layer-w" type="range" min={120} max={1600} value={base(L.w, 600)} onChange={(e) => edit((l) => ({ ...l, w: Number(e.target.value), h: undefined } as Layer))} className="mt-1 w-full" />
+              </label>
+              <label className="text-xs text-fg-muted">Coins arrondis · {Math.round(L.radius ?? 0)}
+                <input id="layer-radius" type="range" min={0} max={300} value={L.radius ?? 0} onChange={(e) => edit((l) => ({ ...l, radius: Number(e.target.value) || undefined } as Layer))} className="mt-1 w-full" />
+              </label>
+              {L.src.startsWith('video:') ? (
+                <label className="col-span-2 text-xs text-fg-muted">Départ dans votre clip · {(L.vfrom ?? 0).toFixed(1)} s
+                  <input id="layer-vfrom" type="range" min={0} max={120} step={0.1} value={L.vfrom ?? 0} onChange={(e) => edit((l) => ({ ...l, vfrom: Number(e.target.value) || undefined } as Layer))} className="mt-1 w-full" />
+                </label>
+              ) : null}
+            </div>
+          ) : null}
+
           <label className="block text-xs text-fg-muted">Mouvement d’entrée
             <select id="layer-move" defaultValue="" onChange={(e) => { const m = e.target.value; if (m) edit((l) => applyMove(l, m, 0.7)); e.target.value = ''; }} className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-1.5 py-1.5 text-xs text-fg">
               <option value="">Choisir un mouvement…</option>
@@ -194,6 +229,10 @@ export function LayerEditor({ project, sel, onSelect, onChange, onSeek, sceneSta
             <label className="text-xs text-fg-muted">Disparaît à {(L.to ?? d).toFixed(1)} s
               <input id="layer-to" type="range" min={0} max={d} step={0.1} value={L.to ?? d} onChange={(e) => { const v = Number(e.target.value); edit((l) => ({ ...l, to: v >= d - 0.05 ? undefined : Math.max((l.from ?? 0) + 0.2, v) } as Layer)); }} className="mt-1 w-full" />
             </label>
+          </div>
+
+          <div className="border-t border-white/10 pt-3">
+            <KeyframeTimeline layer={L} duration={d} lt={Math.max(0, Math.min(d, time - sceneStart))} edit={edit} onSeekLocal={(t) => onSeek(sceneStart + Math.min(d - 0.01, t))} accent={accent} />
           </div>
 
           <div className="flex flex-wrap gap-1.5">
