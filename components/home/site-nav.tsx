@@ -132,22 +132,22 @@ export function SiteNav() {
           <Wordmark className="text-[24px]" />
         </Link>
 
-        <ul className="ml-auto hidden items-center gap-1 md:flex">
+        <ul className="ml-auto hidden items-center gap-1 xl:flex">
           {links.map(([label, href]) => (
             <li key={href}>
-              <Link href={href} className="izi-focus rounded-lg px-3 py-2 text-[15px] font-medium text-fg transition-colors hover:text-neon">
+              <Link href={href} className="izi-focus whitespace-nowrap rounded-lg px-3 py-2 text-[15px] font-medium text-fg transition-colors hover:text-neon">
                 {label}
               </Link>
             </li>
           ))}
         </ul>
 
-        <div className="ml-auto flex items-center gap-2 md:ml-2">
+        <div className="ml-auto flex items-center gap-2 xl:ml-2">
           {email ? (
             <>
               <Link
                 href="/upload"
-                className="izi-focus hidden items-center gap-1.5 rounded-full bg-fg px-5 py-2.5 text-sm font-semibold text-ink-950 transition-colors hover:bg-neon sm:inline-flex"
+                className="izi-focus hidden items-center gap-1.5 rounded-full bg-fg px-5 py-2.5 whitespace-nowrap text-sm font-semibold text-ink-950 transition-colors hover:bg-neon sm:inline-flex"
               >
                 <Plus className="h-4 w-4" aria-hidden />
                 Nouvelle vidéo
@@ -161,7 +161,7 @@ export function SiteNav() {
               </Link>
               <Link
                 href="/upload"
-                className="izi-focus group hidden items-center gap-1.5 rounded-full bg-fg px-5 py-2.5 text-sm font-semibold text-ink-950 transition-colors hover:bg-neon sm:inline-flex"
+                className="izi-focus group hidden items-center gap-1.5 rounded-full bg-fg px-5 py-2.5 whitespace-nowrap text-sm font-semibold text-ink-950 transition-colors hover:bg-neon sm:inline-flex"
               >
                 Essayer gratuitement
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden />
@@ -174,7 +174,7 @@ export function SiteNav() {
             aria-expanded={open}
             aria-controls="izi-mobile-menu"
             aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
-            className="izi-focus cursor-pointer rounded-lg p-2 text-fg md:hidden"
+            className="izi-focus cursor-pointer rounded-lg p-2 text-fg xl:hidden"
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -182,7 +182,7 @@ export function SiteNav() {
       </nav>
 
       {open ? (
-        <div id="izi-mobile-menu" className="border-t border-line px-4 pb-6 pt-2 md:hidden">
+        <div id="izi-mobile-menu" className="border-t border-line px-4 pb-6 pt-2 xl:hidden">
           <ul className="space-y-1">
             {links.map(([label, href]) => (
               <li key={href}>

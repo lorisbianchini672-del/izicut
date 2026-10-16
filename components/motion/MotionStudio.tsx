@@ -353,7 +353,7 @@ export function MotionStudio() {
     if (saved?.scenes?.length) { setProject(saved); if (saved.scenes.some((sc) => sc.type === 'free')) setStage('edit'); }
     try {
       const c = window.localStorage.getItem('izicut-comp-v1');
-      if (c) { const parsedC = JSON.parse(c) as Comp; if (parsedC?.html && parsedC?.js) { setComp(parsedC); setStage('edit'); } }
+      if (c) { const parsedC = JSON.parse(c) as Comp; if (parsedC && ((parsedC.html && parsedC.js) || parsedC.blocks?.length)) { setComp(parsedC); setStage('edit'); } }
     } catch { /* rien */ }
     setBrand(loadBrand());
     brandLoaded.current = true;
